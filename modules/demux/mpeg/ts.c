@@ -387,7 +387,7 @@ static int Open( vlc_object_t *p_this )
     p_sys->b_end_preparse = false;
     ARRAY_INIT( p_sys->programs );
     p_sys->b_default_selection = false;
-    p_sys->i_tdt_delta = 0;
+    p_sys->i_tdt_delta = TS_TIME_DELTA_INVALID;
 
     p_sys->vdr = vdr;
 
@@ -744,9 +744,12 @@ static int Demux( demux_t *p_demux )
 /*****************************************************************************
  * Control:
  *****************************************************************************/
-static int EITCurrentEventTime( const ts_pmt_t *p_pmt, time_t i_tdt_offset,
+static int EITCurrentEventTime( const ts_pmt_t *p_pmt, time_t i_tdt_delta,
                                 time_t *pi_time, time_t *pi_length )
 {
+    if( i_tdt_delta == TS_TIME_DELTA_INVALID )
+        return VLC_EGENERIC;
+
     if( pi_length )
         *pi_length = 0;
     if( pi_time )
@@ -754,7 +757,7 @@ static int EITCurrentEventTime( const ts_pmt_t *p_pmt, time_t i_tdt_offset,
 
     if( p_pmt && p_pmt->eit.i_event_length > 0 )
     {
-        const time_t t = time(NULL) + i_tdt_offset;
+        const time_t t = time(NULL) + i_tdt_delta;
         if( p_pmt->eit.i_event_start <= t && t < p_pmt->eit.i_event_start + p_pmt->eit.i_event_length )
         {
             if( pi_length )
@@ -2120,15 +2123,20 @@ static void PCRCheckDTS( demux_t *p_demux, ts_pmt_t *p_pmt, mtime_t i_pcr)
             continue;
 
         if (p_pmt->pcr.i_pcroffset > 0) {
-            i_dts += p_pmt->pcr.i_pcroffset;
-            i_pts += p_pmt->pcr.i_pcroffset;
+            if( i_dts > VLC_TS_INVALID )
+                i_dts += p_pmt->pcr.i_pcroffset;
+            if( i_pts > VLC_TS_INVALID )
+                i_pts += p_pmt->pcr.i_pcroffset;
         }
 
-        i_dts = TimeStampWrapAround( i_pcr, i_dts );
-        i_pts = TimeStampWrapAround( i_pcr, i_pts );
+        if( i_dts > VLC_TS_INVALID )
+            i_dts = TimeStampWrapAround( i_pcr, i_dts );
+        if( i_pts > VLC_TS_INVALID )
+            i_pts = TimeStampWrapAround( i_pcr, i_pts );
 
-        if ((i_dts > 0 && i_dts <= i_pcr) || (i_pts > 0 && i_pts <= i_pcr)) {
-            msg_Err( p_demux, "send queued data for pid %d: DTS %"PRId64" >= PCR %"PRId64"\n", p_pid->i_pid, i_dts, i_pcr);
+        if(( i_dts > VLC_TS_INVALID && i_dts <= i_pcr ) ||
+           ( i_pts > VLC_TS_INVALID && i_pts <= i_pcr ))
+        {
             ParsePESDataChain( p_demux, p_pid );
         }
     }

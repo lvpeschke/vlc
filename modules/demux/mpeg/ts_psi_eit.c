@@ -50,6 +50,18 @@
 #include <time.h>
 #include <assert.h>
 
+#ifndef PSI_DEBUG_EIT
+ #define PSI_DEBUG_TIMESHIFT(t)
+#else
+ static time_t i_eit_debug_offset = 0;
+ #define PSI_DEBUG_TIMESHIFT(t) \
+    do {\
+        if( i_eit_debug_offset == 0 )\
+            i_eit_debug_offset = time(NULL) - t;\
+        t = t + i_eit_debug_offset;\
+    } while(0);
+#endif
+
 static char *EITConvertToUTF8( demux_t *p_demux,
                                const unsigned char *psz_instring,
                                size_t i_length,
@@ -322,6 +334,7 @@ static void EITCallBack( demux_t *p_demux,
         int i_min_age = 0;
 
         i_start = EITConvertStartTime( p_evt->i_start_time );
+        PSI_DEBUG_TIMESHIFT(i_start);
         i_duration = EITConvertDuration( p_evt->i_duration );
 
         if( p_sys->arib.e_mode == ARIBMODE_ENABLED )
@@ -329,7 +342,7 @@ static void EITCallBack( demux_t *p_demux,
             time_t i_now = time(NULL);
             time_t i_tot_time = 0;
 
-            if( p_sys->i_tdt_delta == 0 )
+            if( p_sys->i_tdt_delta == TS_TIME_DELTA_INVALID )
                 p_sys->i_tdt_delta = (i_start + i_duration - 5) - i_now;
 
             i_tot_time = i_now + p_sys->i_tdt_delta;
@@ -338,12 +351,12 @@ static void EITCallBack( demux_t *p_demux,
             i_start += timezone; // FIXME: what about DST?
             i_tot_time += timezone;
 
-            if( p_evt->i_running_status == 0x00 &&
+            if( p_evt->i_running_status == TS_PSI_RUNSTATUS_UNDEFINED &&
                 (i_start - 5 < i_tot_time &&
                  i_tot_time < i_start + i_duration + 5) )
             {
-                p_evt->i_running_status = 0x04;
-                msg_Dbg( p_demux, "  EIT running status 0x00 -> 0x04" );
+                p_evt->i_running_status = TS_PSI_RUNSTATUS_RUNNING;
+                msg_Dbg( p_demux, "  EIT running status undefined -> running" );
             }
         }
 
@@ -465,7 +478,7 @@ static void EITCallBack( demux_t *p_demux,
                               *psz_extra ? psz_extra : NULL, i_min_age );
 
         /* Update "now playing" field */
-        if( p_evt->i_running_status == 0x04 && i_start > 0  && psz_name && psz_text )
+        if( p_evt->i_running_status == TS_PSI_RUNSTATUS_RUNNING && i_start > 0  && psz_name && psz_text )
             vlc_epg_SetCurrent( p_epg, i_start );
 
         free( psz_name );
@@ -544,7 +557,7 @@ static void PSINewTableCallBack( dvbpsi_t *h, uint8_t i_table_id,
             msg_Err( p_demux, "PSINewTableCallback: failed attaching EITCallback" );
     }
     else if( GetPID(p_sys, 0x11)->u.p_psi->i_version != -1 &&
-            (i_table_id == 0x70 /* TDT */ || i_table_id == 0x73 /* TOT */) )
+            (i_table_id == TS_PSI_TDT_TABLE_ID || i_table_id == TS_PSI_TOT_TABLE_ID) )
     {
          msg_Dbg( p_demux, "PSINewTableCallBack: table 0x%x(%d) ext=0x%x(%d)",
                  i_table_id, i_table_id, i_extension, i_extension );
