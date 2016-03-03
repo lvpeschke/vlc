@@ -53,3 +53,9 @@ build*
 contrib-*
 install-*
 
+CMakeLists.txt
+.idea/.name
+.idea/encodings.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/vlc.iml
