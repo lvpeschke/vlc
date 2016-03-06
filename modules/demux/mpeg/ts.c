@@ -35,19 +35,12 @@
 #include <vlc_access.h>    /* DVB-specific things */
 #include <vlc_demux.h>
 
-/* Include dvbpsi headers */
-#ifndef _DVBPSI_DVBPSI_H_
- # include <dvbpsi/dvbpsi.h>
-#endif
-# include <dvbpsi/descriptor.h>
-# include <dvbpsi/pat.h>
-# include <dvbpsi/pmt.h>
-
 #include "ts_pid.h"
 #include "ts_streams.h"
 #include "ts_streams_private.h"
 #include "ts_psi.h"
 #include "ts_psi_eit.h"
+#include "ts_psip.h"
 
 #include "ts_hotfixes.h"
 #include "ts_sl.h"
@@ -119,23 +112,23 @@ static void Close ( vlc_object_t * );
 #define PCR_TEXT N_("Trust in-stream PCR")
 #define PCR_LONGTEXT N_("Use the stream PCR as a reference.")
 
-static const int const arib_mode_list[] =
-  { ARIBMODE_AUTO, ARIBMODE_ENABLED, ARIBMODE_DISABLED };
-static const char *const arib_mode_list_text[] =
-  { N_("Auto"), N_("Enabled"), N_("Disabled") };
+static const char *const ts_standards_list[] =
+    { "auto", "mpeg", "dvb", "arib", "atsc", "tdmb" };
+static const char *const ts_standards_list_text[] =
+  { N_("Auto"), "MPEG", "DVB", "ARIB", "ATSC", "T-DMB" };
 
-#define SUPPORT_ARIB_TEXT N_("ARIB STD-B24 mode")
-#define SUPPORT_ARIB_LONGTEXT N_( \
-    "Forces ARIB STD-B24 mode for decoding characters." \
-    "This feature affects EPG information and subtitles." )
-
-#define ATSC_MODE_TEXT N_("ATSC")
+#define STANDARD_TEXT N_("Digital TV Standard")
+#define STANDARD_LONGTEXT N_( "Selects mode for digital TV standard." \
+                              "This feature affects EPG information and subtitles." )
 
 vlc_module_begin ()
     set_description( N_("MPEG Transport Stream demuxer") )
     set_shortname ( "MPEG-TS" )
     set_category( CAT_INPUT )
     set_subcategory( SUBCAT_INPUT_DEMUX )
+
+    add_string( "ts-standard", "auto", STANDARD_TEXT, STANDARD_LONGTEXT, true )
+        change_string_list( ts_standards_list, ts_standards_list_text )
 
     add_string( "ts-extra-pmt", NULL, PMT_TEXT, PMT_LONGTEXT, true )
     add_bool( "ts-trust-pcr", true, PCR_TEXT, PCR_LONGTEXT, true )
@@ -153,11 +146,6 @@ vlc_module_begin ()
 
     add_bool( "ts-split-es", true, SPLIT_ES_TEXT, SPLIT_ES_LONGTEXT, false )
     add_bool( "ts-seek-percent", false, SEEK_PERCENT_TEXT, SEEK_PERCENT_LONGTEXT, true )
-
-    add_integer( "ts-arib", ARIBMODE_AUTO, SUPPORT_ARIB_TEXT, SUPPORT_ARIB_LONGTEXT, false )
-        change_integer_list( arib_mode_list, arib_mode_list_text )
-
-    add_bool( "ts-atsc", false, ATSC_MODE_TEXT, NULL, false )
 
     add_obsolete_bool( "ts-silent" );
 
@@ -350,12 +338,6 @@ static int DetectPVRHeadersAndHeaderSize( demux_t *p_demux, unsigned *pi_header_
 /*****************************************************************************
  * Open
  *****************************************************************************/
-# define VLC_DVBPSI_DEMUX_TABLE_INIT(table,obj) \
-    do { \
-        if( !AttachDvbpsiNewEITTableHandler( (table)->u.p_psi->handle, obj ) ) \
-            msg_Warn( obj, "Can't dvbpsi_AttachDemux on pid %d", (table)->i_pid );\
-    } while (0)
-
 static int Open( vlc_object_t *p_this )
 {
     demux_t     *p_demux = (demux_t*)p_this;
@@ -382,8 +364,6 @@ static int Open( vlc_object_t *p_this )
     p_demux->pf_control = Control;
 
     /* Init p_sys field */
-    p_sys->b_dvb_meta = true;
-    p_sys->b_access_control = true;
     p_sys->b_end_preparse = false;
     ARRAY_INIT( p_sys->programs );
     p_sys->b_default_selection = false;
@@ -416,7 +396,7 @@ static int Open( vlc_object_t *p_this )
         free( p_sys );
         return VLC_ENOMEM;
     }
-    if( !dvbpsi_pat_attach( patpid->u.p_pat->handle, PATCallBack, p_demux ) )
+    if( !ts_psi_PAT_Attach( patpid, p_demux ) )
     {
         PIDRelease( p_demux, patpid );
         vlc_mutex_destroy( &p_sys->csa_lock );
@@ -424,32 +404,8 @@ static int Open( vlc_object_t *p_this )
         return VLC_EGENERIC;
     }
 
-    if( p_sys->b_dvb_meta )
-    {
-          if( !PIDSetup( p_demux, TYPE_SDT, GetPID(p_sys, 0x11), NULL ) ||
-              !PIDSetup( p_demux, TYPE_EIT, GetPID(p_sys, 0x12), NULL ) ||
-              !PIDSetup( p_demux, TYPE_TDT, GetPID(p_sys, 0x14), NULL ) )
-          {
-              PIDRelease( p_demux, GetPID(p_sys, 0x11) );
-              PIDRelease( p_demux, GetPID(p_sys, 0x12) );
-              PIDRelease( p_demux, GetPID(p_sys, 0x14) );
-              p_sys->b_dvb_meta = false;
-          }
-          else
-          {
-              VLC_DVBPSI_DEMUX_TABLE_INIT(GetPID(p_sys, 0x11), p_demux);
-              VLC_DVBPSI_DEMUX_TABLE_INIT(GetPID(p_sys, 0x12), p_demux);
-              VLC_DVBPSI_DEMUX_TABLE_INIT(GetPID(p_sys, 0x14), p_demux);
-              if( p_sys->b_access_control &&
-                  ( SetPIDFilter( p_sys, GetPID(p_sys, 0x11), true ) ||
-                    SetPIDFilter( p_sys, GetPID(p_sys, 0x14), true ) ||
-                    SetPIDFilter( p_sys, GetPID(p_sys, 0x12), true ) )
-                 )
-                     p_sys->b_access_control = false;
-          }
-    }
-
-# undef VLC_DVBPSI_DEMUX_TABLE_INIT
+    p_sys->b_access_control = true;
+    p_sys->b_access_control = ( VLC_SUCCESS == SetPIDFilter( p_sys, patpid, true ) );
 
     p_sys->i_pmt_es = 0;
     p_sys->b_es_all = false;
@@ -520,13 +476,28 @@ static int Open( vlc_object_t *p_this )
     p_sys->b_canfastseek = false;
     p_sys->b_force_seek_per_percent = var_InheritBool( p_demux, "ts-seek-percent" );
 
-    p_sys->b_atsc = var_InheritBool( p_demux, "ts-atsc" );
-    if( !p_sys->b_atsc )
+    p_sys->standard = TS_STANDARD_AUTO;
+    char *psz_standard = var_InheritString( p_demux, "ts-standard" );
+    if( psz_standard )
     {
-        p_sys->b_atsc = !strcmp( p_demux->psz_access, "atsc" ) ||
-                        !strcmp( p_demux->psz_access, "usdigital" );
+        for( unsigned i=0; i<ARRAY_SIZE(ts_standards_list); i++ )
+        {
+            if( !strcmp( psz_standard, ts_standards_list[i] ) )
+            {
+                TsChangeStandard( p_sys, TS_STANDARD_AUTO + i );
+                msg_Dbg( p_demux, "Standard set to %s", ts_standards_list_text[i] );
+                break;
+            }
+        }
+        free( psz_standard );
     }
-    p_sys->arib.e_mode = var_InheritInteger( p_demux, "ts-arib" );
+
+    if( p_sys->standard == TS_STANDARD_AUTO &&
+       ( !strcmp( p_demux->psz_access, "atsc" ) ||
+         !strcmp( p_demux->psz_access, "usdigital" ) ) )
+    {
+        TsChangeStandard( p_sys, TS_STANDARD_ATSC );
+    }
 
     stream_Control( p_sys->stream, STREAM_CAN_SEEK, &p_sys->b_canseek );
     stream_Control( p_sys->stream, STREAM_CAN_FASTSEEK, &p_sys->b_canfastseek );
@@ -555,13 +526,6 @@ static void Close( vlc_object_t *p_this )
     demux_sys_t *p_sys = p_demux->p_sys;
 
     PIDRelease( p_demux, GetPID(p_sys, 0) );
-
-    if( p_sys->b_dvb_meta )
-    {
-        PIDRelease( p_demux, GetPID(p_sys, 0x11) );
-        PIDRelease( p_demux, GetPID(p_sys, 0x12) );
-        PIDRelease( p_demux, GetPID(p_sys, 0x14) );
-    }
 
     vlc_mutex_lock( &p_sys->csa_lock );
     if( p_sys->csa )
@@ -683,12 +647,8 @@ static int Demux( demux_t *p_demux )
         switch( p_pid->type )
         {
         case TYPE_PAT:
-            dvbpsi_packet_push( p_pid->u.p_pat->handle, p_pkt->p_buffer );
-            block_Release( p_pkt );
-            break;
-
         case TYPE_PMT:
-            dvbpsi_packet_push( p_pid->u.p_pmt->handle, p_pkt->p_buffer );
+            ts_psi_Packet_Push( p_pid, p_pkt->p_buffer );
             block_Release( p_pkt );
             break;
 
@@ -712,17 +672,13 @@ static int Demux( demux_t *p_demux )
             b_frame = ProcessTSPacket( p_demux, p_pid, p_pkt );
             break;
 
-        case TYPE_SDT:
-        case TYPE_TDT:
-        case TYPE_EIT:
-            if( p_sys->b_dvb_meta )
-                dvbpsi_packet_push( p_pid->u.p_psi->handle, p_pkt->p_buffer );
+        case TYPE_SI:
+            ts_si_Packet_Push( p_pid, p_pkt->p_buffer );
             block_Release( p_pkt );
             break;
 
         case TYPE_PSIP:
-            if( p_pid->u.p_psip->handle->p_decoder )
-                dvbpsi_packet_push( p_pid->u.p_psip->handle, p_pkt->p_buffer );
+            ts_psip_Packet_Push( p_pid, p_pkt->p_buffer );
             block_Release( p_pkt );
             break;
 
@@ -890,7 +846,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
         pf = (double*) va_arg( args, double* );
 
         /* Access control test is because EPG for recordings is not relevant */
-        if( p_sys->b_dvb_meta && p_sys->b_access_control )
+        if( p_sys->b_access_control )
         {
             time_t i_time, i_length;
             if( !EITCurrentEventTime( p_pmt, p_sys->i_tdt_delta, &i_time, &i_length ) && i_length > 0 )
@@ -930,7 +886,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
         if(!p_sys->b_canseek)
             break;
 
-        if( p_sys->b_dvb_meta && p_sys->b_access_control &&
+        if( p_sys->b_access_control &&
            !p_sys->b_force_seek_per_percent && p_pmt )
         {
             time_t i_time, i_length;
@@ -987,7 +943,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
     case DEMUX_GET_TIME:
         pi64 = (int64_t*)va_arg( args, int64_t * );
 
-        if( p_sys->b_dvb_meta && p_sys->b_access_control )
+        if( p_sys->b_access_control )
         {
             time_t i_event_start;
             if( !EITCurrentEventTime( p_pmt, p_sys->i_tdt_delta, &i_event_start, NULL ) )
@@ -1008,7 +964,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
     case DEMUX_GET_LENGTH:
         pi64 = (int64_t*)va_arg( args, int64_t * );
 
-        if( p_sys->b_dvb_meta && p_sys->b_access_control )
+        if( p_sys->b_access_control )
         {
             time_t i_event_duration;
             if( !EITCurrentEventTime( p_pmt, p_sys->i_tdt_delta, NULL, &i_event_duration ) )
@@ -2435,11 +2391,14 @@ static bool GatherPESData( demux_t *p_demux, ts_pid_t *pid, block_t *p_pkt,
     return i_ret;
 }
 
-/****************************************************************************
- ****************************************************************************
- ** libdvbpsi callbacks
- ****************************************************************************
- ****************************************************************************/
+void TsChangeStandard( demux_sys_t *p_sys, ts_standards_e v )
+{
+    if( p_sys->standard != TS_STANDARD_AUTO &&
+        p_sys->standard != v )
+        return; /* TODO */
+    p_sys->standard = v;
+}
+
 bool ProgramIsSelected( demux_sys_t *p_sys, uint16_t i_pgrm )
 {
     for(int i=0; i<p_sys->programs.i_size; i++)

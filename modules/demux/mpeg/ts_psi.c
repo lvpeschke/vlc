@@ -50,28 +50,12 @@
 #include "ts_sl.h"
 #include "ts_scte.h"
 #include "ts_psip.h"
+#include "ts_psi_eit.h"
 
 #include <assert.h>
 
 static void PIDFillFormat( demux_t *, ts_pes_t *p_pes, int i_stream_type, ts_es_data_type_t * );
-
-static void ValidateDVBMeta( demux_t *p_demux, int i_pid )
-{
-    demux_sys_t *p_sys = p_demux->p_sys;
-
-    if( !p_sys->b_dvb_meta || ( i_pid != 0x11 && i_pid != 0x12 && i_pid != 0x14 ) )
-        return;
-
-    msg_Warn( p_demux, "Switching to non DVB mode" );
-
-    /* This doesn't look like a DVB stream so don't try
-     * parsing the SDT/EDT/TDT */
-
-    PIDRelease( p_demux, GetPID(p_sys, 0x11) );
-    PIDRelease( p_demux, GetPID(p_sys, 0x12) );
-    PIDRelease( p_demux, GetPID(p_sys, 0x14) );
-    p_sys->b_dvb_meta = false;
-}
+static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt );
 
 static int PATCheck( demux_t *p_demux, dvbpsi_pat_t *p_pat )
 {
@@ -91,7 +75,7 @@ static int PATCheck( demux_t *p_demux, dvbpsi_pat_t *p_pat )
     return VLC_SUCCESS;
 }
 
-void PATCallBack( void *data, dvbpsi_pat_t *p_dvbpsipat )
+static void PATCallBack( void *data, dvbpsi_pat_t *p_dvbpsipat )
 {
     demux_t              *p_demux = data;
     demux_sys_t          *p_sys = p_demux->p_sys;
@@ -139,8 +123,6 @@ void PATCallBack( void *data, dvbpsi_pat_t *p_dvbpsipat )
             continue;
 
         ts_pid_t *pmtpid = GetPID(p_sys, p_program->i_pid);
-
-        ValidateDVBMeta( p_demux, p_program->i_pid );
 
         bool b_existing = (pmtpid->type == TYPE_PMT);
         /* create or temporary incref pid */
@@ -270,12 +252,11 @@ static void ParsePMTRegistrations( demux_t *p_demux, const dvbpsi_descriptor_t  
         }
     }
 
-    if ( p_sys->arib.e_mode == ARIBMODE_AUTO &&
+    if ( p_sys->standard == TS_STANDARD_AUTO &&
          registration_type == TS_PMT_REGISTRATION_NONE &&
          i_arib_score_flags == 0x07 ) //0b111
     {
         registration_type = TS_PMT_REGISTRATION_ARIB;
-        p_sys->arib.e_mode = ARIBMODE_ENABLED;
     }
 
     /* Now process private descriptors >= 0x40 */
@@ -862,7 +843,7 @@ static void PMTSetupEs0x06( demux_t *p_demux, ts_pes_t *p_pes,
         p_fmt->i_cat = VIDEO_ES;
         p_fmt->i_codec = VLC_CODEC_HEVC;
     }
-    else if ( p_demux->p_sys->arib.e_mode == ARIBMODE_ENABLED )
+    else if ( p_demux->p_sys->standard == TS_STANDARD_ARIB )
     {
         /* Lookup our data component descriptor first ARIB STD B10 6.4 */
         dvbpsi_descriptor_t *p_dr = PMTEsFindDescriptor( p_dvbpsies, 0xFD );
@@ -1379,7 +1360,7 @@ static void FillPESFromDvbpsiES( demux_t *p_demux,
         p_pes->p_es->fmt.i_id = p_dvbpsies->i_pid;
 }
 
-void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
+static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
 {
     demux_t      *p_demux = data;
     demux_sys_t  *p_sys = p_demux->p_sys;
@@ -1431,8 +1412,10 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
     pid_to_decref.i_alloc = p_pmt->e_streams.i_alloc;
     pid_to_decref.i_size = p_pmt->e_streams.i_size;
     pid_to_decref.p_elems = p_pmt->e_streams.p_elems;
-    if( p_pmt->p_mgt )
-        ARRAY_APPEND( pid_to_decref, p_pmt->p_mgt );
+    if( p_pmt->p_atsc_si_basepid )
+        ARRAY_APPEND( pid_to_decref, p_pmt->p_atsc_si_basepid );
+    if( p_pmt->p_si_sdt_pid )
+        ARRAY_APPEND( pid_to_decref, p_pmt->p_si_sdt_pid );
     ARRAY_INIT(p_pmt->e_streams);
 
     if( p_pmt->iod )
@@ -1446,14 +1429,29 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
     p_pmt->i_pid_pcr = p_dvbpsipmt->i_pcr_pid;
     p_pmt->i_version = p_dvbpsipmt->i_version;
 
-    ValidateDVBMeta( p_demux, p_pmt->i_pid_pcr );
-
     if( ProgramIsSelected( p_sys, p_pmt->i_number ) )
         SetPIDFilter( p_sys, GetPID(p_sys, p_pmt->i_pid_pcr), true ); /* Set demux filter */
 
     /* Parse PMT descriptors */
     ts_pmt_registration_type_t registration_type = TS_PMT_REGISTRATION_NONE;
     ParsePMTRegistrations( p_demux, p_dvbpsipmt->p_first_descriptor, p_pmt, &registration_type );
+
+    if( p_sys->standard == TS_STANDARD_AUTO )
+    {
+        switch( registration_type )
+        {
+            case TS_PMT_REGISTRATION_BLURAY:
+                TsChangeStandard( p_sys, TS_STANDARD_MPEG );
+                break;
+            case TS_PMT_REGISTRATION_ARIB:
+                TsChangeStandard( p_sys, TS_STANDARD_ARIB );
+                break;
+            case TS_PMT_REGISTRATION_ATSC:
+                TsChangeStandard( p_sys, TS_STANDARD_ATSC );
+            default:
+                break;
+        }
+    }
 
     dvbpsi_pmt_es_t *p_dvbpsies;
     for( p_dvbpsies = p_dvbpsipmt->p_first_es; p_dvbpsies != NULL; p_dvbpsies = p_dvbpsies->p_next )
@@ -1464,8 +1462,6 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
             msg_Warn( p_demux, " * PMT wants to create PES on pid %d used by non PES", pespid->i_pid );
             continue;
         }
-
-        ValidateDVBMeta( p_demux, p_dvbpsies->i_pid );
 
         char const * psz_typedesc = ISO13818_1_Get_StreamType_Description( p_dvbpsies->i_type );
 
@@ -1605,7 +1601,7 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
     else if( stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA,
                              p_dvbpsipmt ) != VLC_SUCCESS )
     {
-        if ( p_sys->arib.e_mode == ARIBMODE_ENABLED && !p_sys->arib.b25stream )
+        if ( p_sys->standard == TS_STANDARD_ARIB && !p_sys->arib.b25stream )
         {
             p_sys->arib.b25stream = stream_FilterNew( p_demux->s, "aribcam" );
             p_sys->stream = ( p_sys->arib.b25stream ) ? p_sys->arib.b25stream : p_demux->s;
@@ -1615,7 +1611,7 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
     }
 
      /* Add arbitrary PID from here */
-    if ( registration_type == TS_PMT_REGISTRATION_ATSC || p_sys->b_atsc )
+    if ( p_sys->standard == TS_STANDARD_ATSC )
     {
         ts_pid_t *atsc_base_pid = GetPID(p_sys, ATSC_BASE_PID);
         if ( PIDSetup( p_demux, TYPE_PSIP, atsc_base_pid, pmtpid ) )
@@ -1629,7 +1625,7 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
             }
             else
             {
-                p_pmt->p_mgt = atsc_base_pid;
+                p_pmt->p_atsc_si_basepid = atsc_base_pid;
                 SetPIDFilter( p_demux->p_sys, atsc_base_pid, true );
                 msg_Dbg( p_demux, "  * pid=%d listening for MGT/STT", atsc_base_pid->i_pid );
 
@@ -1663,6 +1659,30 @@ void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
         {
             msg_Err( p_demux, "can't attach PSIP table handlers"
                               "on already in use ATSC base pid %d", ATSC_BASE_PID );
+        }
+    }
+    else if( p_sys->standard != TS_STANDARD_MPEG && p_sys->standard != TS_STANDARD_TDMB )
+    {
+        ts_pid_t *p_sdt_pid = ts_pid_Get( &p_sys->pids, TS_SI_SDT_PID );
+        if ( PIDSetup( p_demux, TYPE_SI, p_sdt_pid, pmtpid ) ) /* Create or incref SDT */
+        {
+            if( !ts_attach_SI_Tables_Decoders( p_sdt_pid ) )
+            {
+                msg_Err( p_demux, "Can't attach SI table decoders from program %d",
+                         p_pmt->i_number );
+                PIDRelease( p_demux, p_sdt_pid );
+            }
+            else
+            {
+                p_pmt->p_si_sdt_pid = p_sdt_pid;
+                SetPIDFilter( p_demux->p_sys, p_sdt_pid, true );
+                msg_Dbg( p_demux, "  * pid=%d listening for SDT", p_sdt_pid->i_pid );
+            }
+        }
+        else if( p_sdt_pid->type != TYPE_FREE )
+        {
+            msg_Err( p_demux, "can't attach SI SDT table handler"
+                              "on already in used pid %d (Not DVB ?)", p_sdt_pid->i_pid );
         }
     }
 
@@ -1816,4 +1836,19 @@ int UserPmt( demux_t *p_demux, const char *psz_fmt )
 error:
     free( psz_dup );
     return VLC_EGENERIC;
+}
+
+bool ts_psi_PAT_Attach( ts_pid_t *patpid, void *cbdata )
+{
+    if( unlikely(patpid->type != TYPE_PAT || patpid->i_pid != TS_PSI_PAT_PID) )
+        return false;
+    return dvbpsi_pat_attach( patpid->u.p_pat->handle, PATCallBack, cbdata );
+}
+
+void ts_psi_Packet_Push( ts_pid_t *p_pid, const uint8_t *p_pktbuffer )
+{
+    if( p_pid->type == TYPE_PAT )
+        dvbpsi_packet_push( p_pid->u.p_pat->handle, (uint8_t *) p_pktbuffer );
+    else if( p_pid->type == TYPE_PMT )
+        dvbpsi_packet_push( p_pid->u.p_pmt->handle, (uint8_t *) p_pktbuffer );
 }

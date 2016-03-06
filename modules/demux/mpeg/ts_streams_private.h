@@ -49,7 +49,10 @@ struct ts_pmt_t
 
     DECL_ARRAY(ts_pid_t *) e_streams;
 
-    ts_pid_t        *p_mgt;
+    /* Used for ref tracking PSIP pid chain */
+    ts_pid_t        *p_atsc_si_basepid;
+    /* Used for ref tracking SI pid chain, starting with SDT */
+    ts_pid_t        *p_si_sdt_pid;
 
     struct
     {
@@ -114,13 +117,15 @@ struct ts_pes_t
     } sl;
 };
 
+typedef struct ts_si_context_t ts_si_context_t;
 
-struct ts_psi_t
+struct ts_si_t
 {
-    /* for special PAT/SDT case */
-    dvbpsi_t       *handle; /* PAT/SDT/EIT */
-    int             i_version;
-
+    dvbpsi_t *handle;
+    int       i_version;
+    /* Track successfully set pid */
+    ts_pid_t *eitpid;
+    ts_pid_t *tdtpid;
 };
 
 typedef struct ts_psip_context_t ts_psip_context_t;

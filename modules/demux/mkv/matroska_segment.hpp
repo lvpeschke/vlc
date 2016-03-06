@@ -26,6 +26,8 @@
 #define VLC_MKV_MATROSKA_SEGMENT_HPP_
 
 #include "mkv.hpp"
+#include <vector>
+#include <string>
 
 class EbmlParser;
 
@@ -48,30 +50,30 @@ typedef enum
 class SimpleTag
 {
 public:
-    SimpleTag():
-        psz_tag_name(NULL), psz_lang(NULL), b_default(true), p_value(NULL){}
-    ~SimpleTag();
-    char *psz_tag_name;
-    char *psz_lang; /* NULL value means "undf" */
-    bool b_default;
-    char * p_value;
-    std::vector<SimpleTag *> sub_tags;
+    typedef std::vector<SimpleTag> sub_tags_t;
+    std::string tag_name;
+    std::string lang;
+    std::string value;
+    sub_tags_t sub_tags;
 };
 
 class Tag
 {
 public:
+    typedef std::vector<SimpleTag> simple_tags_t;
     Tag():i_tag_type(WHOLE_SEGMENT),i_target_type(50),i_uid(0){}
-    ~Tag();
     tag_target_type i_tag_type;
     uint64_t        i_target_type;
     uint64_t        i_uid;
-    std::vector<SimpleTag*> simple_tags;
+    simple_tags_t   simple_tags;
 };
 
 class matroska_segment_c
 {
 public:
+    typedef std::vector<mkv_index_t> indexes_t;
+    typedef std::vector<Tag>            tags_t;
+
     matroska_segment_c( demux_sys_t & demuxer, EbmlStream & estream );
     virtual ~matroska_segment_c();
 
@@ -95,7 +97,6 @@ public:
     int64_t                 i_tracks_position;
     int64_t                 i_info_position;
     int64_t                 i_chapters_position;
-    int64_t                 i_tags_position;
     int64_t                 i_attachments_position;
 
     KaxCluster              *cluster;
@@ -107,9 +108,7 @@ public:
     KaxNextUID              *p_next_segment_uid;
 
     bool                    b_cues;
-    int                     i_index;
-    int                     i_index_max;
-    mkv_index_t             *p_indexes;
+    indexes_t               indexes;
 
     /* info */
     char                    *psz_muxing_application;
@@ -126,7 +125,7 @@ public:
 
     std::vector<chapter_translation_c*> translations;
     std::vector<KaxSegmentFamily*>  families;
-    std::vector<Tag *>              tags;
+    tags_t                          tags;
 
     demux_sys_t                    & sys;
     EbmlParser                     *ep;
@@ -145,6 +144,10 @@ public:
     bool Select( mtime_t i_mk_start_time );
     void UnSelect();
 
+    size_t        index_idx () const { return indexes.size () - 1; }
+    mkv_index_t&      index () { return *indexes.rbegin (); }
+    mkv_index_t& prev_index () { return *(indexes.end()-2); }
+
     static bool CompareSegmentUIDs( const matroska_segment_c * item_a, const matroska_segment_c * item_b );
 
 private:
@@ -159,7 +162,7 @@ private:
     void ParseChapterAtom( int i_level, KaxChapterAtom *ca, chapter_item_c & chapters );
     void ParseTrackEntry( KaxTrackEntry *m );
     void ParseCluster( KaxCluster *cluster, bool b_update_start_time = true, ScopeMode read_fully = SCOPE_ALL_DATA );
-    SimpleTag * ParseSimpleTags( KaxTagSimple *tag, int level = 50 );
+    bool ParseSimpleTags( SimpleTag* out, KaxTagSimple *tag, int level = 50 );
     void IndexAppendCluster( KaxCluster *cluster );
     int32_t TrackInit( mkv_track_t * p_tk );
     void ComputeTrackPriority();

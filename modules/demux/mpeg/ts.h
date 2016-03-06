@@ -30,12 +30,17 @@ typedef struct csa_t csa_t;
 
 #define TS_USER_PMT_NUMBER (0)
 
-typedef enum arib_modes_e
+#define TS_PSI_PAT_PID 0x00
+
+typedef enum ts_standards_e
 {
-    ARIBMODE_AUTO = -1,
-    ARIBMODE_DISABLED = 0,
-    ARIBMODE_ENABLED = 1
-} arib_modes_e;
+    TS_STANDARD_AUTO = 0,
+    TS_STANDARD_MPEG,
+    TS_STANDARD_DVB,
+    TS_STANDARD_ARIB,
+    TS_STANDARD_ATSC,
+    TS_STANDARD_TDMB,
+} ts_standards_e;
 
 typedef struct
 {
@@ -60,10 +65,10 @@ struct demux_sys_t
 
     bool        b_force_seek_per_percent;
 
-    bool        b_atsc;
+    ts_standards_e standard;
+
     struct
     {
-        arib_modes_e e_mode;
 #ifdef HAVE_ARIBB24
         arib_instance_t *p_instance;
 #endif
@@ -100,7 +105,6 @@ struct demux_sys_t
     bool        b_end_preparse;
 
     /* */
-    bool        b_dvb_meta;
     time_t      i_tdt_delta;
     bool        b_broken_charset; /* True if broken encoding is used in EPG/SDT */
 
@@ -120,6 +124,8 @@ struct demux_sys_t
     /* */
     bool        b_start_record;
 };
+
+void TsChangeStandard( demux_sys_t *, ts_standards_e );
 
 bool ProgramIsSelected( demux_sys_t *, uint16_t i_pgrm );
 

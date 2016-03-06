@@ -122,7 +122,8 @@ ts_pmt_t *ts_pmt_New( demux_t *p_demux )
 
     pmt->i_last_dts = -1;
 
-    pmt->p_mgt      = NULL;
+    pmt->p_atsc_si_basepid      = NULL;
+    pmt->p_si_sdt_pid = NULL;
 
     pmt->pcr.i_current = -1;
     pmt->pcr.i_first  = -1;
@@ -146,8 +147,10 @@ void ts_pmt_Del( demux_t *p_demux, ts_pmt_t *pmt )
     for( int i=0; i<pmt->e_streams.i_size; i++ )
         PIDRelease( p_demux, pmt->e_streams.p_elems[i] );
     ARRAY_RESET( pmt->e_streams );
-    if( pmt->p_mgt )
-        PIDRelease( p_demux, pmt->p_mgt );
+    if( pmt->p_atsc_si_basepid )
+        PIDRelease( p_demux, pmt->p_atsc_si_basepid );
+    if( pmt->p_si_sdt_pid )
+        PIDRelease( p_demux, pmt->p_si_sdt_pid );
     if( pmt->iod )
         ODFree( pmt->iod );
     for( int i=0; i<pmt->od.objects.i_size; i++ )
@@ -297,30 +300,35 @@ void ts_pes_Del( demux_t *p_demux, ts_pes_t *pes )
     free( pes );
 }
 
-ts_psi_t *ts_psi_New( demux_t *p_demux )
+ts_si_t *ts_si_New( demux_t *p_demux )
 {
-    ts_psi_t *psi = malloc( sizeof( ts_psi_t ) );
-    if( !psi )
+    ts_si_t *si = malloc( sizeof( ts_si_t ) );
+    if( !si )
         return NULL;
 
-    if( !handle_Init( p_demux, &psi->handle ) )
+    if( !handle_Init( p_demux, &si->handle ) )
     {
-        free( psi );
+        free( si );
         return NULL;
     }
 
-    psi->i_version  = -1;
+    si->i_version  = -1;
+    si->eitpid = NULL;
+    si->tdtpid = NULL;
 
-    return psi;
+    return si;
 }
 
-void ts_psi_Del( demux_t *p_demux, ts_psi_t *psi )
+void ts_si_Del( demux_t *p_demux, ts_si_t *si )
 {
-    VLC_UNUSED(p_demux);
-    if( dvbpsi_decoder_present( psi->handle ) )
-        dvbpsi_DetachDemux( psi->handle );
-    dvbpsi_delete( psi->handle );
-    free( psi );
+    if( dvbpsi_decoder_present( si->handle ) )
+        dvbpsi_DetachDemux( si->handle );
+    dvbpsi_delete( si->handle );
+    if( si->eitpid )
+        PIDRelease( p_demux, si->eitpid );
+    if( si->tdtpid )
+        PIDRelease( p_demux, si->tdtpid );
+    free( si );
 }
 
 void ts_psip_Del( demux_t *p_demux, ts_psip_t *psip )
