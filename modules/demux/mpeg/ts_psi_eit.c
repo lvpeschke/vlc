@@ -341,17 +341,32 @@ static void TDTCallBack( demux_t *p_demux, dvbpsi_tot_t *p_tdt )
 {
     demux_sys_t        *p_sys = p_demux->p_sys;
 
-    p_sys->i_tdt_delta = EITConvertStartTime( p_tdt->i_utc_time ) - time(NULL);
+
+    p_sys->i_network_time = EITConvertStartTime( p_tdt->i_utc_time );
+    p_sys->i_network_time_update = time(NULL);
+    if( p_sys->standard == TS_STANDARD_ARIB )
+    {
+        /* All ARIB-B10 times are in JST time, where DVB is UTC. (spec being a fork)
+           DVB TOT should include DTS offset in descriptor 0x58 (including DST),
+           but as there's no DST in JAPAN (since Showa 27/1952)
+           and considering that no-one seems to send TDT or desc 0x58,
+           falling back on fixed offset is safe */
+        p_sys->i_network_time += 9 * 3600;
+    }
+
+    /* Because libdvbpsi is broken and deduplicating timestamp tables,
+     * we need to reset it to get next timestamp callback */
+    ts_pid_t *pid = ts_pid_Get( &p_sys->pids, TS_SI_TDT_PID );
+    dvbpsi_decoder_reset( pid->u.p_si->handle->p_decoder, true );
     dvbpsi_tot_delete(p_tdt);
 }
 
-
-static void EITCallBack( demux_t *p_demux,
-                         dvbpsi_eit_t *p_eit, bool b_current_following )
+static void EITCallBack( demux_t *p_demux, dvbpsi_eit_t *p_eit )
 {
     demux_sys_t        *p_sys = p_demux->p_sys;
     dvbpsi_eit_event_t *p_evt;
     vlc_epg_t *p_epg;
+    //bool b_current_following = (p_eit->i_table_id == 0x4e);
 
     msg_Dbg( p_demux, "EITCallBack called" );
     if( !p_eit->b_current_next )
@@ -374,7 +389,7 @@ static void EITCallBack( demux_t *p_demux,
         dvbpsi_descriptor_t *p_dr;
         char                *psz_name = NULL;
         char                *psz_text = NULL;
-        char                *psz_extra = strdup("");
+        char                *psz_extra = NULL;
         int64_t i_start;
         int i_duration;
         int i_min_age = 0;
@@ -386,25 +401,8 @@ static void EITCallBack( demux_t *p_demux,
         /* We have to fix ARIB-B10 as all timestamps are JST */
         if( p_sys->standard == TS_STANDARD_ARIB )
         {
-            time_t i_now = time(NULL);
-            time_t i_tot_time = 0;
-
-            if( p_sys->i_tdt_delta == TS_TIME_DELTA_INVALID )
-                p_sys->i_tdt_delta = (i_start + i_duration - 5) - i_now;
-
-            i_tot_time = i_now + p_sys->i_tdt_delta;
-
-            tzset(); // JST -> UTC
-            i_start += timezone; // FIXME: what about DST?
-            i_tot_time += timezone;
-
-            if( p_evt->i_running_status == TS_SI_RUNSTATUS_UNDEFINED &&
-                (i_start - 5 < i_tot_time &&
-                 i_tot_time < i_start + i_duration + 5) )
-            {
-                p_evt->i_running_status = TS_SI_RUNSTATUS_RUNNING;
-                msg_Dbg( p_demux, "  EIT running status undefined -> running" );
-            }
+            /* See comments on TDT callback */
+            i_start += 9 * 3600;
         }
 
         msg_Dbg( p_demux, "  * event id=%d start_time:%d duration=%d "
@@ -455,10 +453,21 @@ static void EITCallBack( demux_t *p_demux,
                         {
                             msg_Dbg( p_demux, "       - text='%s'", psz_text );
 
-                            psz_extra = xrealloc( psz_extra,
-                                   strlen(psz_extra) + strlen(psz_text) + 1 );
-                            strcat( psz_extra, psz_text );
-                            free( psz_text );
+                            if( psz_extra )
+                            {
+                                size_t i_extra = strlen( psz_extra ) + strlen( psz_text ) + 1;
+                                char *psz_realloc = realloc( psz_extra, i_extra );
+                                if( psz_realloc )
+                                {
+                                    psz_extra = psz_realloc;
+                                    strcat( psz_extra, psz_text );
+                                }
+                                free( psz_text );
+                            }
+                            else
+                            {
+                                psz_extra = psz_text;
+                            }
                         }
                     }
 
@@ -519,6 +528,23 @@ static void EITCallBack( demux_t *p_demux,
             }
         }
 
+        bool b_current_event = false;
+        switch ( p_evt->i_running_status )
+        {
+            case TS_SI_RUNSTATUS_RUNNING:
+                b_current_event = true;
+                break;
+            case TS_SI_RUNSTATUS_UNDEFINED:
+            {
+                if( i_start <= p_sys->i_network_time &&
+                    p_sys->i_network_time < i_start + i_duration )
+                    b_current_event = true;
+                break;
+            }
+            default:
+                break;
+        }
+
         /* */
         if( i_start > 0 )
         {
@@ -528,7 +554,7 @@ static void EITCallBack( demux_t *p_demux,
                               (psz_extra && *psz_extra) ? psz_extra : NULL, i_min_age );
 
             /* Update "now playing" field */
-            if( p_evt->i_running_status == TS_SI_RUNSTATUS_RUNNING )
+            if( b_current_event )
                 vlc_epg_SetCurrent( p_epg, i_start );
         }
 
@@ -537,43 +563,24 @@ static void EITCallBack( demux_t *p_demux,
 
         free( psz_extra );
     }
+
     if( p_epg->i_event > 0 )
     {
-        if( b_current_following &&
-            (  p_sys->programs.i_size == 0 ||
-               p_sys->programs.p_elems[0] ==
-                    p_eit->i_extension
-                ) )
+        if( p_epg->p_current )
         {
             ts_pat_t *p_pat = ts_pid_Get(&p_sys->pids, 0)->u.p_pat;
             ts_pmt_t *p_pmt = ts_pat_Get_pmt(p_pat, p_eit->i_extension);
             if(p_pmt)
             {
-                p_pmt->eit.i_event_length = 0;
-                p_pmt->eit.i_event_start = 0;
-
-                if( p_epg->p_current )
-                {
-                    p_pmt->eit.i_event_start = p_epg->p_current->i_start;
-                    p_pmt->eit.i_event_length = p_epg->p_current->i_duration;
-                }
+                p_pmt->eit.i_event_start = p_epg->p_current->i_start;
+                p_pmt->eit.i_event_length = p_epg->p_current->i_duration;
             }
         }
-        es_out_Control( p_demux->out, ES_OUT_SET_GROUP_EPG,
-                        p_eit->i_extension,
-                        p_epg );
+        es_out_Control( p_demux->out, ES_OUT_SET_GROUP_EPG, p_eit->i_extension, p_epg );
     }
     vlc_epg_Delete( p_epg );
 
     dvbpsi_eit_delete( p_eit );
-}
-static void EITCallBackCurrentFollowing( demux_t *p_demux, dvbpsi_eit_t *p_eit )
-{
-    EITCallBack( p_demux, p_eit, true );
-}
-static void EITCallBackSchedule( demux_t *p_demux, dvbpsi_eit_t *p_eit )
-{
-    EITCallBack( p_demux, p_eit, false );
 }
 
 static void SINewTableCallBack( dvbpsi_t *h, uint8_t i_table_id,
@@ -601,12 +608,13 @@ static void SINewTableCallBack( dvbpsi_t *h, uint8_t i_table_id,
         msg_Dbg( p_demux, "SINewTableCallback: table 0x%x(%d) ext=0x%x(%d)",
                  i_table_id, i_table_id, i_extension, i_extension );
 
-        dvbpsi_eit_callback cb = i_table_id == 0x4e ?
-                                    (dvbpsi_eit_callback)EITCallBackCurrentFollowing :
-                                    (dvbpsi_eit_callback)EITCallBackSchedule;
-
-        if( !dvbpsi_eit_attach( h, i_table_id, i_extension, cb, p_demux ) )
-            msg_Err( p_demux, "SINewTableCallback: failed attaching EITCallback" );
+        /* Do not attach decoders if we can't decode timestamps */
+        if( p_demux->p_sys->i_network_time > 0 )
+        {
+            if( !dvbpsi_eit_attach( h, i_table_id, i_extension,
+                                    (dvbpsi_eit_callback)EITCallBack, p_demux ) )
+                msg_Err( p_demux, "SINewTableCallback: failed attaching EITCallback" );
+        }
     }
     else if( p_pid->i_pid == TS_SI_TDT_PID &&
             (i_table_id == TS_SI_TDT_TABLE_ID || i_table_id == TS_SI_TOT_TABLE_ID) )

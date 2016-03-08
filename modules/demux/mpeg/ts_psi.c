@@ -54,7 +54,7 @@
 
 #include <assert.h>
 
-static void PIDFillFormat( demux_t *, ts_pes_t *p_pes, int i_stream_type, ts_es_data_type_t * );
+static void PIDFillFormat( demux_t *, ts_pes_t *p_pes, int i_stream_type, ts_transport_type_t * );
 static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt );
 
 static int PATCheck( demux_t *p_demux, dvbpsi_pat_t *p_pat )
@@ -158,9 +158,9 @@ static void PATCallBack( void *data, dvbpsi_pat_t *p_dvbpsipat )
                 ARRAY_APPEND( p_sys->programs, p_program->i_number );
             }
 
-            if( SetPIDFilter( p_sys, pmtpid, true ) )
-                p_sys->b_access_control = false;
-            else if ( p_sys->es_creation == DELAY_ES )
+            SetPIDFilter( p_sys, pmtpid, true );
+
+            if ( p_sys->es_creation == DELAY_ES )
                 p_sys->es_creation = CREATE_ES;
         }
     }
@@ -265,27 +265,28 @@ static void ParsePMTRegistrations( demux_t *p_demux, const dvbpsi_descriptor_t  
         if( p_dr->i_tag < 0x40 )
             continue;
 
-        switch(p_dr->i_tag)
+        if( registration_type == TS_PMT_REGISTRATION_NONE )
         {
-            case 0x88: /* EACEM Simulcast HD Logical channels ordering */
-                if( registration_type == TS_PMT_REGISTRATION_NONE )
-                    msg_Dbg( p_demux, PMT_DESC_PREFIX "EACEM Simulcast HD" );
-                    /* TODO: apply visibility flags */
-                break;
+            switch(p_dr->i_tag)
+            {
+                case 0x88: /* EACEM Simulcast HD Logical channels ordering */
+                    if( registration_type == TS_PMT_REGISTRATION_NONE )
+                        msg_Dbg( p_demux, PMT_DESC_PREFIX "EACEM Simulcast HD" );
+                        /* TODO: apply visibility flags */
+                    break;
 
-            case 0xC1:
-                if( registration_type == TS_PMT_REGISTRATION_ARIB )
-                    msg_Dbg( p_demux, PMT_DESC_PREFIX "Digital copy control (0xC1)" );
-                break;
-
-            case 0xDE:
-                if( registration_type == TS_PMT_REGISTRATION_ARIB )
-                    msg_Dbg( p_demux, PMT_DESC_PREFIX "Content availability (0xDE)" );
-                break;
-
-            default:
+                default:
+                    msg_Dbg( p_demux, PMT_DESC_PREFIX "Unknown Private (0x%x)", p_dr->i_tag );
+                    break;
+            }
+        }
+        else if( registration_type == TS_PMT_REGISTRATION_ARIB )
+        {
+            const char *psz_desc = ARIB_B10_Get_PMT_Descriptor_Description( p_dr->i_tag );
+            if( psz_desc )
+                msg_Dbg( p_demux, PMT_DESC_PREFIX "%s (0x%x)", psz_desc, p_dr->i_tag );
+            else
                 msg_Dbg( p_demux, PMT_DESC_PREFIX "Unknown Private (0x%x)", p_dr->i_tag );
-                break;
         }
     }
 
@@ -1189,7 +1190,7 @@ static void PMTParseEsIso639( demux_t *p_demux, ts_pes_es_t *p_es,
 }
 
 static void PIDFillFormat( demux_t *p_demux, ts_pes_t *p_pes,
-                           int i_stream_type, ts_es_data_type_t *p_datatype )
+                           int i_stream_type, ts_transport_type_t *p_datatype )
 {
     es_format_t *fmt = &p_pes->p_es->fmt;
     switch( i_stream_type )
@@ -1227,7 +1228,7 @@ static void PIDFillFormat( demux_t *p_demux, ts_pes_t *p_pes,
         break;
     case 0x82:  /* SCTE-27 (sub) */
         es_format_Init( fmt, SPU_ES, VLC_CODEC_SCTE_27 );
-        *p_datatype = TS_ES_DATA_TABLE_SECTION;
+        *p_datatype = TS_TRANSPORT_SECTIONS;
         ts_sections_processor_Add( p_demux, &p_pes->p_sections_proc, 0xC6, 0x00,
                                    SCTE27_Section_Callback, p_pes );
         break;
@@ -1275,7 +1276,7 @@ static void FillPESFromDvbpsiES( demux_t *p_demux,
                                  const ts_pmt_t *p_pmt,
                                  ts_pes_t *p_pes )
 {
-    ts_es_data_type_t type_change = TS_ES_DATA_PES;
+    ts_transport_type_t type_change = TS_TRANSPORT_PES;
     PIDFillFormat( p_demux, p_pes, p_dvbpsies->i_type, &type_change );
 
     p_pes->i_stream_type = p_dvbpsies->i_type;
@@ -1299,23 +1300,26 @@ static void FillPESFromDvbpsiES( demux_t *p_demux,
 
     if ( !b_registration_applied )
     {
-        p_pes->data_type = type_change; /* Only change type if registration has not changed meaning */
+        p_pes->transport = type_change; /* Only change type if registration has not changed meaning */
 
         switch( p_dvbpsies->i_type )
         {
         case 0x05: /* Private data in sections */
-            p_pes->data_type = TS_ES_DATA_TABLE_SECTION;
+            p_pes->transport = TS_TRANSPORT_SECTIONS;
             break;
         case 0x06:
             /* Handle PES private data */
             PMTSetupEs0x06( p_demux, p_pes, p_dvbpsies );
             break;
-        case 0x0b: /* DSM-CC */
-            p_pes->data_type = TS_ES_DATA_TABLE_SECTION;
+        case 0x0a: /* DSM-CC */
+        case 0x0b:
+        case 0x0c:
+        case 0x0d:
+            p_pes->transport = TS_TRANSPORT_IGNORE;
             break;
         /* All other private or reserved types */
         case 0x13: /* SL in sections */
-            p_pes->data_type = TS_ES_DATA_TABLE_SECTION;
+            p_pes->transport = TS_TRANSPORT_SECTIONS;
             //ft
         case 0x0f:
         case 0x10:
@@ -1468,11 +1472,18 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
         msg_Dbg( p_demux, "  * pid=%d type=0x%x %s",
                  p_dvbpsies->i_pid, p_dvbpsies->i_type, psz_typedesc );
 
+        /* PMT element/component descriptors */
         for( dvbpsi_descriptor_t *p_dr = p_dvbpsies->p_first_descriptor;
              p_dr != NULL; p_dr = p_dr->p_next )
         {
-            msg_Dbg( p_demux, "    - ES descriptor tag 0x%x",
-                     p_dr->i_tag );
+            const char *psz_desc = NULL;
+            if( registration_type == TS_PMT_REGISTRATION_ARIB )
+                psz_desc = ARIB_B10_Get_PMT_Descriptor_Description( p_dr->i_tag );
+
+            if( psz_desc )
+                msg_Dbg( p_demux, "    - ES descriptor %s 0x%x", psz_desc, p_dr->i_tag );
+            else
+                msg_Dbg( p_demux, "    - ES descriptor tag 0x%x", p_dr->i_tag );
         }
 
         const bool b_pid_inuse = ( pespid->type == TYPE_PES );
@@ -1809,7 +1820,7 @@ int UserPmt( demux_t *p_demux, const char *psz_fmt )
             else
             {
                 const int i_stream_type = strtol( psz_opt, NULL, 0 );
-                PIDFillFormat( p_demux, pid->u.p_pes, i_stream_type, &pid->u.p_pes->data_type );
+                PIDFillFormat( p_demux, pid->u.p_pes, i_stream_type, &pid->u.p_pes->transport );
             }
 
             fmt->i_group = i_number;

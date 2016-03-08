@@ -90,6 +90,7 @@ struct access_sys_t
     LIBSSH2_SFTP* sftp_session;
     LIBSSH2_SFTP_HANDLE* file;
     uint64_t filesize;
+    char *psz_base_url;
 };
 
 
@@ -112,6 +113,7 @@ static int Open( vlc_object_t* p_this )
     vlc_url_t url;
     size_t i_len;
     int i_type;
+    int i_result = VLC_EGENERIC;
 
     if( !p_access->psz_location )
         return VLC_EGENERIC;
@@ -254,6 +256,17 @@ static int Open( vlc_object_t* p_this )
         }
         psz_remote_home[i_ret] = '\0';
         psz_path = psz_remote_home;
+
+        /* store base url for directory read */
+        char *base = vlc_path2uri( psz_path, "sftp" );
+        if( !base )
+            goto error;
+        if( -1 == asprintf( &p_sys->psz_base_url, "sftp://%s%s", p_access->psz_location, base + 7 ) )
+        {
+            free( base );
+            goto error;
+        }
+        free( base );
     }
     else
         psz_path = url.psz_path;
@@ -281,6 +294,17 @@ static int Open( vlc_object_t* p_this )
 
         p_access->pf_readdir = DirRead;
         p_access->pf_control = DirControl;
+
+        if( !p_sys->psz_base_url )
+        {
+            if( asprintf( &p_sys->psz_base_url, "sftp://%s", p_access->psz_location ) == -1 )
+                goto error;
+
+            /* trim trailing '/' */
+            size_t len = strlen( p_sys->psz_base_url );
+            if( len > 0 && p_sys->psz_base_url[ len - 1 ] == '/' )
+                p_sys->psz_base_url[ len - 1 ] = 0;
+        }
     }
 
     if( !p_sys->file )
@@ -289,25 +313,17 @@ static int Open( vlc_object_t* p_this )
         goto error;
     }
 
-    free( psz_remote_home );
-    vlc_UrlClean( &url );
-    vlc_credential_clean( &credential );
-    vlc_UrlClean( &credential_url );
-    return VLC_SUCCESS;
+    i_result = VLC_SUCCESS;
 
 error:
-    if( p_sys->file )
-        libssh2_sftp_close_handle( p_sys->file );
-    if( p_sys->ssh_session )
-        libssh2_session_free( p_sys->ssh_session );
     free( psz_remote_home );
     vlc_UrlClean( &url );
     vlc_credential_clean( &credential );
     vlc_UrlClean( &credential_url );
-    if( p_sys->i_socket >= 0 )
-        net_Close( p_sys->i_socket );
-    free( p_sys );
-    return VLC_EGENERIC;
+    if( i_result != VLC_SUCCESS ) {
+        Close( p_this );
+    }
+    return i_result;
 }
 
 
@@ -317,12 +333,16 @@ static void Close( vlc_object_t* p_this )
     access_t*   p_access = (access_t*)p_this;
     access_sys_t* p_sys = p_access->p_sys;
 
-    libssh2_sftp_close_handle( p_sys->file );
-    libssh2_sftp_shutdown( p_sys->sftp_session );
+    if( p_sys->file )
+        libssh2_sftp_close_handle( p_sys->file );
+    if( p_sys->sftp_session )
+        libssh2_sftp_shutdown( p_sys->sftp_session );
+    if( p_sys->ssh_session )
+        libssh2_session_free( p_sys->ssh_session );
+    if( p_sys->i_socket >= 0 )
+        net_Close( p_sys->i_socket );
 
-    libssh2_session_free( p_sys->ssh_session );
-    net_Close( p_sys->i_socket );
-
+    free( p_sys->psz_base_url );
     free( p_sys );
 }
 
@@ -455,7 +475,7 @@ static input_item_t* DirRead( access_t *p_access )
         if( psz_uri == NULL )
             continue;
 
-        if( asprintf( &psz_full_uri, "sftp://%s/%s", p_access->psz_location, psz_uri ) == -1 )
+        if( asprintf( &psz_full_uri, "%s/%s", p_sys->psz_base_url, psz_uri ) == -1 )
         {
             free( psz_uri );
             continue;
