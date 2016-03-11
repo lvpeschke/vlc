@@ -1540,8 +1540,7 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
                      (p_dr->p_data[0] << 8) | p_dr->p_data[1] );
         }
 
-        const bool b_create_es = ((p_pes->p_es->fmt.i_cat == VIDEO_ES) ||
-                                  (p_pes->p_es->fmt.i_cat == AUDIO_ES));
+        const bool b_create_es = (p_pes->p_es->fmt.i_cat != UNKNOWN_ES);
 
         /* Now check and merge */
         if( b_pid_inuse ) /* We need to compare to the existing pes/es */
@@ -1605,21 +1604,20 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
     }
 
     /* Set CAM descrambling */
-    if( !ProgramIsSelected( p_sys, p_pmt->i_number ) )
+    if( ProgramIsSelected( p_sys, p_pmt->i_number ) )
     {
-        dvbpsi_pmt_delete( p_dvbpsipmt );
-    }
-    else if( stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA,
-                             p_dvbpsipmt ) != VLC_SUCCESS )
-    {
-        if ( p_sys->standard == TS_STANDARD_ARIB && !p_sys->arib.b25stream )
+        /* DTV/CAM takes ownership of p_dvbpsipmt on success */
+        if( stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA, p_dvbpsipmt ) != VLC_SUCCESS )
         {
-            p_sys->arib.b25stream = stream_FilterNew( p_demux->s, "aribcam" );
-            p_sys->stream = ( p_sys->arib.b25stream ) ? p_sys->arib.b25stream : p_demux->s;
-            if (!p_sys->arib.b25stream)
-                dvbpsi_pmt_delete( p_dvbpsipmt );
-        } else dvbpsi_pmt_delete( p_dvbpsipmt );
+            if ( p_sys->standard == TS_STANDARD_ARIB && !p_sys->arib.b25stream )
+            {
+                p_sys->arib.b25stream = stream_FilterNew( p_demux->s, "aribcam" );
+                p_sys->stream = ( p_sys->arib.b25stream ) ? p_sys->arib.b25stream : p_demux->s;
+            }
+            dvbpsi_pmt_delete( p_dvbpsipmt );
+        }
     }
+    else dvbpsi_pmt_delete( p_dvbpsipmt );
 
      /* Add arbitrary PID from here */
     if ( p_sys->standard == TS_STANDARD_ATSC )
@@ -1702,8 +1700,6 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
         PIDRelease( p_demux, pid_to_decref.p_elems[i] );
     ARRAY_RESET( pid_to_decref );
 
-    UpdatePESFilters( p_demux, p_sys->b_es_all );
-
     if( !p_sys->b_trust_pcr )
     {
         int i_cand = FindPCRCandidate( p_pmt );
@@ -1712,6 +1708,8 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
         msg_Warn( p_demux, "PCR not trusted for program %d, set up workaround using pid %d",
                   p_pmt->i_number, i_cand );
     }
+
+    UpdatePESFilters( p_demux, p_sys->b_es_all );
 
     /* Probe Boundaries */
     if( p_sys->b_canfastseek && p_pmt->i_last_dts == -1 )

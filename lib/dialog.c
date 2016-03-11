@@ -45,75 +45,74 @@ vlc_to_libvlc_dialog_question_type(vlc_dialog_question_type i_type)
 }
 
 static void
-display_error_cb(const char *psz_title, const char *psz_text, void *p_data)
+display_error_cb(void *p_data, const char *psz_title, const char *psz_text)
 {
     libvlc_instance_t *p_instance = p_data;
 
-    p_instance->dialog.cbs.pf_display_error(psz_title, psz_text,
-                                            p_instance->dialog.data);
+    p_instance->dialog.cbs.pf_display_error(p_instance->dialog.data, psz_title,
+                                            psz_text);
 }
 
 static void
-display_login_cb(vlc_dialog_id *p_id, const char *psz_title,
+display_login_cb(void *p_data, vlc_dialog_id *p_id, const char *psz_title,
                  const char *psz_text, const char *psz_default_username,
-                 bool b_ask_store, void *p_data)
+                 bool b_ask_store)
 {
     libvlc_instance_t *p_instance = p_data;
 
-    p_instance->dialog.cbs.pf_display_login((libvlc_dialog_id *) p_id,
-                                             psz_title, psz_text,
-                                             psz_default_username,
-                                             b_ask_store,
-                                             p_instance->dialog.data);
+    p_instance->dialog.cbs.pf_display_login(p_instance->dialog.data,
+                                            (libvlc_dialog_id *) p_id,
+                                            psz_title, psz_text,
+                                            psz_default_username, b_ask_store);
 }
 
 static void
-display_question_cb(vlc_dialog_id *p_id, const char *psz_title,
+display_question_cb(void *p_data, vlc_dialog_id *p_id, const char *psz_title,
                     const char *psz_text, vlc_dialog_question_type i_type,
                     const char *psz_cancel, const char *psz_action1,
-                    const char *psz_action2, void *p_data)
+                    const char *psz_action2)
 {
     libvlc_instance_t *p_instance = p_data;
     const libvlc_dialog_question_type i_ltype =
         vlc_to_libvlc_dialog_question_type(i_type);
 
-    p_instance->dialog.cbs.pf_display_question((libvlc_dialog_id *) p_id,
+    p_instance->dialog.cbs.pf_display_question(p_instance->dialog.data,
+                                               (libvlc_dialog_id *) p_id,
                                                psz_title, psz_text, i_ltype,
                                                psz_cancel,
-                                               psz_action1, psz_action2,
-                                               p_instance->dialog.data);
+                                               psz_action1, psz_action2);
 }
 
 static void
-display_progress_cb(vlc_dialog_id *p_id, const char *psz_title,
+display_progress_cb(void *p_data, vlc_dialog_id *p_id, const char *psz_title,
                     const char *psz_text, bool b_indeterminate,
-                    float f_position, const char *psz_cancel, void *p_data)
+                    float f_position, const char *psz_cancel)
 {
     libvlc_instance_t *p_instance = p_data;
 
-    p_instance->dialog.cbs.pf_display_progress((libvlc_dialog_id *) p_id,
+    p_instance->dialog.cbs.pf_display_progress(p_instance->dialog.data,
+                                               (libvlc_dialog_id *) p_id,
                                                psz_title, psz_text,
                                                b_indeterminate, f_position,
-                                               psz_cancel,
-                                               p_instance->dialog.data);
+                                               psz_cancel);
 }
 
 static void
-cancel_cb(vlc_dialog_id *p_id, void *p_data)
+cancel_cb(void *p_data, vlc_dialog_id *p_id)
 {
     libvlc_instance_t *p_instance = p_data;
-    p_instance->dialog.cbs.pf_cancel((libvlc_dialog_id *)p_id,
-                                     p_instance->dialog.data);
+    p_instance->dialog.cbs.pf_cancel(p_instance->dialog.data,
+                                     (libvlc_dialog_id *)p_id);
 }
 
 static void
-update_progress_cb(vlc_dialog_id *p_id, float f_position, const char *psz_text,
-                   void *p_data)
+update_progress_cb(void *p_data, vlc_dialog_id *p_id, float f_position,
+                   const char *psz_text)
 {
     libvlc_instance_t *p_instance = p_data;
-    p_instance->dialog.cbs.pf_update_progress((libvlc_dialog_id *) p_id,
-                                              f_position, psz_text,
-                                              p_instance->dialog.data);
+    p_instance->dialog.cbs.pf_update_progress(p_instance->dialog.data,
+                                              (libvlc_dialog_id *) p_id,
+                                              f_position, psz_text);
 }
 
 void
