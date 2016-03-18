@@ -38,7 +38,6 @@
 #include <vlc_stream.h>
 #include <vlc_demux.h>
 
-#define LUA_COMPAT_APIINTCASTS
 #define LUA_COMPAT_MODULE
 #include <lua.h>        /* Low level lua C API */
 #include <lauxlib.h>    /* Higher level C API */
@@ -49,6 +48,24 @@
 # define lua_objlen(L,idx)         lua_rawlen(L,idx)
 # define lua_strlen(L,idx)         lua_rawlen(L,idx)
 #endif
+
+#if LUA_VERSION_NUM >= 503
+# undef luaL_register
+# define luaL_register(L, n, l) luaL_setfuncs(L, (l), 0)
+# define luaL_register_namespace(L, n, l) \
+    lua_getglobal( L, n );      \
+    if( lua_isnil( L, -1 ) )    \
+    {                           \
+        lua_pop( L, 1 );        \
+        lua_newtable( L );      \
+    }                           \
+    luaL_setfuncs( L, (l), 0 ); \
+    lua_pushvalue( L, -1 );     \
+    lua_setglobal( L, n );
+#else
+# define luaL_register_namespace(L, n, l) luaL_register( L, n, (l) );
+#endif
+
 
 /*****************************************************************************
  * Module entry points

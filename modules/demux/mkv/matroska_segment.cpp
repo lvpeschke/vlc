@@ -480,14 +480,8 @@ bool matroska_segment_c::PreloadFamily( const matroska_segment_c & of_segment )
     if ( b_preloaded )
         return false;
 
-    for (size_t i=0; i<families.size(); i++)
-    {
-        for (size_t j=0; j<of_segment.families.size(); j++)
-        {
-            if ( *(families[i]) == *(of_segment.families[j]) )
-                return Preload( );
-        }
-    }
+    if ( SameFamily( of_segment ) )
+        return Preload( );
 
     return false;
 }
@@ -516,6 +510,19 @@ bool matroska_segment_c::CompareSegmentUIDs( const matroska_segment_c * p_item_a
           && *p_tmp == *p_item_b->p_prev_segment_uid )
         return true;
 
+    return false;
+}
+
+bool matroska_segment_c::SameFamily( const matroska_segment_c & of_segment ) const
+{
+    for (size_t i=0; i<families.size(); i++)
+    {
+        for (size_t j=0; j<of_segment.families.size(); j++)
+        {
+            if ( *(families[i]) == *(of_segment.families[j]) )
+                return true;
+        }
+    }
     return false;
 }
 
@@ -765,8 +772,6 @@ void matroska_segment_c::Seek( mtime_t i_mk_date, mtime_t i_mk_time_offset, int6
     int i_cat;
     bool b_has_key = false;
 
-    std::vector<spoint> spoints;
-
     for( size_t i = 0; i < tracks.size(); i++)
         tracks[i]->i_last_dts = VLC_TS_INVALID;
 
@@ -846,6 +851,7 @@ void matroska_segment_c::Seek( mtime_t i_mk_date, mtime_t i_mk_time_offset, int6
     sys.i_start_pts = i_mk_date + VLC_TS_0;
 
     /* now parse until key frame */
+    std::vector<spoint> spoints;
     const int es_types[3] = { VIDEO_ES, AUDIO_ES, SPU_ES };
     i_cat = es_types[0];
     mtime_t i_seek_preroll = 0;
