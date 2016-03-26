@@ -297,13 +297,44 @@ end:
  *
  *****************************************************************************/
 
+static struct
+{
+    long i_return_code;
+    const char * const psz_string;
+} const errors_to_string[] = {
+    { E_UNEXPECTED,  "Unexpected error" },
+    { E_NOTIMPL,     "Not implemented" },
+    { E_OUTOFMEMORY, "Out of memory" },
+    { E_INVALIDARG,  "Invalid argument" },
+    { E_NOINTERFACE, "No interface" },
+    { E_POINTER,     "Invalid pointer" },
+    { E_HANDLE,      "Invalid handle" },
+    { E_ABORT,       "Aborted" },
+    { E_FAIL,        "Failed" },
+    { E_ACCESSDENIED,"Access denied" }
+};
+
+static const char * lookup_error_string(long i_code)
+{
+    for(size_t i=0; i<ARRAY_SIZE(errors_to_string); i++)
+    {
+        if(errors_to_string[i].i_return_code == i_code)
+            return errors_to_string[i].psz_string;
+    }
+    return NULL;
+}
+
 static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
 {
     vout_display_sys_t *sys = vd->sys;
 #define CHECK(message) do { \
     if (result != S_OK) \
     { \
-        msg_Err(vd, message ": 0x%X", result); \
+        const char *psz_err = lookup_error_string(result); \
+        if(psz_err)\
+            msg_Err(vd, message ": %s", psz_err); \
+        else \
+            msg_Err(vd, message ": 0x%X", result); \
         goto error; \
     } \
 } while(0)
@@ -320,6 +351,7 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
     decklink_sys->users++;
 
     /* wait until aout is ready */
+    msg_Info(vd, "Waiting for DeckLink audio input module to start");
     while (decklink_sys->i_rate == -1)
         vlc_cond_wait(&decklink_sys->cond, &decklink_sys->lock);
 
@@ -389,7 +421,10 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
         int w, h;
         result = p_display_iterator->Next(&p_display_mode);
         if (result != S_OK)
+        {
+            msg_Dbg(vd, "No more modes");
             break;
+        }
 
         BMDDisplayMode mode_id = ntohl(p_display_mode->GetDisplayMode());
 
@@ -414,6 +449,8 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
 
         decklink_sys->i_width = w;
         decklink_sys->i_height = h;
+
+        msg_Dbg(vd, "Selected mode(%dx%d)", w, h);
 
         mode_id = htonl(mode_id);
 
@@ -444,7 +481,7 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
         break;
     }
 
-    if (decklink_sys->i_width < 0 || decklink_sys->i_width & 1)
+    if (decklink_sys->i_width <= 0 || decklink_sys->i_width & 1)
     {
         msg_Err(vd, "Unknown video mode specified.");
         goto error;
@@ -457,8 +494,8 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
             bmdAudioSampleType16bitInteger,
             /*decklink_sys->i_channels*/ 2,
             bmdAudioOutputStreamTimestamped);
+        CHECK("Could not start audio output");
     }
-    CHECK("Could not start audio output");
 
     /* start */
     result = decklink_sys->p_output->StartScheduledPlayback(

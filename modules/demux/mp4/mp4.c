@@ -2348,6 +2348,76 @@ static int TrackCreateES( demux_t *p_demux, mp4_track_t *p_track,
     return VLC_SUCCESS;
 }
 
+/* *** Try to find nearest sync points *** */
+static int TrackGetNearestSeekPoint( demux_t *p_demux, mp4_track_t *p_track,
+                                     uint32_t i_sample, uint32_t *pi_sync_sample )
+{
+    int i_ret = VLC_EGENERIC;
+    *pi_sync_sample = 0;
+
+    const MP4_Box_t *p_stss;
+    if( ( p_stss = MP4_BoxGet( p_track->p_stbl, "stss" ) ) )
+    {
+        const MP4_Box_data_stss_t *p_stss_data = BOXDATA(p_stss);
+        msg_Dbg( p_demux, "track[Id 0x%x] using Sync Sample Box (stss)",
+                 p_track->i_track_ID );
+        for( unsigned i_index = 0; i_index < p_stss_data->i_entry_count; i_index++ )
+        {
+            if( i_index >= p_stss_data->i_entry_count - 1 ||
+                i_sample < p_stss_data->i_sample_number[i_index+1] )
+            {
+                *pi_sync_sample = p_stss_data->i_sample_number[i_index];
+                msg_Dbg( p_demux, "stss gives %d --> %" PRIu32 " (sample number)",
+                         i_sample, *pi_sync_sample );
+                i_ret = VLC_SUCCESS;
+                break;
+            }
+        }
+    }
+
+    /* try rap samples groups */
+    const MP4_Box_t *p_sbgp = MP4_BoxGet( p_track->p_stbl, "sbgp" );
+    for( ; p_sbgp; p_sbgp = p_sbgp->p_next )
+    {
+        const MP4_Box_data_sbgp_t *p_sbgp_data = BOXDATA(p_sbgp);
+        if( p_sbgp->i_type != ATOM_sbgp || !p_sbgp_data )
+            continue;
+
+        if( p_sbgp_data->i_grouping_type == SAMPLEGROUP_rap )
+        {
+            uint32_t i_group_sample = 0;
+            for ( uint32_t i=0; i<p_sbgp_data->i_entry_count; i++ )
+            {
+                /* Sample belongs to rap group ? */
+                if( p_sbgp_data->entries.pi_group_description_index[i] != 0 )
+                {
+                    if( i_sample < i_group_sample )
+                    {
+                        msg_Dbg( p_demux, "sbgp lookup failed %" PRIu32 " (sample number)",
+                                 i_sample );
+                        break;
+                    }
+                    else if ( i_sample >= i_group_sample &&
+                              *pi_sync_sample < i_group_sample )
+                    {
+                        *pi_sync_sample = i_group_sample;
+                        i_ret = VLC_SUCCESS;
+                    }
+                }
+                i_group_sample += p_sbgp_data->entries.pi_sample_count[i];
+            }
+
+            if( i_ret == VLC_SUCCESS && *pi_sync_sample )
+            {
+                msg_Dbg( p_demux, "sbgp gives %d --> %" PRIu32 " (sample number)",
+                         i_sample, *pi_sync_sample );
+            }
+        }
+    }
+
+    return i_ret;
+}
+
 /* given a time it return sample/chunk
  * it also update elst field of the track
  */
@@ -2356,7 +2426,6 @@ static int TrackTimeToSampleChunk( demux_t *p_demux, mp4_track_t *p_track,
                                    uint32_t *pi_sample )
 {
     demux_sys_t *p_sys = p_demux->p_sys;
-    MP4_Box_t   *p_box_stss;
     uint64_t     i_dts;
     unsigned int i_sample;
     unsigned int i_chunk;
@@ -2461,42 +2530,25 @@ static int TrackTimeToSampleChunk( demux_t *p_demux, mp4_track_t *p_track,
 
 
     /* *** Try to find nearest sync points *** */
-    if( ( p_box_stss = MP4_BoxGet( p_track->p_stbl, "stss" ) ) )
+    uint32_t i_sync_sample;
+    if( VLC_SUCCESS ==
+        TrackGetNearestSeekPoint( p_demux, p_track, i_sample, &i_sync_sample ) )
     {
-        MP4_Box_data_stss_t *p_stss = p_box_stss->data.p_stss;
-        msg_Dbg( p_demux, "track[Id 0x%x] using Sync Sample Box (stss)",
-                 p_track->i_track_ID );
-        for( unsigned i_index = 0; i_index < p_stss->i_entry_count; i_index++ )
+        /* Go to chunk */
+        if( i_sync_sample <= i_sample )
         {
-            if( i_index >= p_stss->i_entry_count - 1 ||
-                i_sample < p_stss->i_sample_number[i_index+1] )
-            {
-                unsigned i_sync_sample = p_stss->i_sample_number[i_index];
-                msg_Dbg( p_demux, "stss gives %d --> %d (sample number)",
-                         i_sample, i_sync_sample );
-
-                if( i_sync_sample <= i_sample )
-                {
-                    while( i_chunk > 0 &&
-                           i_sync_sample < p_track->chunk[i_chunk].i_sample_first )
-                        i_chunk--;
-                }
-                else
-                {
-                    while( i_chunk < p_track->i_chunk_count - 1 &&
-                           i_sync_sample >= p_track->chunk[i_chunk].i_sample_first +
-                                            p_track->chunk[i_chunk].i_sample_count )
-                        i_chunk++;
-                }
-                i_sample = i_sync_sample;
-                break;
-            }
+            while( i_chunk > 0 &&
+                   i_sync_sample < p_track->chunk[i_chunk].i_sample_first )
+                i_chunk--;
         }
-    }
-    else
-    {
-        msg_Dbg( p_demux, "track[Id 0x%x] does not provide Sync "
-                 "Sample Box (stss)", p_track->i_track_ID );
+        else
+        {
+            while( i_chunk < p_track->i_chunk_count - 1 &&
+                   i_sync_sample >= p_track->chunk[i_chunk].i_sample_first +
+                                    p_track->chunk[i_chunk].i_sample_count )
+                i_chunk++;
+        }
+        i_sample = i_sync_sample;
     }
 
     *pi_chunk  = i_chunk;

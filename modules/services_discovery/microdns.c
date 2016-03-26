@@ -40,8 +40,6 @@ static void Close( vlc_object_t * );
 
 VLC_SD_PROBE_HELPER( "microdns", "mDNS Network Discovery", SD_CAT_LAN )
 
-#define NAMES_TEXT N_( "Service Names" )
-#define NAMES_LONGTEXT N_( "List of names to look for, separated with ','" )
 
 #define CFG_PREFIX "sd-microdns-"
 
@@ -59,7 +57,6 @@ vlc_module_begin()
     set_capability( "services_discovery", 0 )
     set_callbacks( Open, Close )
     add_shortcut( "mdns", "microdns" )
-    add_string( CFG_PREFIX "names", NULL, NAMES_TEXT, NAMES_LONGTEXT, false )
     VLC_SD_PROBE_SUBMODULE
 vlc_module_end ()
 
@@ -68,7 +65,6 @@ struct services_discovery_sys_t
     vlc_thread_t        thread;
     atomic_bool         stop;
     struct mdns_ctx *   p_microdns;
-    char *              psz_service_names_opt;
     const char **       ppsz_service_names;
     unsigned int        i_nb_service_names;
     vlc_array_t         items;
@@ -103,7 +99,6 @@ static const struct
 #define NB_PROTOCOLS (sizeof(protocols) / sizeof(*protocols))
 
 static const char *const ppsz_options[] = {
-    "names",
     NULL
 };
 
@@ -131,26 +126,43 @@ strrcmp(const char *s1, const char *s2)
 }
 
 static int
-items_add( services_discovery_t *p_sd, char *psz_uri,
-           input_item_t *p_input_item )
+items_add_input( services_discovery_t *p_sd, char *psz_uri,
+                 const char *psz_name )
 {
     services_discovery_sys_t *p_sys = p_sd->p_sys;
 
     struct item *p_item = malloc( sizeof(struct item) );
     if( p_item == NULL )
+    {
+        free( psz_uri );
         return VLC_ENOMEM;
+    }
+
+    input_item_t *p_input_item =
+        input_item_NewWithTypeExt( psz_uri, psz_name, 0, NULL, 0, -1,
+                                   ITEM_TYPE_NODE, true );
+    if( p_input_item == NULL )
+    {
+        free( psz_uri );
+        free( p_item );
+        return VLC_ENOMEM;
+    }
+
     p_item->psz_uri = psz_uri;
     p_item->p_input_item = p_input_item;
     p_item->i_last_seen = mdate();
     vlc_array_append( &p_sys->items, p_item );
     services_discovery_AddItem( p_sd, p_input_item, NULL );
+
     return VLC_SUCCESS;
 }
 
 static void
-items_release( struct item *p_item )
+items_release( services_discovery_t *p_sd, struct item *p_item, bool b_notify )
 {
     input_item_Release( p_item->p_input_item );
+    if( b_notify )
+        services_discovery_RemoveItem( p_sd, p_item->p_input_item );
     free( p_item->psz_uri );
     free( p_item );
 }
@@ -184,8 +196,7 @@ items_timeout( services_discovery_t *p_sd )
         struct item *p_item = vlc_array_item_at_index( &p_sys->items, i );
         if( i_now - p_item->i_last_seen > TIMEOUT )
         {
-            services_discovery_RemoveItem( p_sd, p_item->p_input_item );
-            items_release( p_item );
+            items_release( p_sd, p_item, true );
             vlc_array_remove( &p_sys->items, i-- );
         }
     }
@@ -199,7 +210,7 @@ items_clear( services_discovery_t *p_sd )
     for( int i = 0; i < vlc_array_count( &p_sys->items ); ++i )
     {
         struct item *p_item = vlc_array_item_at_index( &p_sys->items, i );
-        items_release( p_item );
+        items_release( p_sd, p_item, false );
     }
     vlc_array_clear( &p_sys->items );
 }
@@ -288,17 +299,7 @@ new_entries_cb( void *p_this, int i_status,
             free( psz_uri );
             continue;
         }
-        input_item_t *p_input_item =
-            input_item_NewWithTypeExt( psz_uri, p_srv->psz_device_name,
-                                       0, NULL, 0, -1, ITEM_TYPE_NODE, true );
-
-        if( p_input_item != NULL
-         && items_add( p_sd, psz_uri, p_input_item ) != VLC_SUCCESS )
-        {
-            if( p_input_item != NULL )
-                input_item_Release( p_input_item );
-            free( psz_uri );
-        }
+        items_add_input( p_sd, psz_uri, p_srv->psz_device_name );
     }
 
     for( i_srv_idx = 0; i_srv_idx < i_nb_srv; ++i_srv_idx )
@@ -354,54 +355,18 @@ Open( vlc_object_t *p_obj )
     vlc_array_init( &p_sys->items );
     config_ChainParse( p_sd, CFG_PREFIX, ppsz_options, p_sd->p_cfg );
 
-    p_sys->psz_service_names_opt =
-        var_GetNonEmptyString( p_sd, CFG_PREFIX "names" );
-    if( p_sys->psz_service_names_opt )
+    /* Listen to protocols that are handled by VLC */
+    const unsigned i_count = NB_PROTOCOLS;
+    p_sys->ppsz_service_names = calloc( i_count, sizeof(char*) );
+    if( !p_sys->ppsz_service_names )
+        goto error;
+
+    for( unsigned int i = 0; i < i_count; ++i )
     {
-        /* Listen to protocols from names option */
-        unsigned int i_count = 0;
-        size_t i_size;
-        char *psz = p_sys->psz_service_names_opt;
-        const char *psz_end = psz + strlen(psz);
-        while( psz < psz_end && ( i_size = strcspn(psz, ",") ) > 0 )
-        {
-            i_count++;
-            psz += i_size + 1;
-        }
-        assert( i_count > 0 );
-
-        p_sys->ppsz_service_names = calloc( i_count, sizeof(char*) );
-        if( !p_sys->ppsz_service_names )
-            goto error;
-
-        psz = p_sys->psz_service_names_opt;
-        for( unsigned int i = 0; i < i_count; ++i )
-        {
-            p_sys->ppsz_service_names[i] = psz;
-
-            i_size = strcspn( psz, "," );
-            assert( i_size > 0 );
-
-            psz[i_size] = '\0';
-            psz += i_size + 1;
-        }
-        p_sys->i_nb_service_names = i_count;
-    }
-    else
-    {
-        /* Listen to protocols that are handled by VLC */
-        const unsigned i_count = NB_PROTOCOLS;
-        p_sys->ppsz_service_names = calloc( i_count, sizeof(char*) );
-        if( !p_sys->ppsz_service_names )
-            goto error;
-
-        for( unsigned int i = 0; i < i_count; ++i )
-        {
-            /* Listen to a protocol only if a module can handle it */
-            if( module_exists( protocols[i].psz_protocol ) )
-                p_sys->ppsz_service_names[p_sys->i_nb_service_names++] =
-                    protocols[i].psz_service_name;
-        }
+        /* Listen to a protocol only if a module can handle it */
+        if( module_exists( protocols[i].psz_protocol ) )
+            p_sys->ppsz_service_names[p_sys->i_nb_service_names++] =
+                protocols[i].psz_service_name;
     }
 
     i_ret = VLC_EGENERIC;
@@ -431,7 +396,6 @@ Open( vlc_object_t *p_obj )
 error:
     if( p_sys->p_microdns != NULL )
         mdns_destroy( p_sys->p_microdns );
-    free( p_sys->psz_service_names_opt );
     free( p_sys->ppsz_service_names );
     free( p_sys );
     return i_ret;
@@ -449,7 +413,6 @@ Close( vlc_object_t *p_this )
     items_clear( p_sd );
     mdns_destroy( p_sys->p_microdns );
 
-    free( p_sys->psz_service_names_opt );
     free( p_sys->ppsz_service_names );
     free( p_sys );
 }

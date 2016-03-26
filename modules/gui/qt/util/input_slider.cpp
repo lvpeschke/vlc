@@ -51,11 +51,15 @@
 #include <QDebug>
 #include <QSequentialAnimationGroup>
 
-#define MINIMUM 0
-#define MAXIMUM 1000
-#define CHAPTERSSPOTSIZE 3
-#define FADEDURATION 300
-#define FADEOUTDELAY 2000
+namespace {
+    int const MIN_SLIDER_VALUE = 0;
+    int const MAX_SLIDER_VALUE = 10000;
+
+    int const CHAPTER_SPOT_SIZE = 3;
+
+    int const FADE_DURATION = 300;
+    int const FADEOUT_DELAY = 2000;
+}
 
 SeekSlider::SeekSlider( Qt::Orientation q, QWidget *_parent, bool _static )
           : QSlider( q, _parent ), b_classic( _static ), animLoading( NULL )
@@ -109,7 +113,7 @@ SeekSlider::SeekSlider( Qt::Orientation q, QWidget *_parent, bool _static )
     mTimeTooltip->setMouseTracking( true );
 
     /* Properties */
-    setRange( MINIMUM, MAXIMUM );
+    setRange( MIN_SLIDER_VALUE, MAX_SLIDER_VALUE );
     setSingleStep( 2 );
     setPageStep( 10 );
     setMouseTracking( true );
@@ -129,7 +133,7 @@ SeekSlider::SeekSlider( Qt::Orientation q, QWidget *_parent, bool _static )
     secstotimestr( psz_length, 0 );
 
     animHandle = new QPropertyAnimation( this, "handleOpacity", this );
-    animHandle->setDuration( FADEDURATION );
+    animHandle->setDuration( FADE_DURATION );
     animHandle->setStartValue( 0.0 );
     animHandle->setEndValue( 1.0 );
 
@@ -151,7 +155,7 @@ SeekSlider::SeekSlider( Qt::Orientation q, QWidget *_parent, bool _static )
 
     hideHandleTimer = new QTimer( this );
     hideHandleTimer->setSingleShot( true );
-    hideHandleTimer->setInterval( FADEOUTDELAY );
+    hideHandleTimer->setInterval( FADEOUT_DELAY );
 
     startAnimLoadingTimer = new QTimer( this );
     startAnimLoadingTimer->setSingleShot( true );
@@ -205,7 +209,7 @@ void SeekSlider::setPosition( float pos, int64_t time, int length )
 
     if( !isSliding )
     {
-        setValue( (int)( pos * 1000.0 ) );
+        setValue( pos * static_cast<float>( maximum() ) );
         if ( animLoading != NULL && pos >= 0.0f && animLoading->state() != QAbstractAnimation::Stopped )
         {
             animLoading->stop();
@@ -226,7 +230,7 @@ void SeekSlider::startSeekTimer()
 
 void SeekSlider::updatePos()
 {
-    float f_pos = (float)( value() ) / 1000.0;
+    float f_pos = value() / static_cast<float>( maximum() );
     emit sliderDragged( f_pos ); /* Send new position to VLC's core */
 }
 
@@ -300,8 +304,8 @@ void SeekSlider::mousePressEvent( QMouseEvent* event )
         if ( orientation() == Qt::Horizontal ) /* TODO: vertical */
         {
              /* only on chapters zone */
-            if ( event->y() < CHAPTERSSPOTSIZE ||
-                 event->y() > ( size().height() - CHAPTERSSPOTSIZE ) )
+            if ( event->y() < CHAPTER_SPOT_SIZE ||
+                 event->y() > ( size().height() - CHAPTER_SPOT_SIZE ) )
             {
                 QList<SeekPoint> points = chapters->getPoints();
                 int i_selected = -1;
@@ -332,7 +336,7 @@ void SeekSlider::mousePressEvent( QMouseEvent* event )
 
     isSliding = true ;
 
-    setValue( QStyle::sliderValueFromPosition( MINIMUM, MAXIMUM, event->x() - handleLength() / 2, width() - handleLength(), false ) );
+    setValue( getValueFromXPos( event->x() ) );
     emit sliderMoved( value() );
     event->accept();
 }
@@ -349,7 +353,7 @@ void SeekSlider::mouseMoveEvent( QMouseEvent *event )
 
     if( isSliding )
     {
-        setValue( QStyle::sliderValueFromPosition( MINIMUM, MAXIMUM, event->x() - handleLength() / 2, width() - handleLength(), false) );
+        setValue( getValueFromXPos( event->x() ) );
         emit sliderMoved( value() );
     }
 
@@ -380,7 +384,7 @@ void SeekSlider::mouseMoveEvent( QMouseEvent *event )
         QPoint target( event->globalX() - ( event->x() - posX ),
                 QWidget::mapToGlobal( QPoint( 0, 0 ) ).y() );
         if( likely( size().width() > handleLength() ) ) {
-            secstotimestr( psz_length, ( ( posX - margin ) * inputLength ) / ( size().width() - handleLength() ) );
+            secstotimestr( psz_length, getValuePercentageFromXPos( event->x() ) * inputLength );
             mTimeTooltip->setTip( target, psz_length, chapterLabel );
         }
     }
@@ -396,7 +400,7 @@ void SeekSlider::wheelEvent( QWheelEvent *event )
          Since delta is in 1/8 of ° and mouse have steps of 15 °
          and that our slider is in 0.1% and we want one step to be a 1%
          increment of position */
-        emit sliderDragged( value() / 1000.0 );
+        emit sliderDragged( value() / static_cast<float>( maximum() ) );
     }
     event->accept();
 }
@@ -525,6 +529,21 @@ inline int SeekSlider::handleLength()
     initStyleOption( &option );
     mHandleLength = style()->pixelMetric( QStyle::PM_SliderLength, &option );
     return mHandleLength;
+}
+
+inline int SeekSlider::getValueFromXPos( int posX )
+{
+    return QStyle::sliderValueFromPosition(
+        minimum(), maximum(),
+        posX    - handleLength() / 2,
+        width() - handleLength(),
+        false
+    );
+}
+
+inline float SeekSlider::getValuePercentageFromXPos( int posX )
+{
+    return getValueFromXPos( posX ) / static_cast<float>( maximum() );
 }
 
 void SeekSlider::hideHandle()
