@@ -26,6 +26,9 @@
 #include <vlc_network.h>
 #include <cerrno>
 
+/* LVP added */
+#include <iostream>
+
 using namespace adaptive::http;
 
 Socket::Socket()
@@ -74,7 +77,7 @@ void Socket::disconnect()
     if (netfd >= 0)
     {
         /* LVP added */
-        msg_Dbg(NULL, "LVP Socket disconnected!!");
+        cerr << "LVP Socket disconnected!!" << endl;
 
         net_Close(netfd);
         netfd = -1;
@@ -187,5 +190,5 @@ void TLSSocket::disconnect()
     Socket::disconnect();
 
     /* LVP added */
-    msg_Dbg(NULL, "LVP TLSSocket disconnected!!");
+    cerr << "LVP TLSSocket disconnected!!" << endl;
 }
