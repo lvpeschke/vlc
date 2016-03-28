@@ -47,6 +47,10 @@ Socket::~Socket()
 
 bool Socket::connect(vlc_object_t *p_object, const std::string &hostname, int port)
 {
+
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered Socket::connect on port %d", port);
+
     netfd = net_ConnectTCP(p_object, hostname.c_str(), port);
 
     if(netfd == -1)
@@ -69,6 +73,9 @@ void Socket::disconnect()
 {
     if (netfd >= 0)
     {
+        /* LVP added */
+        msg_Dbg(NULL, "LVP Socket disconnected!!");
+
         net_Close(netfd);
         netfd = -1;
     }
@@ -113,6 +120,9 @@ TLSSocket::~TLSSocket()
 
 bool TLSSocket::connect(vlc_object_t *p_object, const std::string &hostname, int port)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered TLSSocket::connect on port %d, will first disconnect", port);
+
     disconnect();
     if(!Socket::connect(p_object, hostname, port))
         return false;
@@ -175,4 +185,7 @@ void TLSSocket::disconnect()
     tls = NULL;
     creds = NULL;
     Socket::disconnect();
+
+    /* LVP added */
+    msg_Dbg(NULL, "LVP TLSSocket disconnected!!");
 }

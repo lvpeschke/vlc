@@ -100,6 +100,9 @@ void HTTPConnection::disconnect()
     contentLength = 0;
     bytesRange = BytesRange();
     socket->disconnect();
+
+    /* LVP added */
+    msg_Dbg(p_object, "LVP HTTPConnection disconnected!!");
 }
 
 int HTTPConnection::request(const std::string &path, const BytesRange &range)
@@ -248,7 +251,13 @@ void HTTPConnection::setUsed( bool b )
             bytesRange = BytesRange();
         }
         else  /* We can't resend request if we haven't finished reading */
+        {
+            /* LVP added */
+            msg_Dbg(p_object, "LVP HTTPConnection::setUsed seems to have failed");
+
             disconnect();
+        }
+
     }
 }
 
