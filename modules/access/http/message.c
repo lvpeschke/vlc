@@ -186,7 +186,7 @@ void vlc_http_msg_destroy(struct vlc_http_msg *m)
     if (m->payload != NULL) {
         vlc_http_stream_close(m->payload, false);
         /* LVP added */
-        msg_Dbg(NULL, "LVP vlc_http_stream_close: called");
+        fprintf(stderr, "LVP vlc_http_stream_close: called");
     }
 
     for (unsigned i = 0; i < m->count; i++)
@@ -271,7 +271,7 @@ struct vlc_http_msg *vlc_http_msg_get_initial(struct vlc_http_stream *s)
     if (m == NULL) {
         vlc_http_stream_close(s, false);
         /* LVP added */
-        msg_Dbg(NULL, "LVP vlc_http_stream_close: called");
+        fprintf(stderr, "LVP vlc_http_stream_close: called");
     }
     return m;
 }
