@@ -345,9 +345,6 @@ static inline struct block_t *vlc_http_stream_read(struct vlc_http_stream *s)
  */
 static inline void vlc_http_stream_close(struct vlc_http_stream *s, bool abort)
 {
-    /* LVP added */
-    msg_Dbg(NULL, "LVP vlc_http_stream_close: called");
-
     s->cbs->close(s, abort);
 }
 
