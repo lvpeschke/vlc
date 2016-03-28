@@ -103,12 +103,12 @@ static int vlc_http_minor(const char *msg)
 
     if (sscanf(msg, "HTTP/1.%1d", &minor) == 1) {
         /* LVP added */
-        msg_Dbg(CO(conn), "LVP vlc_http_minor: passed, minor is %1d", &minor);
+        fprintf(stderr, "LVP vlc_http_minor: passed, minor is %1d", &minor);
         return minor;
     }
 
     /* LVP added */
-    msg_Dbg(CO(conn), "LVP vlc_http_minor: failed, minor is %1d", &minor);
+    fprintf(stderr, "LVP vlc_http_minor: failed, minor is %1d", &minor);
 
     return -1;
 }
