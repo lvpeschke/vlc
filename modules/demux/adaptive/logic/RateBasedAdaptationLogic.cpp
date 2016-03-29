@@ -32,6 +32,9 @@
 #include "../playlist/BasePeriod.h"
 #include "../http/Chunk.h"
 #include "../tools/Debug.hpp"
+/* LVP added */
+#include <iostream>
+#include <ctime>
 
 using namespace adaptive::logic;
 using namespace adaptive;
@@ -143,6 +146,11 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 
     BwDebug(msg_Info(p_obj, "Current bandwidth %zu KiB/s using %u%%",
                     (bpsAvg / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0));
+
+    /* LVP added, TFE */
+    std::cerr << "TFE, " << std::time(nullptr) << ", current bandwidth usage "
+              << (bpsAvg / 8192) << " KiB/s " << ((bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0) << std::endl;
+
     vlc_mutex_unlock(&lock);
 }
 
@@ -158,6 +166,11 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
+
+        /* LVP added, TFE */
+        std::cerr << "TFE, " << std::time(nullptr) << ", new bandwidth usage "
+                  << (usedBps / 8192) << " KiB/s " << ((bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0) << std::endl;
+
         vlc_mutex_unlock(&lock);
     }
 }

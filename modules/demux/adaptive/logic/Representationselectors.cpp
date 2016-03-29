@@ -26,6 +26,9 @@
 #include "../playlist/BaseAdaptationSet.h"
 #include "../playlist/BasePeriod.h"
 #include <limits>
+/* LVP added */
+#include <iostream>
+#include <ctime>
 
 using namespace adaptive::logic;
 
@@ -33,10 +36,13 @@ RepresentationSelector::RepresentationSelector()
 {
 }
 
+/* LVP case 1 */
 BaseRepresentation * RepresentationSelector::select(BaseAdaptationSet *adaptSet) const
 {
-    return select(adaptSet, std::numeric_limits<uint64_t>::max());
+    return select(adaptSet, std::numeric_limits<uint64_t>::max()); /* LVP, case 2 */
 }
+
+/* LVP case 2 */
 BaseRepresentation * RepresentationSelector::select(BaseAdaptationSet *adaptSet, uint64_t bitrate) const
 {
     if (adaptSet == NULL)
@@ -44,17 +50,22 @@ BaseRepresentation * RepresentationSelector::select(BaseAdaptationSet *adaptSet,
 
     BaseRepresentation *best = NULL;
     std::vector<BaseRepresentation *> reps = adaptSet->getRepresentations();
-    BaseRepresentation *candidate = select(reps, (best)?best->getBandwidth():0, bitrate);
+    BaseRepresentation *candidate = select(reps, (best)?best->getBandwidth():0, bitrate); /* LVP, case 3 */
     if (candidate)
     {
-        if (candidate->getBandwidth() > bitrate) /* none matched, returned lowest */
+        if (candidate->getBandwidth() > bitrate) /* none matched, returned lowest */ {
+            /* LVP added, TFE */
+            std::cerr << "TFE, " << std::time(nullptr) << ", base representation, lowest possible" << std::endl;
             return candidate;
+        }
+
         best = candidate;
     }
 
     return best;
 }
 
+/* LVP case 4 */
 BaseRepresentation * RepresentationSelector::select(BaseAdaptationSet *adaptSet, uint64_t bitrate,
                                                 int width, int height) const
 {
@@ -73,11 +84,12 @@ BaseRepresentation * RepresentationSelector::select(BaseAdaptationSet *adaptSet,
     }
 
     if(resMatchReps.empty())
-        return select(adaptSet, bitrate);
+        return select(adaptSet, bitrate); /* LVP, case 2 */
     else
-        return select(resMatchReps, 0, bitrate);
+        return select(resMatchReps, 0, bitrate); /* LVP, case 3 */
 }
 
+/* LVP case 3 */
 BaseRepresentation * RepresentationSelector::select(std::vector<BaseRepresentation *>& reps,
                                                 uint64_t minbitrate, uint64_t maxbitrate) const
 {
@@ -95,6 +107,10 @@ BaseRepresentation * RepresentationSelector::select(std::vector<BaseRepresentati
             minbitrate = (*repIt)->getBandwidth();
         }
     }
+
+    /* LVP added, TFE */
+    if (candidate) std::cerr << "TFE, " << std::time(nullptr) << ", base representation, bw " << candidate->getBandwidth() << std::endl;
+    else std::cerr << "TFE, " << std::time(nullptr) << ", base representation lowest, bw " << lowest->getBandwidth() << std::endl;
 
     if (!candidate)
         return candidate = lowest;
