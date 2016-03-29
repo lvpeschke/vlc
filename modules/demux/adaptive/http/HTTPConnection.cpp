@@ -78,6 +78,14 @@ HTTPConnection::~HTTPConnection()
 
 bool HTTPConnection::canReuse(const ConnectionParams &params_) const
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnection::canReuse, params next");
+    std::cerr << "LVP" <<
+            " available " << available <<
+            ", hostname " << params.getHostname() << ", _hostname " << params_.getHostname() <<
+            ", scheme " << params.getScheme() << ", _scheme " << params_.getScheme() <<
+            ", port " << params.getPort() << ", _port " << params_.getPort() << std::endl;
+
     return ( available &&
              params.getHostname() == params_.getHostname() &&
              params.getScheme() == params_.getScheme() &&

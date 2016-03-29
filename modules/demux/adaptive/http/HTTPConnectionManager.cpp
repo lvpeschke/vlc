@@ -89,8 +89,13 @@ AbstractConnection * HTTPConnectionManager::reuseConnection(ConnectionParams &pa
     for(it = connectionPool.begin(); it != connectionPool.end(); ++it)
     {
         AbstractConnection *conn = *it;
-        if(conn->canReuse(params))
+        if(conn->canReuse(params)) {
             return conn;
+        } else {
+            /* LVP added */
+            msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection --> cannot reuse");
+        }
+
     }
 
     /* LVP added */
