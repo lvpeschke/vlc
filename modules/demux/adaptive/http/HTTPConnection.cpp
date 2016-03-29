@@ -96,7 +96,7 @@ bool HTTPConnection::connect()
 bool HTTPConnection::connected() const
 {
     /* LVP added */
-    msg_Dbg(p_object, "LVP HTTPConnection connected (bool)");
+    msg_Dbg(p_object, "LVP HTTPConnection connected (bool) is %d", socket->connected());
 
     return socket->connected();
 }
@@ -115,6 +115,9 @@ void HTTPConnection::disconnect()
 
 int HTTPConnection::request(const std::string &path, const BytesRange &range)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnection::request");
+
     queryOk = false;
 
     /* Set new path for this query */
@@ -131,8 +134,11 @@ int HTTPConnection::request(const std::string &path, const BytesRange &range)
         contentLength = range.getEndByte() - range.getStartByte() + 1;
 
     std::string header = buildRequestHeader(path);
-    if(connectionClose)
+    if(connectionClose) {
+        /* LVP added */
+        msg_Dbg(p_object, "LVP HTTPConnection::request --> connectionClose is true");
         header.append("Connection: close\r\n");
+    }
     header.append("\r\n");
 
     if(!send( header ))
@@ -194,8 +200,8 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     if(ret >= 0)
         bytesRead += ret;
 
-    if(ret < 0 || (size_t)ret < len  || /* set EOF */
-       contentLength == bytesRead )
+    if(ret < 0 || (size_t)ret < len) //  || /* set EOF */
+       //contentLength == bytesRead )
     {
         /* LVP added */
         msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
