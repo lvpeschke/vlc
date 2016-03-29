@@ -275,11 +275,21 @@ std::string HTTPConnection::readLine()
 
 void HTTPConnection::setUsed( bool b )
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP HTTPConnection::setUsed (available set to %d)", !b);
+
     available = !b;
     if(available)
     {
+
+        /* LVP added */
+        msg_Dbg(p_object, "LVP HTTPConnection::setUsed (is now available)");
+
         if(!connectionClose && contentLength == bytesRead )
         {
+            /* LVP added */
+            msg_Dbg(p_object, "LVP HTTPConnection::setUsed (entered this part)");
+
             queryOk = false;
             bytesRead = 0;
             contentLength = 0;

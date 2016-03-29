@@ -83,7 +83,7 @@ void HTTPConnectionManager::releaseAllConnections()
 AbstractConnection * HTTPConnectionManager::reuseConnection(ConnectionParams &params)
 {
     /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection");
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection, connectionPool has size %d", connectionPool.size());
 
     std::vector<AbstractConnection *>::const_iterator it;
     for(it = connectionPool.begin(); it != connectionPool.end(); ++it)
