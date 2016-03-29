@@ -61,6 +61,9 @@ HTTPConnectionManager::~HTTPConnectionManager   ()
 
 void HTTPConnectionManager::closeAllConnections      ()
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::closeAllConnections");
+
     vlc_mutex_lock(&lock);
     releaseAllConnections();
     vlc_delete_all(this->connectionPool);
@@ -69,6 +72,9 @@ void HTTPConnectionManager::closeAllConnections      ()
 
 void HTTPConnectionManager::releaseAllConnections()
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::releaseAllConnections");
+
     std::vector<AbstractConnection *>::iterator it;
     for(it = connectionPool.begin(); it != connectionPool.end(); ++it)
         (*it)->setUsed(false);
@@ -76,6 +82,9 @@ void HTTPConnectionManager::releaseAllConnections()
 
 AbstractConnection * HTTPConnectionManager::reuseConnection(ConnectionParams &params)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection");
+
     std::vector<AbstractConnection *>::const_iterator it;
     for(it = connectionPool.begin(); it != connectionPool.end(); ++it)
     {
@@ -83,11 +92,18 @@ AbstractConnection * HTTPConnectionManager::reuseConnection(ConnectionParams &pa
         if(conn->canReuse(params))
             return conn;
     }
+
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection --> did not find any");
+
     return NULL;
 }
 
 AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &params)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::getConnection");
+
     if(unlikely(!factory || !downloader))
         return NULL;
 
@@ -95,6 +111,9 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
     AbstractConnection *conn = reuseConnection(params);
     if(!conn)
     {
+        /* LVP added */
+        msg_Dbg(p_object, "LVP entered HTTPConnectionManager::getConnection --> create new");
+
         conn = factory->createConnection(p_object, params);
 
         connectionPool.push_back(conn);

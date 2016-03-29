@@ -86,6 +86,9 @@ bool HTTPConnection::canReuse(const ConnectionParams &params_) const
 
 bool HTTPConnection::connect()
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP HTTPConnection connect!!");
+
     return socket->connect(p_object, params.getHostname().c_str(),
                                      params.getPort());
 }
@@ -93,7 +96,7 @@ bool HTTPConnection::connect()
 bool HTTPConnection::connected() const
 {
     /* LVP added */
-    msg_Dbg(p_object, "LVP HTTPConnection connected!!");
+    msg_Dbg(p_object, "LVP HTTPConnection connected (bool)");
 
     return socket->connected();
 }
@@ -191,11 +194,14 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     if(ret >= 0)
         bytesRead += ret;
 
-    if(ret < 0 || (size_t)ret < len || /* set EOF */
+    if(ret < 0 || (size_t)ret < len  || /* set EOF */
        contentLength == bytesRead )
     {
         /* LVP added */
         msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
+        if (ret < 0) msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, ret < 0 ");
+        if ((size_t)ret < len) msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, ret < len ");
+        if (contentLength == bytesRead) msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, contentLength == bytesRead ");
 
         socket->disconnect();
         return ret;
