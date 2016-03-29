@@ -87,6 +87,10 @@ retry:
     if (request_cb(req, res, opaque))
     {
         vlc_http_msg_destroy(req);
+
+        /* LVP added */
+        fprintf(stderr, "LVP msg_destroy in resource_open because request_cb ?\n");
+
         return NULL;
     }
 
@@ -115,12 +119,20 @@ retry:
          * other transfer- rather than representation-affecting header lines.
          */
         vlc_http_msg_destroy(resp);
+
+        /* LVP added */
+        fprintf(stderr, "LVP msg_destroy in resource_open because status 406 and negotiation fail\n");
+
         res->negotiate = false;
         goto retry;
     }
 
     return resp;
 fail:
+
+    /* LVP added */
+    fprintf(stderr, "LVP msg_destroy because error in resource_open\n");
+
     vlc_http_msg_destroy(resp);
     return NULL;
 }

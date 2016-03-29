@@ -53,8 +53,12 @@ static struct vlc_http_msg *vlc_http_live_open(struct vlc_http_live *live)
 
 void vlc_http_live_destroy(struct vlc_http_live *live)
 {
-    if (live->resp != NULL)
+    if (live->resp != NULL) {
         vlc_http_msg_destroy(live->resp);
+
+        /* LVP added */
+        fprintf(stderr, "LVP msg_destroy because the live stream appears not to be NULL ?\n");
+    }
     vlc_http_res_deinit(&live->resource);
     free(live);
 }

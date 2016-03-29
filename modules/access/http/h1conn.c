@@ -215,6 +215,9 @@ static struct vlc_http_msg *vlc_h1_stream_wait(struct vlc_http_stream *stream)
         {
             if (vlc_http_next_token(str) != NULL)
             {
+                /* LVP added */
+                fprintf(stderr, "LVP msg_destroy because next token is not null (unsupported TE)\n");
+
                 vlc_http_msg_destroy(resp);
                 return vlc_h1_stream_fatal(conn); /* unsupported TE */
             }
@@ -223,6 +226,9 @@ static struct vlc_http_msg *vlc_h1_stream_wait(struct vlc_http_stream *stream)
             stream = vlc_chunked_open(stream, conn->conn.tls);
             if (unlikely(stream == NULL))
             {
+                /* LVP added */
+                fprintf(stderr, "LVP msg_destroy because the stream appears to be NULL ?\n");
+
                 vlc_http_msg_destroy(resp);
                 return vlc_h1_stream_fatal(conn);
             }

@@ -103,6 +103,9 @@ static struct vlc_http_msg *vlc_http_file_open(struct vlc_http_file *file,
 
     return resp;
 fail:
+    /* LVP added */
+    fprintf(stderr, "LVP msg_destroy because vlc_http_file_open failed with error %d\n", EIO);
+
     vlc_http_msg_destroy(resp);
     errno = EIO;
     return NULL;
@@ -110,8 +113,11 @@ fail:
 
 void vlc_http_file_destroy(struct vlc_http_file *file)
 {
-    if (file->resp != NULL)
+    if (file->resp != NULL) {
         vlc_http_msg_destroy(file->resp);
+        /* LVP added */
+        fprintf(stderr, "LVP msg_destroy because vlc_http_file_destroy was called and file was not empty \n");
+    }
     vlc_http_res_deinit(&file->resource);
     free(file);
 }
@@ -232,9 +238,15 @@ int vlc_http_file_seek(struct vlc_http_file *file, uintmax_t offset)
          */
         if (status != 206 && status != 416 && (offset != 0 || status >= 300))
         {
+            /* LVP added */
+            fprintf(stderr, "LVP msg_destroy because the response status was %d\n", status);
+
             vlc_http_msg_destroy(resp);
             return -1;
         }
+        /* LVP added */
+        fprintf(stderr, "LVP msg_destroy because the response status was %d (2)\n", status);
+
         vlc_http_msg_destroy(file->resp);
     }
 

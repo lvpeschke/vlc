@@ -28,6 +28,8 @@
 
 #include <sstream>
 #include <vlc_stream.h>
+/* LVP added */
+#include <iostream>
 
 using namespace adaptive::http;
 
@@ -90,6 +92,9 @@ bool HTTPConnection::connect()
 
 bool HTTPConnection::connected() const
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP HTTPConnection connected!!");
+
     return socket->connected();
 }
 
@@ -129,6 +134,9 @@ int HTTPConnection::request(const std::string &path, const BytesRange &range)
 
     if(!send( header ))
     {
+        /* LVP added */
+        msg_Dbg(p_object, "LVP HTTPConnection::request disconnect, header not sent ?");
+
         socket->disconnect();
         if(!connectionClose)
         {
@@ -146,6 +154,10 @@ int HTTPConnection::request(const std::string &path, const BytesRange &range)
     }
     else if(i_ret == VLC_EGENERIC)
     {
+
+        /* LVP added */
+        msg_Dbg(p_object, "LVP HTTPConnection::request disconnect, query not okay ?");
+
         socket->disconnect();
         if(!connectionClose)
         {
@@ -182,6 +194,9 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     if(ret < 0 || (size_t)ret < len || /* set EOF */
        contentLength == bytesRead )
     {
+        /* LVP added */
+        msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
+
         socket->disconnect();
         return ret;
     }
@@ -253,7 +268,7 @@ void HTTPConnection::setUsed( bool b )
         else  /* We can't resend request if we haven't finished reading */
         {
             /* LVP added */
-            msg_Dbg(p_object, "LVP HTTPConnection::setUsed seems to have failed");
+            msg_Dbg(p_object, "LVP HTTPConnection::setUsed seems to have failed, disconnect");
 
             disconnect();
         }
@@ -413,6 +428,9 @@ ConnectionFactory::~ConnectionFactory()
 AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
                                                          const ConnectionParams &params)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered ConnectionFactory::createConnection");
+
     if((params.getScheme() != "http" && params.getScheme() != "https") || params.getHostname().empty())
         return NULL;
 
@@ -430,6 +448,9 @@ AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
         delete socket;
         return NULL;
     }
+
+    /* LVP added */
+    std::cerr << "LVP ConnectionFactory::createConnection, conn is " << conn << std::endl;
 
     return conn;
 }

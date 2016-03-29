@@ -66,6 +66,9 @@ static struct vlc_http_msg *vlc_http_tunnel_open(struct vlc_http_conn *conn,
     struct vlc_http_stream *stream = vlc_http_stream_open(conn, req);
 
     vlc_http_msg_destroy(req);
+    /* LVP added */
+    fprintf(stderr, "LVP msg_destroy while opening a tunnel\n");
+
     if (stream == NULL)
         return NULL;
 
@@ -77,6 +80,9 @@ static struct vlc_http_msg *vlc_http_tunnel_open(struct vlc_http_conn *conn,
     int status = vlc_http_msg_get_status(resp);
     if ((status / 100) != 2)
     {
+        /* LVP added */
+        fprintf(stderr, "LVP msg_destroy while opening a tunnel because status is %d\n", status);
+
         vlc_http_msg_destroy(resp);
         resp = NULL;
     }
