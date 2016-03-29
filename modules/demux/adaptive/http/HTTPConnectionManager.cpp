@@ -31,6 +31,9 @@
 #include "Sockets.hpp"
 #include "Downloader.hpp"
 #include <vlc_url.h>
+/* LVP added */
+#include <iostream>
+#include <ctime>
 
 using namespace adaptive::http;
 
@@ -122,6 +125,10 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
         conn = factory->createConnection(p_object, params);
 
         connectionPool.push_back(conn);
+
+        /* LVP added, TFE */
+        std::cerr << "TFE, " << std::time(nullptr) << ", create new HTTP connection" << std::endl;
+        std::cerr << "TFE, " << std::time(nullptr) << ", new connectionPool.size, " << connectionPool.size() << std::endl;
 
         if (!conn->prepare(params))
         {

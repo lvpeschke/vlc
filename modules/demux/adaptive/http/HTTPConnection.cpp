@@ -30,6 +30,7 @@
 #include <vlc_stream.h>
 /* LVP added */
 #include <iostream>
+#include <ctime>
 
 using namespace adaptive::http;
 
@@ -188,6 +189,9 @@ int HTTPConnection::request(const std::string &path, const BytesRange &range)
 
 ssize_t HTTPConnection::read(void *p_buffer, size_t len)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP enter HTTPConnection::read");
+
     if( !connected() ||
        (!queryOk && bytesRead == 0) )
         return VLC_EGENERIC;
@@ -208,8 +212,11 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     if(ret >= 0)
         bytesRead += ret;
 
-    if(ret < 0 || (size_t)ret < len) //  || /* set EOF */
-       //contentLength == bytesRead )
+
+    /* LVP reverse commit 874a409499639af8068458e4d8f22ff3202ff074 */
+    if(ret < 0 || (size_t)ret < len) /* set EOF */
+    //if(ret < 0 || (size_t)ret < len || /* set EOF */
+    //   contentLength == bytesRead )
     {
         /* LVP added */
         msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
@@ -231,6 +238,9 @@ bool HTTPConnection::send(const std::string &data)
 
 bool HTTPConnection::send(const void *buf, size_t size)
 {
+    /* LVP added, TFE */
+    std::cerr << "TFE, " << std::time(nullptr) << ", send HTTP request" << std::endl;
+
     return socket->send(p_object, buf, size);
 }
 
@@ -413,6 +423,9 @@ int StreamUrlConnection::request(const std::string &path, const BytesRange &rang
 
 ssize_t StreamUrlConnection::read(void *p_buffer, size_t len)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP enter StreamUrlConnection::read");
+
     if( !p_streamurl )
         return VLC_EGENERIC;
 
