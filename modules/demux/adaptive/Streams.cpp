@@ -285,8 +285,8 @@ AbstractStream::status AbstractStream::demux(mtime_t nz_deadline, bool send)
     AdvDebug(msg_Dbg(p_realdemux, "Stream %s pcr %ld dts %ld deadline %ld buflevel %ld",
              description.c_str(), getPCR(), getFirstDTS(), nz_deadline, getBufferingLevel()));
 
-    /* LVP added, TFE */
-    std::cerr << "TFE, " << std::time(nullptr) << ", buflevel " << getBufferingLevel() << std::endl;
+    ///* LVP added, TFE */
+    //std::cerr << "TFE, " << std::time(nullptr) << ", buflevel " << getBufferingLevel() << std::endl;
 
     if(send)
         pcr = fakeesout->commandsqueue.Process( p_realdemux->out, VLC_TS_0 + nz_deadline );
