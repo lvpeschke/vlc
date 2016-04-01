@@ -248,6 +248,7 @@ bool HTTPConnection::send(const void *buf, size_t size)
 {
     /* LVP added, TFE */
     std::cerr << "TFE, " << std::time(nullptr) << ", send HTTP request" << std::endl;
+    std::cerr << "TFE, " << buf << std::endl;
 
     return socket->send(p_object, buf, size);
 }

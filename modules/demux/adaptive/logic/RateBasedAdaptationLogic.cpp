@@ -158,9 +158,9 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 
     /* LVP added, TFE */
     std::cerr << "TFE, " << std::time(nullptr) << ", download rate updated" << std::endl;
-    std::cerr << "TFE, " << std::time(nullptr) << ", bpsAvg" << bpsAvg / 8192 << std::endl;
-    std::cerr << "TFE, " << std::time(nullptr) << ", currentBps" << currentBps / 8192 << std::endl;
-    std::cerr << "TFE, " << std::time(nullptr) << ", usedBps" << usedBps / 8192 << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", bpsAvg, " << bpsAvg / 8192 << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", currentBps, " << currentBps / 8192 << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", usedBps, " << usedBps / 8192 << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
