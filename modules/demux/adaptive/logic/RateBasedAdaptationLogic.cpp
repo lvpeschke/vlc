@@ -88,6 +88,9 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
 
 void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 {
+    /* LVP added */
+    BwDebug(msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate"));
+
     if(unlikely(time == 0))
         return;
     /* Accumulate up to observation window */
@@ -147,11 +150,17 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
     BwDebug(msg_Info(p_obj, "Current bandwidth %zu KiB/s using %u%%",
                     (bpsAvg / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0));
 
-    /* LVP added, TFE */
-    std::cerr << "TFE, " << std::time(nullptr) << ", current bandwidth usage "
-              << (bpsAvg / 8192) << " KiB/s " << ((bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0) << std::endl;
+    ///* LVP added, TFE */
+    //std::cerr << "TFE, " << std::time(nullptr) << ", current bandwidth usage "
+    //          << (bpsAvg / 8192) << " KiB/s " << ((bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0) << std::endl;
 
     vlc_mutex_unlock(&lock);
+
+    /* LVP added, TFE */
+    std::cerr << "TFE, " << std::time(nullptr) << ", download rate updated" << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", bpsAvg" << bpsAvg / 8192 << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", currentBps" << currentBps / 8192 << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", usedBps" << usedBps / 8192 << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
@@ -167,9 +176,9 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
 
-        /* LVP added, TFE */
-        std::cerr << "TFE, " << std::time(nullptr) << ", new bandwidth usage "
-                  << (usedBps / 8192) << " KiB/s " << ((bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0) << std::endl;
+        ///* LVP added, TFE */
+        //std::cerr << "TFE, " << std::time(nullptr) << ", new bandwidth usage "
+        //          << (usedBps / 8192) << " KiB/s " << ((bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0) << std::endl;
 
         vlc_mutex_unlock(&lock);
     }

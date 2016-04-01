@@ -144,6 +144,9 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
 
 void HTTPConnectionManager::updateDownloadRate(size_t size, mtime_t time)
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::updateDownloadRate");
+
     if(rateObserver)
         rateObserver->updateDownloadRate(size, time);
 }

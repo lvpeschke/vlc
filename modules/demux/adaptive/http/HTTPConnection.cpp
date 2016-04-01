@@ -165,6 +165,9 @@ int HTTPConnection::request(const std::string &path, const BytesRange &range)
         return VLC_EGENERIC;
     }
 
+    /* LVP added */
+    msg_Dbg(p_object, "LVP HTTPConnection::request send returned true");
+
     int i_ret = parseReply();
     if(i_ret == VLC_SUCCESS)
     {
@@ -227,6 +230,11 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
         socket->disconnect();
         return ret;
     }
+
+    /* LVP added */
+    std::cerr << "TFE, " << std::time(nullptr) << ", read HTTP response" << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", read, " << ret << std::endl;
+    std::cerr << "TFE, " << std::time(nullptr) << ", bytesRead, " << bytesRead << std::endl;
 
     return ret;
 }
