@@ -134,7 +134,7 @@ time_t vlc_http_msg_get_mtime(const struct vlc_http_msg *);
 /**
  * Gets retry timeout.
  *
- * Exrtacts the time (in seconds) until the expiration of the "retry-after"
+ * Extracts the time (in seconds) until the expiration of the "retry-after"
  * time-out in the HTTP message. If the header value is an absolute date, it
  * is converted relative to the current time.
  *
@@ -147,6 +147,23 @@ void vlc_http_msg_get_cookies(const struct vlc_http_msg *,
                               const char *host, const char *path);
 int vlc_http_msg_add_cookies(struct vlc_http_msg *,
                              struct vlc_http_cookie_jar_t *);
+
+/**
+ * Adds Basic credentials.
+ *
+ * Formats a plain username and password pair using HTTP Basic (RFC7617)
+ * syntax.
+ *
+ * @param proxy true for proxy authentication,
+ *              false for origin server authentication
+ * @param username null-terminated username
+ * @param password null-terminated password
+ * @return 0 on success, -1 on out-of-memory (ENOMEM) or if username or
+ * password are invalid (EINVAL).
+ */
+int vlc_http_msg_add_creds_basic(struct vlc_http_msg *, bool proxy,
+                                 const char *username, const char *password);
+
 
 /**
  * Looks up an header field.

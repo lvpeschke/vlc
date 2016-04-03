@@ -19,7 +19,6 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
-
 #ifndef VLC_MP4_LIBMP4_H_
 #define VLC_MP4_LIBMP4_H_
 
@@ -1725,6 +1724,8 @@ MP4_Box_t *MP4_BoxGet( const MP4_Box_t *p_box, const char *psz_fmt, ... );
  *     ../mdia
  *****************************************************************************/
 unsigned MP4_BoxCount( const MP4_Box_t *p_box, const char *psz_fmt, ... );
+
+MP4_Box_t * MP4_BoxExtract( MP4_Box_t **pp_chain, uint32_t i_type );
 
 /* Internal functions exposed for MKV demux */
 int MP4_PeekBoxHeader( stream_t *p_stream, MP4_Box_t *p_box );

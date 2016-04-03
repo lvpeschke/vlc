@@ -25,10 +25,6 @@
  * Preamble
  *****************************************************************************/
 
-#ifdef HAVE_CONFIG_H
-# include "config.h"
-#endif
-
 #include <vlc_common.h>
 #include "libmp4.h"
 #include "fragments.h"
@@ -73,7 +69,7 @@ typedef struct
     int b_ok;               /* The track is usable */
     int b_enable;           /* is the trak enable by default */
     bool b_selected;  /* is the trak being played */
-    bool b_chapter;   /* True when used for chapter only */
+    bool b_chapters_source;   /* True when used for chapter only */
     uint32_t i_switch_group;
 
     bool b_mac_encoding;

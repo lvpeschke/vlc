@@ -793,7 +793,7 @@ dnl  BSD
 AC_CHECK_HEADERS([netinet/udplite.h sys/param.h sys/mount.h])
 
 dnl  GNU/Linux
-AC_CHECK_HEADERS([getopt.h linux/dccp.h linux/magic.h mntent.h sys/eventfd.h])
+AC_CHECK_HEADERS([features.h getopt.h linux/dccp.h linux/magic.h mntent.h sys/eventfd.h])
 
 dnl  MacOS
 AC_CHECK_HEADERS([xlocale.h])
@@ -2770,7 +2770,7 @@ PKG_ENABLE_MODULES_VLC([OGGSPOTS], [], [ogg], [experimental OggSpots codec], [au
 dnl
 dnl  Daala decoder plugin
 dnl
-PKG_ENABLE_MODULES_VLC([DAALA], [], [ogg daaladec daalaenc], [experimental daala codec], [disabled])
+PKG_ENABLE_MODULES_VLC([DAALA], [], [daaladec daalaenc], [experimental daala codec], [disabled])
 
 dnl
 dnl  schroedinger decoder plugin (for dirac format video)

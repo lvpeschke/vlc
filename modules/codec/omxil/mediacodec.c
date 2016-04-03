@@ -122,6 +122,7 @@ struct decoder_sys_t
             int i_pixel_format;
             uint8_t i_nal_length_size;
             size_t i_h264_profile;
+            bool b_first_mp4v_iframe;
             /* stores the inflight picture for each output buffer or NULL */
             picture_sys_t** pp_inflight_pictures;
             unsigned int i_inflight_pictures;
@@ -646,8 +647,8 @@ static int OpenDecoder(vlc_object_t *p_this, pf_MediaCodecApi_init pf_init)
         if ((p_sys->api->i_quirks & MC_API_AUDIO_QUIRKS_NEED_CHANNELS)
          && !p_sys->u.audio.i_channels)
         {
-            msg_Warn(p_dec, "waiting for valid channel count");
-            b_late_opening = true;
+            msg_Warn(p_dec, "codec need a valid channel count");
+            goto bailout;
         }
     }
     if ((p_sys->api->i_quirks & MC_API_QUIRKS_NEED_CSD)
@@ -937,7 +938,7 @@ static int Video_ProcessOutput(decoder_t *p_dec, mc_api_out *p_out,
 }
 
 /* samples will be in the following order: FL FR FC LFE BL BR BC SL SR */
-uint32_t pi_audio_order_src[] =
+static uint32_t pi_audio_order_src[] =
 {
     AOUT_CHAN_LEFT, AOUT_CHAN_RIGHT, AOUT_CHAN_CENTER, AOUT_CHAN_LFE,
     AOUT_CHAN_REARLEFT, AOUT_CHAN_REARRIGHT, AOUT_CHAN_REARCENTER,
@@ -1476,6 +1477,15 @@ static int Video_OnNewBlock(decoder_t *p_dec, block_t *p_block, int *p_flags)
         H264ProcessBlock(p_dec, p_block, &b_csd_changed, &b_size_changed);
     else if (p_dec->fmt_in.i_codec == VLC_CODEC_HEVC)
         HEVCProcessBlock(p_dec, p_block, &b_csd_changed, &b_size_changed);
+    else if (p_dec->fmt_in.i_codec == VLC_CODEC_MP4V
+          && !p_sys->u.video.b_first_mp4v_iframe)
+    {
+        /* The first input sent to MediaCodec must be an I-Frame */
+        if ((p_block->i_flags & BLOCK_FLAG_TYPE_I))
+            p_sys->u.video.b_first_mp4v_iframe = true;
+        else
+            return 0; /* Drop current block */
+    }
 
     if (b_csd_changed)
     {
@@ -1497,8 +1507,7 @@ static int Video_OnNewBlock(decoder_t *p_dec, block_t *p_block, int *p_flags)
         *p_flags |= NEWBLOCK_FLAG_RESTART;
 
         /* Don't start if we don't have any csd */
-        if ((p_sys->api->i_quirks & MC_API_QUIRKS_NEED_CSD)
-         && !p_dec->fmt_in.i_extra && !p_sys->pp_csd)
+        if ((p_sys->api->i_quirks & MC_API_QUIRKS_NEED_CSD) && !p_sys->pp_csd)
             *p_flags &= ~NEWBLOCK_FLAG_RESTART;
 
         /* Don't start if we don't have a valid video size */
@@ -1543,23 +1552,6 @@ static int Audio_OnNewBlock(decoder_t *p_dec, block_t *p_block, int *p_flags)
         date_Set(&p_sys->u.audio.i_end_date, p_block->i_pts);
     }
 
-    /* try delayed opening if there is a new extra data */
-    if (!p_sys->api->b_started)
-    {
-        p_dec->p_sys->u.audio.i_channels = p_dec->fmt_in.audio.i_channels;
-
-        *p_flags |= NEWBLOCK_FLAG_RESTART;
-
-        /* Don't start if we don't have any csd */
-        if ((p_sys->api->i_quirks & MC_API_QUIRKS_NEED_CSD)
-         && !p_dec->fmt_in.i_extra)
-            *p_flags &= ~NEWBLOCK_FLAG_RESTART;
-
-        /* Don't start if we don't have a valid channels count */
-        if ((p_sys->api->i_quirks & MC_API_AUDIO_QUIRKS_NEED_CHANNELS)
-         && !p_dec->p_sys->u.audio.i_channels)
-            *p_flags &= ~NEWBLOCK_FLAG_RESTART;
-    }
     return 1;
 }
 
