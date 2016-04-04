@@ -35,6 +35,10 @@
 
 #include <algorithm>
 
+/* LVP added */
+#include <iostream>
+#include <ctime>
+
 using namespace adaptive::http;
 
 AbstractChunkSource::AbstractChunkSource()
@@ -174,6 +178,8 @@ block_t * HTTPChunkSource::read(size_t readsize)
 
     mtime_t time = mdate();
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
+    /* LVP added, TFE */
+    std::cerr << "TFE read HTTP chunck source, " << std::time(nullptr) << ", " << ret << std::endl;
     time = mdate() - time;
     if(ret < 0)
     {
@@ -188,6 +194,8 @@ block_t * HTTPChunkSource::read(size_t readsize)
         if((size_t)ret < readsize)
             eof = true;
         connManager->updateDownloadRate(p_block->i_buffer, time);
+        /* LVP added, TFE */
+        std::cerr << "TFE updateDownloadRate in chunk, " << std::time(nullptr) << std::endl;
     }
 
     return p_block;
@@ -294,6 +302,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     } rate = {0,0};
 
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
+    std::cerr << "TFE read HTTP chunkBuffered, " << std::time(nullptr) << ", " << ret << std::endl;
     if(ret <= 0)
     {
         block_Release(p_block);
@@ -323,6 +332,8 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     if(rate.size)
     {
         connManager->updateDownloadRate(rate.size, rate.time);
+        /* LVP added, TFE */
+        std::cerr << "TFE updateDownloadRate in chunkBuffered, " << std::time(nullptr) << std::endl;
     }
 
     vlc_cond_signal(&avail);
