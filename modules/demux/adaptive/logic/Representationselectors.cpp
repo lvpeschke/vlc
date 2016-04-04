@@ -109,8 +109,8 @@ BaseRepresentation * RepresentationSelector::select(std::vector<BaseRepresentati
     }
 
     /* LVP added, TFE */
-    if (candidate) std::cerr << "TFE base representation bw " << mdate() << ", " << candidate->getBandwidth() << std::endl;
-    else std::cerr << "TFE base representation lowest bw " << mdate() << ", " << lowest->getBandwidth() << std::endl;
+    if (candidate) std::cerr << "TFE base representation bw, " << mdate() << ", " << candidate->getBandwidth() << std::endl;
+    else std::cerr << "TFE base representation lowest bw, " << mdate() << ", " << lowest->getBandwidth() << std::endl;
 
     if (!candidate)
         return candidate = lowest;
