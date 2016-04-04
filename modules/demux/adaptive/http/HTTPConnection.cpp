@@ -232,8 +232,8 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     }
 
     /* LVP added */
-    std::cerr << "TFE, " << std::time(nullptr) << ", read HTTP response" << std::endl;
-    if (contentLength == bytesRead) std::cerr << "TFE, " << std::time(nullptr) << ", read HTTP response done" << std::endl;
+    if (contentLength == bytesRead) std::cerr << "TFE, " << std::time(nullptr) << ", read HTTP response done, " << contentLength << std::endl;
+    else std::cerr << "TFE, " << std::time(nullptr) << ", read HTTP response in progress" << std::endl;
     std::cerr << "TFE, " << std::time(nullptr) << ", read, " << ret << std::endl;
     std::cerr << "TFE, " << std::time(nullptr) << ", bytesRead, " << bytesRead << std::endl;
 
