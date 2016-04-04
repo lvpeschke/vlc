@@ -153,10 +153,10 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
     vlc_mutex_unlock(&lock);
 
     /* LVP added, TFE */
-    std::cerr << "TFE download rate updated, " << std::time(nullptr) << std::endl;
-    std::cerr << "TFE bpsAvg, " << std::time(nullptr) << ", " << bpsAvg / 8192 << std::endl;
-    std::cerr << "TFE currentBps, " << std::time(nullptr) << ", " << currentBps / 8192 << std::endl;
-    std::cerr << "TFE usedBps, " << std::time(nullptr) << ", " << usedBps / 8192 << std::endl;
+    std::cerr << "TFE download rate updated, " << mdate() << std::endl;
+    std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg / 8192 << std::endl;
+    std::cerr << "TFE currentBps, " << mdate()) << ", " << currentBps / 8192 << std::endl;
+    std::cerr << "TFE usedBps, " << mdate() << ", " << usedBps / 8192 << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)

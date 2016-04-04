@@ -232,10 +232,10 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     }
 
     /* LVP added */
-    if (contentLength == bytesRead) std::cerr << "TFE read HTTP response done, " << std::time(nullptr) << ", " << contentLength << std::endl;
-    else std::cerr << "TFE read HTTP response in progress, " << std::time(nullptr) << std::endl;
-    std::cerr << "TFE read, " << std::time(nullptr) << ", " << ret << std::endl;
-    std::cerr << "TFE bytesRead, " << std::time(nullptr) << ", " << bytesRead << std::endl;
+    if (contentLength == bytesRead) std::cerr << "TFE read HTTP response done, " << mdate() << ", " << contentLength << std::endl;
+    else std::cerr << "TFE read HTTP response in progress, " << mdate() << std::endl;
+    std::cerr << "TFE read, " << mdate() << ", " << ret << std::endl;
+    std::cerr << "TFE bytesRead, " << mdate() << ", " << bytesRead << std::endl;
 
     return ret;
 }
@@ -248,7 +248,7 @@ bool HTTPConnection::send(const std::string &data)
 bool HTTPConnection::send(const void *buf, size_t size)
 {
     /* LVP added, TFE */
-    std::cerr << "TFE send HTTP request, " << std::time(nullptr) << std::endl;
+    std::cerr << "TFE send HTTP request, " << mdate() << std::endl;
 
     return socket->send(p_object, buf, size);
 }
@@ -272,7 +272,7 @@ int HTTPConnection::parseReply()
     ss >> replycode;
 
     /* LVP added, TFE */
-    std::cerr << "TFE HTTP replycode, " << std::time(nullptr) << ", " << replycode << std::endl;
+    std::cerr << "TFE HTTP replycode, " << mdate() << ", " << replycode << std::endl;
 
     if (replycode != 200 && replycode != 206)
         return VLC_ENOOBJ;
