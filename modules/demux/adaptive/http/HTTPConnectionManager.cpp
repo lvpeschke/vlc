@@ -127,8 +127,8 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
         connectionPool.push_back(conn);
 
         /* LVP added, TFE */
-        std::cerr << "TFE, " << std::time(nullptr) << ", create new HTTP connection" << std::endl;
-        std::cerr << "TFE, " << std::time(nullptr) << ", new connectionPool.size, " << connectionPool.size() << std::endl;
+        std::cerr << "TFE create new HTTP connection, " << std::time(nullptr) << std::endl;
+        std::cerr << "TFE new connectionPool.size, " << std::time(nullptr) << ", " << connectionPool.size() << std::endl;
 
         if (!conn->prepare(params))
         {
