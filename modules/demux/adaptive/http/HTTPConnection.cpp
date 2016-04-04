@@ -249,13 +249,15 @@ bool HTTPConnection::send(const void *buf, size_t size)
 {
     /* LVP added, TFE */
     std::cerr << "TFE, " << std::time(nullptr) << ", send HTTP request" << std::endl;
-    std::cerr << "TFE, " << buf << std::endl;
 
     return socket->send(p_object, buf, size);
 }
 
 int HTTPConnection::parseReply()
 {
+    /* LVP added */
+    msg_Dbg(p_object, "LVP entered HTTPConnection::parseReply");
+
     std::string line = readLine();
 
     if(line.empty())
@@ -268,6 +270,10 @@ int HTTPConnection::parseReply()
     ss.imbue(std::locale("C"));
     int replycode;
     ss >> replycode;
+
+    /* LVP added, TFE */
+    std::cerr << "TFE, " << std::time(nullptr) << ", HTTP replycode, " << replycode << std::endl;
+
     if (replycode != 200 && replycode != 206)
         return VLC_ENOOBJ;
 
