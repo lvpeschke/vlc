@@ -273,11 +273,8 @@ int HTTPConnection::parseReply()
 
     /* LVP added, TFE */
     std::cerr << "TFE HTTP replycode, " << mdate() << ", " << replycode << std::endl;
-    std::cerr << "TFE mdate() is, " << mdate() << std::endl;
-    std::cerr << "TFE time() is, " << std::time(nullptr) << std::endl;
-    fprintf(stderr, "TFE mdate() printf PRId64 is, %PRId64\n", mdate());
-    fprintf(stderr, "TFE mdate() printf I64d is, %I64d\n", mdate());
-
+    //std::cerr << "TFE mdate() is, " << mdate() << std::endl;
+    //std::cerr << "TFE time() is, " << std::time(nullptr) << std::endl;
 
     if (replycode != 200 && replycode != 206)
         return VLC_ENOOBJ;
