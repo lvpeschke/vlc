@@ -172,6 +172,8 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
 
+        std::cerr << "TFE new bandwidth, " << mdate() << ", " << usedBps / 8192 << std::endl;
+
         vlc_mutex_unlock(&lock);
     }
 }
