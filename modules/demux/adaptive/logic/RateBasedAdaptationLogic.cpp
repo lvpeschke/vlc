@@ -69,10 +69,17 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     vlc_mutex_lock(const_cast<vlc_mutex_t *>(&lock));
     size_t availBps = currentBps + ((currep) ? currep->getBandwidth() : 0);
     vlc_mutex_unlock(const_cast<vlc_mutex_t *>(&lock));
-    if(availBps > usedBps)
+    if(availBps > usedBps) {
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG availBps > usedBps, " << mdate() << ", " << availBps << ", " << usedBps << std::endl;
         availBps -= usedBps;
-    else
+    }
+    else {
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG availBps will be 0, " << mdate() << ", " << availBps << ", " << usedBps << std::endl;
         availBps = 0;
+    }
+
 
     RepresentationSelector selector;
     BaseRepresentation *rep = selector.select(adaptSet, availBps, width, height);
