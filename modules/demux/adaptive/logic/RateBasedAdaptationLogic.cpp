@@ -85,10 +85,22 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     BaseRepresentation *rep = selector.select(adaptSet, availBps, width, height);
     if ( rep == NULL )
     {
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG rep is null, " << mdate() << std::endl;
+
         rep = selector.select(adaptSet);
-        if ( rep == NULL )
+        if ( rep == NULL ) {
+
+            /* LVP added, TFE */
+            std::cerr << "TFE DEBUG rep is still null, " << mdate() << std::endl;
+
             return NULL;
+        }
+
     }
+
+    /* LVP added */
+    std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
     return rep;
 }
@@ -193,6 +205,10 @@ FixedRateAdaptationLogic::FixedRateAdaptationLogic(size_t bps) :
 
 BaseRepresentation *FixedRateAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *) const
 {
+
+    /* LVP added, TFE */
+    std::cerr << "TFE DEBUG getNextRep in FixedRate ???, " << mdate() << std::endl;
+
     if(adaptSet == NULL)
         return NULL;
 

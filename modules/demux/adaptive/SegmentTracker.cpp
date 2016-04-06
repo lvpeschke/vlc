@@ -29,6 +29,9 @@
 #include "playlist/Segment.h"
 #include "playlist/SegmentChunk.hpp"
 #include "logic/AbstractAdaptationLogic.h"
+/* LVP added */
+#include <iostream>
+
 
 using namespace adaptive;
 using namespace adaptive::logic;
@@ -109,11 +112,20 @@ void SegmentTracker::reset()
 
 SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionManager *connManager)
 {
+    /* LVP added, TFE */
+    std::cerr << "TFE DEBUG SegmentTracker getNextChunk, " << mdate() << std::endl;
+
     BaseRepresentation *rep = NULL, *prevRep = NULL;
     ISegment *segment;
 
-    if(!adaptationSet)
+    if(!adaptationSet) {
+
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG SegmentTracker getNextChunk no adaptation set, " << mdate() << std::endl;
+
         return NULL;
+    }
+
 
     /* Ensure we don't keep chaining init/index without data */
     if( initializing )
@@ -130,8 +142,13 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
     else
         rep = logic->getNextRepresentation(adaptationSet, curRepresentation);
 
-    if ( rep == NULL )
-            return NULL;
+    if ( rep == NULL ) {
+
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG SegmentTracker no rep 1, " << mdate() << std::endl;
+
+        return NULL;
+    }
 
 
     if(rep != curRepresentation)
@@ -171,16 +188,25 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
     {
         init_sent = true;
         segment = rep->getSegment(BaseRepresentation::INFOTYPE_INIT);
-        if(segment)
+        if(segment) {
+            /* LVP added, TFE */
+            std::cerr << "TFE DEBUG SegmentTracker getNextChunk no init sent but segment, " << mdate() << std::endl;
+
             return segment->toChunk(next, rep, connManager);
+        }
     }
 
     if(!index_sent)
     {
         index_sent = true;
         segment = rep->getSegment(BaseRepresentation::INFOTYPE_INDEX);
-        if(segment)
+        if(segment) {
+            /* LVP added, TFE */
+            std::cerr << "TFE DEBUG SegmentTracker getNextChunk no index sent but segment, " << mdate() << std::endl;
+
             return segment->toChunk(next, rep, connManager);
+        }
+
     }
 
     bool b_gap = false;
@@ -188,6 +214,10 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
     if(!segment)
     {
         reset();
+
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG SegmentTracker getNextChunk no segment and reset, " << mdate() << std::endl;
+
         return NULL;
     }
 
@@ -218,6 +248,9 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
         curNumber = next;
         next++;
     }
+
+    /* LVP added, TFE */
+    std::cerr << "TFE DEBUG SegmentTracker getNextChunk reached end, " << mdate() << std::endl;
 
     return chunk;
 }
