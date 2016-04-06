@@ -90,6 +90,8 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
             return NULL;
     }
 
+    std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
+
     return rep;
 }
 
