@@ -94,7 +94,7 @@ SegmentChunk* ISegment::toChunk(size_t index, BaseRepresentation *ctxrep, HTTPCo
     chunk->setRepresentation(ctxrep);
 
     /* LVP added, TFE */
-    std::cerr << "TFE segment toChunk duration and startTime, " << mdate() << ", " << this->duration << ", " << this->startTime << std::endl;
+    std::cerr << "TFE segment toChunk duration and startTime, " << mdate() << ", " << this->duration.Get() << ", " << this->startTime.Get() << std::endl;
 
     return chunk;
 }
