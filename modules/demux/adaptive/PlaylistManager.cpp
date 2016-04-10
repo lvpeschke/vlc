@@ -38,6 +38,8 @@
 #include <vlc_demux.h>
 
 #include <ctime>
+/* LVP added */
+#include <iostream>
 
 using namespace adaptive::http;
 using namespace adaptive::logic;
@@ -58,6 +60,9 @@ PlaylistManager::PlaylistManager( demux_t *p_demux_,
 {
     currentPeriod = playlist->getFirstPeriod();
     failedupdates = 0;
+
+    /* LVP added, TFE */
+    std::cerr << "TFE new playlist manager, " << mdate() << std::endl;
 }
 
 PlaylistManager::~PlaylistManager   ()
@@ -67,6 +72,9 @@ PlaylistManager::~PlaylistManager   ()
     delete playlist;
     delete conManager;
     delete logic;
+
+    /* LVP added, TFE */
+    std::cerr << "TFE delete playlist manager, " << mdate() << std::endl;
 }
 
 void PlaylistManager::unsetPeriod()
