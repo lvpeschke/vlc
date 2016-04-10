@@ -250,7 +250,7 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
     }
 
     /* LVP added, TFE */
-    std::cerr << "TFE DEBUG SegmentTracker getNextChunk reached end, " << mdate() << std::endl;
+    std::cerr << "TFE SegmentTracker getNextChunk done, " << mdate() <<  ", " << rep  << std::endl;
 
     return chunk;
 }

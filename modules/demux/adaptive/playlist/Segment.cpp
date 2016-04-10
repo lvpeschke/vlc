@@ -34,6 +34,8 @@
 #include "../http/HTTPConnectionManager.h"
 #include "../http/Downloader.hpp"
 #include <cassert>
+/* LVP added */
+#include <iostream>
 
 using namespace adaptive::http;
 using namespace adaptive::playlist;
@@ -90,6 +92,9 @@ SegmentChunk* ISegment::toChunk(size_t index, BaseRepresentation *ctxrep, HTTPCo
     };
 
     chunk->setRepresentation(ctxrep);
+
+    /* LVP added, TFE */
+    std::cerr << "TFE segment toChunk duration and startTime, " << mdate() << ", " << this->duration << ", " << this->startTime << std::endl;
 
     return chunk;
 }
