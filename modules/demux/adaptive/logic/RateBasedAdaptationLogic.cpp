@@ -192,7 +192,6 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                         (usedBps / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
 
         std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
-q
         vlc_mutex_unlock(&lock);
     }
 }
