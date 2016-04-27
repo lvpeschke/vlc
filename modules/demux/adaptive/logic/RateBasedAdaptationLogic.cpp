@@ -171,11 +171,11 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 
     vlc_mutex_unlock(&lock);
 
-    /* LVP added, TFE */
+    /* LVP added, TFE */ // all in bps (bits per second)
     std::cerr << "TFE download rate updated, " << mdate() << std::endl;
-    std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg / 8192 << std::endl;
-    std::cerr << "TFE currentBps, " << mdate() << ", " << currentBps / 8192 << std::endl;
-    std::cerr << "TFE usedBps, " << mdate() << ", " << usedBps / 8192 << std::endl;
+    std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
+    std::cerr << "TFE bpsCurrent, " << mdate() << ", " << currentBps << std::endl;
+    std::cerr << "TFE bpsUsed, " << mdate() << ", " << usedBps << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
@@ -191,8 +191,8 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
 
-        std::cerr << "TFE new bandwidth, " << mdate() << ", " << usedBps / 8192 << std::endl;
-
+        std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
+q
         vlc_mutex_unlock(&lock);
     }
 }
