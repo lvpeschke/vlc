@@ -64,10 +64,11 @@ void input_item_SetErrorWhenReading( input_item_t *p_i, bool b_error )
         vlc_event_send( &p_i->event_manager, &event );
     }
 }
-void input_item_SignalPreparseEnded( input_item_t *p_i )
+void input_item_SignalPreparseEnded( input_item_t *p_i, int status )
 {
     vlc_event_t event;
     event.type = vlc_InputItemPreparseEnded;
+    event.u.input_item_preparse_ended.new_status = status;
     vlc_event_send( &p_i->event_manager, &event );
 }
 
@@ -157,24 +158,49 @@ void input_item_SetMeta( input_item_t *p_i, vlc_meta_type_t meta_type, const cha
     vlc_event_send( &p_i->event_manager, &event );
 }
 
-/* FIXME GRRRRRRRRRR args should be in the reverse order to be
- * consistent with (nearly?) all or copy funcs */
-void input_item_CopyOptions( input_item_t *p_parent,
-                             input_item_t *p_child )
+void input_item_CopyOptions( input_item_t *p_child,
+                             input_item_t *p_parent )
 {
+    char **optv = NULL;
+    uint8_t *flagv = NULL;
+    size_t optc;
+
     vlc_mutex_lock( &p_parent->lock );
 
-    for( int i = 0 ; i< p_parent->i_options; i++ )
+    optc = p_parent->i_options;
+    if( optc > 0 )
     {
-        if( !strcmp( p_parent->ppsz_options[i], "meta-file" ) )
-            continue;
+        optv = xmalloc( optc * sizeof (*optv) );
+        for( size_t i = 0; i < optc; i++ )
+            optv[i] = xstrdup( p_parent->ppsz_options[i] );
 
-        input_item_AddOption( p_child,
-                              p_parent->ppsz_options[i],
-                              p_parent->optflagv[i] );
+        flagv = xmalloc( optc * sizeof (*flagv) );
+        memcpy( flagv, p_parent->optflagv, optc * sizeof (*flagv) );
     }
 
     vlc_mutex_unlock( &p_parent->lock );
+
+    if( optc == 0 )
+        return;
+
+    vlc_mutex_lock( &p_child->lock );
+
+    p_child->ppsz_options = xrealloc( p_child->ppsz_options,
+                                (p_child->i_options + optc) * sizeof (*optv) );
+    memcpy( p_child->ppsz_options + p_child->i_options, optv,
+            optc * sizeof (*optv) );
+    p_child->i_options += optc;
+
+    p_child->optflagv = xrealloc( p_child->optflagv,
+                               (p_child->i_options + optc) * sizeof (*flagv) );
+    memcpy( p_child->optflagv + p_child->i_options, flagv,
+            optc * sizeof (*flagv) );
+    p_child->optflagc += optc;
+
+    vlc_mutex_unlock( &p_child->lock );
+
+    free( flagv );
+    free( optv );
 }
 
 static void post_subitems( input_item_node_t *p_node )
@@ -531,6 +557,16 @@ out:
     return err;
 }
 
+int input_item_AddOptions( input_item_t *p_item, int i_options,
+                           const char *const *ppsz_options,
+                           unsigned i_flags )
+{
+    int i_ret = VLC_SUCCESS;
+    for( int i = 0; i < i_options && i_ret == VLC_SUCCESS; i++ )
+        i_ret = input_item_AddOption( p_item, ppsz_options[i], i_flags );
+    return i_ret;
+}
+
 int input_item_AddOpaque(input_item_t *item, const char *name, void *value)
 {
     assert(name != NULL);
@@ -878,24 +914,9 @@ void input_item_SetEpgOffline( input_item_t *p_item )
     vlc_event_send( &p_item->event_manager, &event );
 }
 
-input_item_t *input_item_NewExt( const char *psz_uri,
-                                 const char *psz_name,
-                                 int i_options,
-                                 const char *const *ppsz_options,
-                                 unsigned i_option_flags,
-                                 mtime_t i_duration )
-{
-    return input_item_NewWithType( psz_uri, psz_name,
-                                  i_options, ppsz_options, i_option_flags,
-                                  i_duration, ITEM_TYPE_UNKNOWN );
-}
-
-
 input_item_t *
-input_item_NewWithTypeExt( const char *psz_uri, const char *psz_name,
-                           int i_options, const char *const *ppsz_options,
-                           unsigned flags, mtime_t duration, int type,
-                           int i_net )
+input_item_NewExt( const char *psz_uri, const char *psz_name,
+                   mtime_t duration, int type, enum input_item_net_type i_net )
 {
     static atomic_uint last_input_id = ATOMIC_VAR_INIT(0);
 
@@ -919,13 +940,14 @@ input_item_NewWithTypeExt( const char *psz_uri, const char *psz_name,
     if( psz_uri )
         input_item_SetURI( p_input, psz_uri );
     else
+    {
         p_input->i_type = ITEM_TYPE_UNKNOWN;
+        p_input->b_net = false;
+    }
 
     TAB_INIT( p_input->i_options, p_input->ppsz_options );
     p_input->optflagc = 0;
     p_input->optflagv = NULL;
-    for( int i = 0; i < i_options; i++ )
-        input_item_AddOption( p_input, ppsz_options[i], flags );
     p_input->opaques = NULL;
 
     p_input->i_duration = duration;
@@ -950,51 +972,38 @@ input_item_NewWithTypeExt( const char *psz_uri, const char *psz_name,
         p_input->i_type = type;
     p_input->b_error_when_reading = false;
 
-    if( i_net != -1 )
-        p_input->b_net = !!i_net;
-    else if( p_input->i_type == ITEM_TYPE_STREAM )
-        p_input->b_net = true;
+    if( i_net != ITEM_NET_UNKNOWN )
+        p_input->b_net = i_net == ITEM_NET;
     return p_input;
-}
-
-input_item_t *
-input_item_NewWithType( const char *psz_uri, const char *psz_name,
-                        int i_options, const char *const *ppsz_options,
-                        unsigned flags, mtime_t duration, int type )
-{
-    return input_item_NewWithTypeExt( psz_uri, psz_name, i_options,
-                                      ppsz_options, flags, duration, type,
-                                      -1 );
 }
 
 input_item_t *input_item_Copy( input_item_t *p_input )
 {
+    vlc_meta_t *meta = NULL;
+    input_item_t *item;
+    bool b_net;
+
     vlc_mutex_lock( &p_input->lock );
 
-    input_item_t *p_new_input =
-        input_item_NewWithType( p_input->psz_uri, p_input->psz_name,
-                                0, NULL, 0, p_input->i_duration,
-                                p_input->i_type );
-
-    if( p_new_input )
+    item = input_item_NewExt( p_input->psz_uri, p_input->psz_name,
+                              p_input->i_duration, p_input->i_type,
+                              ITEM_NET_UNKNOWN );
+    if( likely(item != NULL) && p_input->p_meta != NULL )
     {
-        for( int i = 0 ; i< p_input->i_options; i++ )
-        {
-            input_item_AddOption( p_new_input,
-                                  p_input->ppsz_options[i],
-                                  p_input->optflagv[i] );
-        }
-
-        if( p_input->p_meta )
-        {
-            p_new_input->p_meta = vlc_meta_New();
-            vlc_meta_Merge( p_new_input->p_meta, p_input->p_meta );
-        }
+        meta = vlc_meta_New();
+        vlc_meta_Merge( meta, p_input->p_meta );
     }
-
+    b_net = p_input->b_net;
     vlc_mutex_unlock( &p_input->lock );
 
-    return p_new_input;
+    if( likely(item != NULL) )
+    {   /* No need to lock; no other thread has seen this new item yet. */
+        input_item_CopyOptions( item, p_input );
+        item->p_meta = meta;
+        item->b_net = b_net;
+    }
+
+    return item;
 }
 
 struct item_type_entry
@@ -1020,8 +1029,8 @@ static int GuessType( const input_item_t *p_item, bool *p_net )
         /* Short match work, not just exact match */
         { "alsa",   ITEM_TYPE_CARD, false },
         { "atsc",   ITEM_TYPE_CARD, false },
-        { "bluray", ITEM_TYPE_DISC, false },
         { "bd",     ITEM_TYPE_DISC, false },
+        { "bluray", ITEM_TYPE_DISC, false },
         { "cable",  ITEM_TYPE_CARD, false },
         { "cdda",   ITEM_TYPE_DISC, false },
         { "cqam",   ITEM_TYPE_CARD, false },
@@ -1030,16 +1039,17 @@ static int GuessType( const input_item_t *p_item, bool *p_net )
         { "deckli", ITEM_TYPE_CARD, false }, /* decklink */
         { "dir",    ITEM_TYPE_DIRECTORY, false },
         { "dshow",  ITEM_TYPE_CARD, false },
-        { "dv",     ITEM_TYPE_CARD, false },
+        { "dtv",    ITEM_TYPE_CARD, false },
         { "dvb",    ITEM_TYPE_CARD, false },
         { "dvd",    ITEM_TYPE_DISC, false },
-        { "dtv",    ITEM_TYPE_CARD, false },
         { "eyetv",  ITEM_TYPE_CARD, false },
         { "fd",     ITEM_TYPE_UNKNOWN, false },
+        { "file",   ITEM_TYPE_FILE, false },
         { "ftp",    ITEM_TYPE_FILE, true },
         { "http",   ITEM_TYPE_FILE, true },
         { "icyx",   ITEM_TYPE_STREAM, true },
         { "imem",   ITEM_TYPE_UNKNOWN, false },
+        { "isdb-",  ITEM_TYPE_CARD, false },
         { "itpc",   ITEM_TYPE_PLAYLIST, true },
         { "jack",   ITEM_TYPE_CARD, false },
         { "linsys", ITEM_TYPE_CARD, false },
@@ -1050,9 +1060,11 @@ static int GuessType( const input_item_t *p_item, bool *p_net )
         { "ofdm",   ITEM_TYPE_CARD, false },
         { "oss",    ITEM_TYPE_CARD, false },
         { "pnm",    ITEM_TYPE_STREAM, true },
+        { "pulse",  ITEM_TYPE_CARD, false },
         { "qam",    ITEM_TYPE_CARD, false },
         { "qpsk",   ITEM_TYPE_CARD, false },
         { "qtcapt", ITEM_TYPE_CARD, false }, /* qtcapture */
+        { "qtsound",ITEM_TYPE_CARD, false },
         { "raw139", ITEM_TYPE_CARD, false }, /* raw1394 */
         { "rt",     ITEM_TYPE_STREAM, true }, /* rtp, rtsp, rtmp */
         { "satell", ITEM_TYPE_CARD, false }, /* satellite */
@@ -1061,32 +1073,39 @@ static int GuessType( const input_item_t *p_item, bool *p_net )
         { "sftp",   ITEM_TYPE_FILE, true },
         { "shm",    ITEM_TYPE_CARD, false },
         { "smb",    ITEM_TYPE_FILE, true },
+        { "stream", ITEM_TYPE_STREAM, false },
         { "svcd",   ITEM_TYPE_DISC, false },
         { "tcp",    ITEM_TYPE_STREAM, true },
         { "terres", ITEM_TYPE_CARD, false }, /* terrestrial */
         { "udp",    ITEM_TYPE_STREAM, true },  /* udplite too */
         { "unsv",   ITEM_TYPE_STREAM, true },
+        { "upnp",   ITEM_TYPE_FILE, true },
         { "usdigi", ITEM_TYPE_CARD, false }, /* usdigital */
         { "v4l",    ITEM_TYPE_CARD, false },
         { "vcd",    ITEM_TYPE_DISC, false },
+        { "vdr",    ITEM_TYPE_STREAM, true },
+        { "wasapi", ITEM_TYPE_CARD, false },
         { "window", ITEM_TYPE_CARD, false },
     };
-    const struct item_type_entry *e;
 
-    if( !strstr( p_item->psz_uri, "://" ) )
-        return ITEM_TYPE_FILE;
+#ifndef NDEBUG
+    for( size_t i = 1; i < ARRAY_SIZE( tab ); i++ )
+        assert( typecmp( tab + i, tab + i - 1 ) > 0 );
+#endif
 
-    e = bsearch( p_item->psz_uri, tab, sizeof( tab ) / sizeof( tab[0] ),
+    *p_net = false;
+
+    if( strstr( p_item->psz_uri, "://" ) == NULL )
+        return ITEM_TYPE_UNKNOWN; /* invalid URI */
+
+    const struct item_type_entry *e =
+        bsearch( p_item->psz_uri, tab, ARRAY_SIZE( tab ),
                  sizeof( tab[0] ), typecmp );
-    if( e )
-    {
-        *p_net = e->b_net;
-        return e->i_type;
-    } else
-    {
-        *p_net = false;
-        return ITEM_TYPE_FILE;
-    }
+    if( e == NULL )
+        return ITEM_TYPE_UNKNOWN;
+
+    *p_net = e->b_net;
+    return e->i_type;
 }
 
 input_item_node_t *input_item_node_Create( input_item_t *p_input )

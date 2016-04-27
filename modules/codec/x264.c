@@ -842,6 +842,7 @@ static int  Open ( vlc_object_t *p_this )
         return VLC_ENOMEM;
 
     fullrange = var_GetBool( p_enc, SOUT_CFG_PREFIX "fullrange" );
+    fullrange |= p_enc->fmt_in.video.b_color_range_full;
     p_enc->fmt_in.i_codec = fullrange ? VLC_CODEC_J420 : VLC_CODEC_I420;
     p_sys->i_colorspace = X264_CSP_I420;
 #if X264_BUILD >= 118
@@ -921,6 +922,53 @@ static int  Open ( vlc_object_t *p_this )
     p_sys->param.i_width  = p_enc->fmt_in.video.i_visible_width;
     p_sys->param.i_height = p_enc->fmt_in.video.i_visible_height;
     p_sys->param.vui.b_fullrange = fullrange;
+
+    switch( p_enc->fmt_in.video.space )
+    {
+        case COLOR_SPACE_BT601:
+            p_sys->param.vui.i_colmatrix = 5; /* bt470bg*/
+            break;
+        case COLOR_SPACE_BT709:
+            p_sys->param.vui.i_colmatrix = 1; /* bt709*/
+            break;
+        case COLOR_SPACE_BT2020:
+            p_sys->param.vui.i_colmatrix = 10; /* bt2020c*/
+            break;
+        default:
+            break;
+    }
+
+    switch( p_enc->fmt_in.video.transfer )
+    {
+        case TRANSFER_FUNC_LINEAR:
+            p_sys->param.vui.i_transfer = 7; /* linear*/
+            break;
+        case TRANSFER_FUNC_SRGB:
+        case TRANSFER_FUNC_BT709:
+            p_sys->param.vui.i_transfer = 1; /* bt709*/
+            break;
+        default:
+            break;
+    }
+
+    switch( p_enc->fmt_in.video.primaries )
+    {
+        case COLOR_PRIMARIES_BT601_625:
+            p_sys->param.vui.i_colorprim = 5; /* BT470BG */
+            break;
+        case COLOR_PRIMARIES_BT601_525:
+            p_sys->param.vui.i_colorprim = 6; /* SMPTE170M */
+            break;
+        case COLOR_PRIMARIES_BT709:
+            p_sys->param.vui.i_colorprim = 1; /* BT.709 */
+            break;
+        case COLOR_PRIMARIES_BT2020:
+            p_sys->param.vui.i_colorprim = 9; /* BT.2020 */
+            break;
+        default:
+            break;
+    }
+
 
     if( fabs(var_GetFloat( p_enc, SOUT_CFG_PREFIX "qcomp" ) - 0.60) > 0.005 )
        p_sys->param.rc.f_qcompress = var_GetFloat( p_enc, SOUT_CFG_PREFIX "qcomp" );
@@ -1285,12 +1333,13 @@ static int  Open ( vlc_object_t *p_this )
         p_sys->param.vui.i_sar_height = i_dst_den;
     }
 
+    p_sys->param.i_timebase_num = 1;
+    p_sys->param.i_timebase_den = CLOCK_FREQ;
+
     if( p_enc->fmt_in.video.i_frame_rate_base > 0 )
     {
         p_sys->param.i_fps_num = p_enc->fmt_in.video.i_frame_rate;
         p_sys->param.i_fps_den = p_enc->fmt_in.video.i_frame_rate_base;
-        p_sys->param.i_timebase_num = 1;
-        p_sys->param.i_timebase_den = CLOCK_FREQ;
         p_sys->param.b_vfr_input = 0;
     }
 
@@ -1541,10 +1590,14 @@ static block_t *Encode( encoder_t *p_enc, picture_t *p_pict )
     else
         p_block->i_flags |= BLOCK_FLAG_TYPE_PB;
 
-    /* This isn't really valid for streams with B-frames */
-    p_block->i_length = CLOCK_FREQ *
-        p_enc->fmt_in.video.i_frame_rate_base /
-            p_enc->fmt_in.video.i_frame_rate;
+    /* If we happen to have vfr stream, don't set length at all */
+    if( !p_sys->param.b_vfr_input )
+    {
+        /* This isn't really valid for streams with B-frames */
+        p_block->i_length = CLOCK_FREQ *
+            p_enc->fmt_in.video.i_frame_rate_base /
+                p_enc->fmt_in.video.i_frame_rate;
+    }
 
     /* scale pts-values back*/
     p_block->i_pts = pic.i_pts;

@@ -186,7 +186,10 @@ static void Preparse( playlist_preparser_t *preparser, input_item_t *p_item,
         input_thread_t *input = input_CreatePreparser( preparser->object,
                                                        p_item );
         if( input == NULL )
+        {
+            input_item_SignalPreparseEnded( p_item, ITEM_PREPARSE_FAILED );
             return;
+        }
 
         var_AddCallback( input, "intf-event", InputEvent,
                          &preparser->item_done );
@@ -201,10 +204,12 @@ static void Preparse( playlist_preparser_t *preparser, input_item_t *p_item,
         input_Close( input );
 
         var_SetAddress( preparser->object, "item-change", p_item );
+        input_item_SetPreparsed( p_item, true );
+        input_item_SignalPreparseEnded( p_item, ITEM_PREPARSE_DONE );
     }
+    else if (!b_preparse)
+        input_item_SignalPreparseEnded( p_item, ITEM_PREPARSE_SKIPPED );
 
-    input_item_SetPreparsed( p_item, true );
-    input_item_SignalPreparseEnded( p_item );
 }
 
 /**

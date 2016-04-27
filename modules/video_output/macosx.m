@@ -49,16 +49,7 @@
 #include <vlc_dialog.h>
 #include "opengl.h"
 
-/* compilation support for 10.5 and 10.6 */
-#define OSX_LION NSAppKitVersionNumber >= 1115.2
-#ifndef MAC_OS_X_VERSION_10_7
-
-@interface NSView (IntroducedInLion)
-- (NSRect)convertRectToBacking:(NSRect)aRect;
-- (void)setWantsBestResolutionOpenGLSurface:(BOOL)aBool;
-@end
-
-#endif
+#define OSX_EL_CAPITAN (NSAppKitVersionNumber >= 1404)
 
 /**
  * Forward declarations
@@ -115,6 +106,9 @@ struct vout_display_sys_t
     VLCOpenGLVideoView *glView;
     id<VLCOpenGLVideoViewEmbedding> container;
 
+    CGColorSpaceRef cgColorSpace;
+    NSColorSpace *nsColorSpace;
+
     vout_window_t *embed;
     vlc_gl_t gl;
     vout_display_opengl_t *vgl;
@@ -169,6 +163,57 @@ static int Open (vlc_object_t *this)
         /* This will be released in Close(), on
          * main thread, after we are done using it. */
         sys->container = [container retain];
+
+        /* support for BT.709 and BT.2020 color spaces was introduced with OS X 10.11
+         * on older OS versions, we can't show correct colors, so we fallback on linear RGB */
+        if (OSX_EL_CAPITAN) {
+            switch (vd->fmt.primaries) {
+                case COLOR_PRIMARIES_BT601_525:
+                case COLOR_PRIMARIES_BT601_625:
+                {
+                    msg_Dbg(vd, "Using BT.601 color space");
+                    sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+                    break;
+                }
+                case COLOR_PRIMARIES_BT709:
+                {
+                    msg_Dbg(vd, "Using BT.709 color space");
+                    sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
+                    break;
+                }
+                case COLOR_PRIMARIES_BT2020:
+                {
+                    msg_Dbg(vd, "Using BT.2020 color space");
+                    sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
+                    break;
+                }
+                case COLOR_PRIMARIES_DCI_P3:
+                {
+                    msg_Dbg(vd, "Using DCI P3 color space");
+                    sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDCIP3);
+                    break;
+                }
+                default:
+                {
+                    msg_Dbg(vd, "Guessing color space based on video dimensions (%ix%i)", vd->fmt.i_visible_width, vd->fmt.i_visible_height);
+                    if (vd->fmt.i_visible_height >= 2000 || vd->fmt.i_visible_width >= 3800) {
+                        msg_Dbg(vd, "Using BT.2020 color space");
+                        sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
+                    } else if (vd->fmt.i_height > 576) {
+                        msg_Dbg(vd, "Using BT.709 color space");
+                        sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
+                    } else {
+                        msg_Dbg(vd, "SD content, using linear RGB color space");
+                        sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+                    }
+                    break;
+                }
+            }
+        } else {
+            msg_Dbg(vd, "OS does not support BT.709 or BT.2020 color spaces, output may vary");
+            sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        }
+        sys->nsColorSpace = [[NSColorSpace alloc] initWithCGColorSpace:sys->cgColorSpace];
 
         /* Get our main view*/
         [VLCOpenGLVideoView performSelectorOnMainThread:@selector(getNewView:)
@@ -270,6 +315,12 @@ void Close (vlc_object_t *this)
 
         [sys->glView release];
 
+        if (sys->cgColorSpace != nil)
+            CGColorSpaceRelease(sys->cgColorSpace);
+
+        if (sys->nsColorSpace != nil)
+            [sys->nsColorSpace release];
+
         if (sys->embed)
             vout_display_DeleteWindow (vd, sys->embed);
         free (sys);
@@ -352,12 +403,8 @@ static int Control (vout_display_t *vd, int query, va_list ap)
                 /* we always use our current frame here, because we have some size constraints
                  in the ui vout provider */
                 vout_display_cfg_t cfg_tmp = *cfg;
-                NSRect bounds;
                 /* on HiDPI displays, the point bounds don't equal the actual pixel based bounds */
-                if (OSX_LION)
-                    bounds = [sys->glView convertRectToBacking:[sys->glView bounds]];
-                else
-                    bounds = [sys->glView bounds];
+                NSRect bounds = [sys->glView convertRectToBacking:[sys->glView bounds]];
                 cfg_tmp.display.width = bounds.size.width;
                 cfg_tmp.display.height = bounds.size.height;
 
@@ -468,9 +515,13 @@ static void OpenglSwap (vlc_gl_t *gl)
     if (!self)
         return nil;
 
-    /* enable HiDPI support on OS X 10.7 and later */
-    if (OSX_LION)
-        [self setWantsBestResolutionOpenGLSurface:YES];
+    /* enable HiDPI support */
+    [self setWantsBestResolutionOpenGLSurface:YES];
+
+    /* request our screen's HDR mode (introduced in OS X 10.11) */
+    if ([self respondsToSelector:@selector(setWantsExtendedDynamicRangeOpenGLSurface:)]) {
+        [self setWantsExtendedDynamicRangeOpenGLSurface:YES];
+    }
 
     /* Swap buffers only during the vertical retrace of the monitor.
      http://developer.apple.com/documentation/GraphicsImaging/
@@ -598,12 +649,8 @@ static void OpenglSwap (vlc_gl_t *gl)
 {
     VLCAssertMainThread();
 
-    NSRect bounds;
     /* on HiDPI displays, the point bounds don't equal the actual pixel based bounds */
-    if (OSX_LION)
-        bounds = [self convertRectToBacking:[self bounds]];
-    else
-        bounds = [self bounds];
+    NSRect bounds = [self convertRectToBacking:[self bounds]];
     vout_display_place_t place;
 
     @synchronized(self) {
@@ -743,10 +790,8 @@ static void OpenglSwap (vlc_gl_t *gl)
     NSRect videoRect = [self bounds];
     BOOL b_inside = [self mouse: ml inRect: videoRect];
 
-    if (OSX_LION) {
-        ml = [self convertPointToBacking: ml];
-        videoRect = [self convertRectToBacking: videoRect];
-    }
+    ml = [self convertPointToBacking: ml];
+    videoRect = [self convertRectToBacking: videoRect];
 
     if (b_inside) {
         @synchronized (self) {
@@ -787,6 +832,15 @@ static void OpenglSwap (vlc_gl_t *gl)
 - (BOOL)mouseDownCanMoveWindow
 {
     return YES;
+}
+
+- (void)viewWillMoveToWindow:(nullable NSWindow *)newWindow
+{
+    [super viewWillMoveToWindow:newWindow];
+
+    if (newWindow != nil) {
+        [newWindow setColorSpace:vd->sys->nsColorSpace];
+    }
 }
 
 @end

@@ -373,9 +373,9 @@ static int Demux ( demux_t *p_demux )
         p_sys->psz_uri = uri;
     }
 
-    p_child = input_item_NewWithType( p_sys->psz_uri,
+    p_child = input_item_NewStream( p_sys->psz_uri,
                       p_sys->psz_name ? p_sys->psz_name : p_sys->psz_uri,
-                      0, NULL, 0, p_sys->i_duration, ITEM_TYPE_STREAM );
+                      p_sys->i_duration  );
 
     if( !p_child )
     {
@@ -383,7 +383,7 @@ static int Demux ( demux_t *p_demux )
         return -1;
     }
 
-    input_item_CopyOptions( p_current_input, p_child );
+    input_item_CopyOptions( p_child, p_current_input );
     if( p_sys->i_packet_size && p_sys->psz_mcast_ip )
     {
         char *psz_option;

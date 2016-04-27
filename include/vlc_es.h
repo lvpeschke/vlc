@@ -166,9 +166,9 @@ typedef enum video_orientation_t
     ORIENT_ROTATED_90  = ORIENT_RIGHT_TOP,
 } video_orientation_t;
 /** Convert EXIF orientation to enum video_orientation_t */
-#define ORIENT_FROM_EXIF(exif) ((0x01324675U >> (4 * ((exif) - 1))) & 7)
+#define ORIENT_FROM_EXIF(exif) ((0x57642310U >> (4 * ((exif) - 1))) & 7)
 /** Convert enum video_orientation_t to EXIF */
-#define ORIENT_TO_EXIF(orient) ((0x12435867U >> (4 * (orient))) & 15)
+#define ORIENT_TO_EXIF(orient) ((0x76853421U >> (4 * (orient))) & 15)
 /** If the orientation is natural or mirrored */
 #define ORIENT_IS_MIRROR(orient) parity(orient)
 /** If the orientation swaps dimensions */
@@ -191,6 +191,57 @@ typedef enum video_transform_t
     TRANSFORM_TRANSPOSE      = ORIENT_TRANSPOSED,
     TRANSFORM_ANTI_TRANSPOSE = ORIENT_ANTI_TRANSPOSED
 } video_transform_t;
+
+/**
+ * Video color primaries (a.k.a. chromacities)
+ */
+typedef enum video_color_primaries_t
+{
+    COLOR_PRIMARIES_UNDEF,
+    COLOR_PRIMARIES_BT601_525,
+    COLOR_PRIMARIES_BT601_625,
+    COLOR_PRIMARIES_BT709,
+    COLOR_PRIMARIES_BT2020,
+    COLOR_PRIMARIES_DCI_P3,
+#define COLOR_PRIMARIES_SRGB COLOR_PRIMARIES_BT709
+} video_color_primaries_t;
+
+/**
+ * Video transfer functions
+ */
+typedef enum video_transfer_func_t
+{
+    TRANSFER_FUNC_UNDEF,
+    TRANSFER_FUNC_LINEAR,
+    TRANSFER_FUNC_SRGB /*< Gamma 2.2 */,
+    TRANSFER_FUNC_BT709,
+#define TRANSFER_FUNC_BT2020 TRANSFER_FUNC_BT709
+} video_transfer_func_t;
+
+/**
+ * Video color space (i.e. YCbCr matrices)
+ */
+typedef enum video_color_space_t
+{
+    COLOR_SPACE_UNDEF,
+    COLOR_SPACE_BT601,
+    COLOR_SPACE_BT709,
+    COLOR_SPACE_BT2020,
+} video_color_space_t;
+
+/**
+ * Video chroma location
+ */
+typedef enum video_chroma_location_t
+{
+    CHROMA_LOCATION_UNDEF,
+    CHROMA_LOCATION_LEFT,   /*< Most common in MPEG-2 Video, H.264/265 */
+    CHROMA_LOCATION_CENTER, /*< Most common in MPEG-1 Video, JPEG */
+    CHROMA_LOCATION_TOP_LEFT,
+    CHROMA_LOCATION_TOP_CENTER,
+    CHROMA_LOCATION_BOTTOM_LEFT,
+    CHROMA_LOCATION_BOTTOM_CENTER,
+} video_chroma_location_t;
 
 /**
  * video format description
@@ -220,6 +271,11 @@ struct video_format_t
     int i_rbshift, i_lbshift;
     video_palette_t *p_palette;              /**< video palette from demuxer */
     video_orientation_t orientation;                /**< picture orientation */
+    video_color_primaries_t primaries;                  /**< color primaries */
+    video_transfer_func_t transfer;                   /**< transfer function */
+    video_color_space_t space;                        /**< YCbCr color space */
+    bool b_color_range_full;                    /**< 0-255 instead of 16-235 */
+    video_chroma_location_t chroma_location;      /**< YCbCr chroma location */
 };
 
 /**
@@ -253,6 +309,35 @@ static inline int video_format_Copy( video_format_t *p_dst, const video_format_t
     return VLC_SUCCESS;
 }
 
+static inline void video_format_AdjustColorSpace( video_format_t *p_fmt )
+{
+    if ( p_fmt->primaries == COLOR_PRIMARIES_UNDEF )
+    {
+        if ( p_fmt->i_visible_height > 576 ) // HD
+            p_fmt->primaries = COLOR_PRIMARIES_BT709;
+        else if ( p_fmt->i_visible_height > 525 ) // PAL
+            p_fmt->primaries = COLOR_PRIMARIES_BT601_625;
+        else
+            p_fmt->primaries = COLOR_PRIMARIES_BT601_525;
+    }
+
+    if ( p_fmt->transfer == TRANSFER_FUNC_UNDEF )
+    {
+        if ( p_fmt->i_visible_height > 576 ) // HD
+            p_fmt->transfer = TRANSFER_FUNC_BT709;
+        else
+            p_fmt->transfer = TRANSFER_FUNC_SRGB;
+    }
+
+    if ( p_fmt->space == COLOR_SPACE_UNDEF )
+    {
+        if ( p_fmt->i_visible_height > 576 ) // HD
+            p_fmt->space = COLOR_SPACE_BT709;
+        else
+            p_fmt->space = COLOR_SPACE_BT601;
+    }
+}
+
 /**
  * Cleanup and free palette of this video_format_t
  * \param p_src video_format_t structure to clean
@@ -261,7 +346,6 @@ static inline void video_format_Clean( video_format_t *p_src )
 {
     free( p_src->p_palette );
     memset( p_src, 0, sizeof( video_format_t ) );
-    p_src->p_palette = NULL;
 }
 
 /**

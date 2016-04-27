@@ -27,6 +27,9 @@
 #ifdef HAVE_FLOCK
 #include <sys/file.h>
 #endif
+#ifdef HAVE_FCNTL
+#include <fcntl.h>
+#endif
 
 #include <vlc_common.h>
 #include <vlc_plugin.h>
@@ -53,7 +56,8 @@ vlc_module_begin()
     set_category(CAT_ADVANCED)
     set_subcategory(SUBCAT_ADVANCED_MISC)
     set_callbacks(Open, Close)
-    add_string("keystore-file", NULL, NULL, NULL, true)
+    add_savefile("keystore-file", NULL, NULL, NULL, true)
+        change_private()
     set_capability("keystore", 0)
     add_shortcut("file_plaintext")
 #ifdef CRYPTFILE
@@ -262,6 +266,27 @@ end:
     }
     return VLC_SUCCESS;
 }
+ 
+#if (!defined(HAVE_FLOCK) && defined (HAVE_FCNTL) && defined (F_SETLKW))
+static int
+posix_lock_fd(int fd)
+{
+    struct flock lock;
+    int flags;
+
+    if (fd == -1)
+        return -1;
+
+    flags = fcntl(fd, F_GETFL);
+
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_whence = SEEK_SET;
+    lock.l_type = (flags & O_ACCMODE) == O_RDONLY ? F_RDLCK : F_WRLCK;
+
+    return fcntl(fd, F_SETLKW, &lock);
+}
+#endif
 
 static int
 file_open(const char *psz_file, const char *psz_mode, FILE **pp_file)
@@ -272,12 +297,22 @@ file_open(const char *psz_file, const char *psz_mode, FILE **pp_file)
 
     int i_fd = fileno(p_file);
     if (i_fd == -1)
+    {
+        fclose(p_file);
         return -1;
+    }
 
 #ifdef HAVE_FLOCK
     if (flock(i_fd, LOCK_EX) != 0)
     {
         fclose(p_file);
+        return -1;
+    }
+#elif defined (HAVE_FCNTL) && defined (F_SETLKW)
+    if (posix_lock_fd(i_fd) != 0)
+    {
+        fclose(p_file);
+        return -1;
     }
 #endif
     *pp_file = p_file;
@@ -285,11 +320,8 @@ file_open(const char *psz_file, const char *psz_mode, FILE **pp_file)
 }
 
 static void
-file_close(FILE *p_file, int i_fd)
+file_close(FILE *p_file)
 {
-#ifdef HAVE_FLOCK
-    flock(i_fd, LOCK_UN);
-#endif
     fclose(p_file);
 }
 
@@ -349,7 +381,7 @@ Store(vlc_keystore *p_keystore, const char *const ppsz_values[KEY_MAX],
     i_ret = file_save(p_keystore, p_file, i_fd, &list);
 
 end:
-    file_close(p_file, i_fd);
+    file_close(p_file);
     ks_list_free(&list);
     return i_ret;
 }
@@ -413,7 +445,7 @@ Find(vlc_keystore *p_keystore, const char *const ppsz_values[KEY_MAX],
 
     *pp_entries = out_list.p_entries;
 end:
-    file_close(p_file, i_fd);
+    file_close(p_file);
     ks_list_free(&list);
     return out_list.i_count;
 }
@@ -445,7 +477,7 @@ Remove(vlc_keystore *p_keystore, const char *const ppsz_values[KEY_MAX])
         i_count = 0;
 
 end:
-    file_close(p_file, i_fd);
+    file_close(p_file);
     ks_list_free(&list);
     return i_count;
 }

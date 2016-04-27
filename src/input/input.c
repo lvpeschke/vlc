@@ -289,7 +289,7 @@ static input_thread_t *Create( vlc_object_t *p_parent, input_item_t *p_item,
     snprintf( psz_timer_name, sizeof(psz_timer_name),
               "input launching for '%s'", psz_name );
 
-    msg_Dbg( p_input, "Creating an input for '%s'", psz_name);
+    msg_Dbg( p_input, "Creating an input for %s'%s'", b_quick ? "preparsing " : "", psz_name);
 
     free( psz_name );
 
@@ -1143,18 +1143,15 @@ static int Init( input_thread_t * p_input )
 {
     input_source_t *master;
 
-    for( int i = 0; i < p_input->p->p_item->i_options; i++ )
+    if( var_Type( p_input->p_parent, "meta-file" ) )
     {
-        if( !strncmp( p_input->p->p_item->ppsz_options[i], "meta-file", 9 ) )
-        {
-            msg_Dbg( p_input, "Input is a meta file: disabling unneeded options" );
-            var_SetString( p_input, "sout", "" );
-            var_SetBool( p_input, "sout-all", false );
-            var_SetString( p_input, "input-slave", "" );
-            var_SetInteger( p_input, "input-repeat", 0 );
-            var_SetString( p_input, "sub-file", "" );
-            var_SetBool( p_input, "sub-autodetect-file", false );
-        }
+        msg_Dbg( p_input, "Input is a meta file: disabling unneeded options" );
+        var_SetString( p_input, "sout", "" );
+        var_SetBool( p_input, "sout-all", false );
+        var_SetString( p_input, "input-slave", "" );
+        var_SetInteger( p_input, "input-repeat", 0 );
+        var_SetString( p_input, "sub-file", "" );
+        var_SetBool( p_input, "sub-autodetect-file", false );
     }
 
     InitStatistics( p_input );

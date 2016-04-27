@@ -610,7 +610,7 @@ static int probeFile(const char *psz_name)
     ret = VLC_SUCCESS;
 
 bailout:
-    close(fd);
+    vlc_close(fd);
     return ret;
 }
 
@@ -1638,7 +1638,7 @@ static void blurayUpdateTitleInfo(input_title_t *t, BLURAY_TITLE_INFO *title_inf
             if (!s) {
                 break;
             }
-            s->i_time_offset = title_info->chapters[j].offset;
+            s->i_time_offset = FROM_TICKS(title_info->chapters[j].start);
 
             TAB_APPEND(t->i_seekpoint, t->seekpoint, s);
         }

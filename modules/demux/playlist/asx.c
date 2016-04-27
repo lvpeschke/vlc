@@ -265,9 +265,15 @@ static void ProcessEntry( int *pi_n_entry, xml_reader_t *p_xml_reader,
                 }
 
                 /* Create the input item */
-                p_entry = input_item_NewExt( psz_mrl, psz_name, i_options,
-                        (const char* const*) ppsz_options, VLC_INPUT_OPTION_TRUSTED, i_duration );
-                input_item_CopyOptions( p_current_input, p_entry );
+                p_entry = input_item_NewExt( psz_mrl, psz_name, i_duration,
+                                             ITEM_TYPE_UNKNOWN, ITEM_NET_UNKNOWN );
+                if( p_entry == NULL )
+                    goto end;
+
+                input_item_AddOptions( p_entry, i_options,
+                                       (const char **)ppsz_options,
+                                       VLC_INPUT_OPTION_TRUSTED );
+                input_item_CopyOptions( p_entry, p_current_input );
 
                 /* Add the metadata */
                 if( psz_name )
@@ -287,6 +293,7 @@ static void ProcessEntry( int *pi_n_entry, xml_reader_t *p_xml_reader,
 
                 input_item_Release( p_entry );
 
+end:
                 while( i_options )
                     free( ppsz_options[--i_options] );
                 free( psz_name );
@@ -403,7 +410,7 @@ static int Demux( demux_t *p_demux )
                 psz_txt = strdup( psz_node );
                 vlc_xml_decode( psz_txt );
                 p_input = input_item_New( psz_txt, psz_title_asx );
-                input_item_CopyOptions( p_current_input, p_input );
+                input_item_CopyOptions( p_input, p_current_input );
                 input_item_node_AppendItem( p_subitems, p_input );
 
                 vlc_gc_decref( p_input );

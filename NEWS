@@ -67,6 +67,7 @@ Decoder:
    supporting H.263, H.264/MPEG-4 AVC, MPEG-4 Part 2, and DV depending on device
    and OS version
  * Support for the OggSpots video codec
+ * JPEG images correctly oriented using embedded orientation tag, if present
 
 Demuxers:
  * Support HD-DVD .evo (H.264, VC-1, MPEG-2, PCM, AC-3, E-AC3, MLP, DTS)
@@ -91,6 +92,7 @@ Demuxers:
    stream filter with new Smooth demuxer, both using unified adaptive module
  * Improved smooth streaming compatibility
  * Support SCTE-18 / EAS inside TS
+ * Support for RTP Reception Hint Track In MP4 with H.264, GSM and Speex payloads.
 
 Stream filter:
  * Added ARIB STD-B25 TS streams decoder
@@ -219,6 +221,7 @@ Removed modules
  * VCDX "extended" Video CD access module (use the normal VCD module)
  * Mac OS X Dialog Provider (use VLCKit instead)
  * iOS Dialog Provider (use MobileVLCKit / TVVLCKit instead)
+ * QuickTime decoder module (use native codecs)
 
 
 Changes between 2.2.0 and 2.2.1:

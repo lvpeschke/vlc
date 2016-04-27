@@ -891,13 +891,15 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     IDXGIAdapter *dxgiadapter;
     static const D3D_FEATURE_LEVEL featureLevels[] =
     {
+        0xc000 /* D3D_FEATURE_LEVEL_12_1 */,
+        0xc100 /* D3D_FEATURE_LEVEL_12_0 */,
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,
         D3D_FEATURE_LEVEL_10_1,
         D3D_FEATURE_LEVEL_10_0,
         D3D_FEATURE_LEVEL_9_3,
         D3D_FEATURE_LEVEL_9_2,
-        D3D_FEATURE_LEVEL_9_1
+        D3D_FEATURE_LEVEL_9_1,
     };
 
 # if USE_DXGI
@@ -956,14 +958,15 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     };
 
     for (UINT driver = 0; driver < ARRAYSIZE(driverAttempts); driver++) {
+        D3D_FEATURE_LEVEL i_feature_level;
         hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
-                    featureLevels, ARRAY_SIZE(featureLevels), D3D11_SDK_VERSION,
-                    &sys->d3ddevice, NULL, &sys->d3dcontext);
+                    featureLevels, 9, D3D11_SDK_VERSION,
+                    &sys->d3ddevice, &i_feature_level, &sys->d3dcontext);
         if (SUCCEEDED(hr)) {
 #ifndef NDEBUG
-            msg_Dbg(vd, "Created the D3D11 device 0x%p ctx 0x%p type %d.",
+            msg_Dbg(vd, "Created the D3D11 device 0x%p ctx 0x%p type %d level %d.",
                     (void *)sys->d3ddevice, (void *)sys->d3dcontext,
-                    driverAttempts[driver]);
+                    driverAttempts[driver], i_feature_level);
 #endif
             break;
         }
@@ -1022,7 +1025,8 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
                                                            &i_formatSupport)) &&
                     ( i_formatSupport & i_quadSupportFlags ) == i_quadSupportFlags )
             {
-                msg_Dbg(vd, "Using pixel format %s with chroma %4.4s for source %4.4s", output_format->name, (char *)&output_format->fourcc, (char *)&i_src_chroma );
+                msg_Dbg( vd, "Using pixel format %s from chroma %4.4s", output_format->name,
+                             (char *)&i_src_chroma );
                 fmt->i_chroma = output_format->fourcc;
                 sys->picQuadConfig.textureFormat      = output_format->formatTexture;
                 sys->picQuadConfig.resourceFormatYRGB = output_format->formatY;
@@ -1043,7 +1047,8 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
                                                            &i_formatSupport)) &&
                     ( i_formatSupport & i_quadSupportFlags ) == i_quadSupportFlags )
             {
-                msg_Dbg(vd, "Using pixel format %s for chroma %4.4s", output_format->name, (char *)&output_format->fourcc );
+                msg_Dbg( vd, "Using pixel format %s for chroma %4.4s", output_format->name,
+                             (char *)&i_src_chroma );
                 fmt->i_chroma = output_format->fourcc;
                 sys->picQuadConfig.textureFormat      = output_format->formatTexture;
                 sys->picQuadConfig.resourceFormatYRGB = output_format->formatY;

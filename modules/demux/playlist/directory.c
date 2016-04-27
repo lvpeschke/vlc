@@ -153,6 +153,11 @@ static int Demux( demux_t *p_demux )
 
     p_input = GetCurrentItem( p_demux );
     p_node = input_item_node_Create( p_input );
+    if( p_node == NULL )
+    {
+        input_item_Release( p_input );
+        return VLC_ENOMEM;
+    }
     p_node->b_can_loop = p_demux->p_sys->b_dir_can_loop;
     input_item_Release(p_input);
 
@@ -172,7 +177,7 @@ static int Demux( demux_t *p_demux )
         if( has_ext( psz_ignored_exts, p_item->psz_name ) )
             goto skip_item;
 
-        input_item_CopyOptions( p_node->p_item, p_item );
+        input_item_CopyOptions( p_item, p_node->p_item );
         if( !input_item_node_AppendItem( p_node, p_item ) )
             i_ret = VLC_ENOMEM;
 skip_item:

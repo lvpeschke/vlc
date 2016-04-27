@@ -60,7 +60,7 @@ EXTRA_DIST = \
 	extras/package/win32/NSIS/languages/occitan.nsh \
 	extras/package/win32/NSIS/languages/polish.nsh \
 	extras/package/win32/NSIS/languages/punjabi.nsh \
-	extras/package/win32/NSIS/languages/russian.nsh
+	extras/package/win32/NSIS/languages/russian.nsh \
 	extras/package/win32/NSIS/languages/romanian.nsh \
 	extras/package/win32/NSIS/languages/schinese.nsh \
 	extras/package/win32/NSIS/languages/slovak.nsh \
@@ -128,6 +128,7 @@ EXTRA_DIST += \
 	extras/package/macosx/eyetvplugin/EyeTVPluginDefs.h \
 	extras/package/macosx/eyetvplugin/Info.plist \
 	extras/package/macosx/fullscreen_panel.svg \
+	extras/package/macosx/vlc_status_icon.svg \
 	extras/package/macosx/Info.plist.in \
 	extras/package/macosx/package.mak \
 	extras/package/macosx/README.MacOSX.rtf \
@@ -859,8 +860,7 @@ EXTRA_DIST += \
 	extras/package/macosx/Resources/vlcmenubaricon/pauseIcon@2x.png \
 	extras/package/macosx/Resources/vlcmenubaricon/playIcon.png \
 	extras/package/macosx/Resources/vlcmenubaricon/playIcon@2x.png \
-	extras/package/macosx/Resources/vlcmenubaricon/statusBarIcon.png \
-	extras/package/macosx/Resources/vlcmenubaricon/statusBarIcon@2x.png \
+	extras/package/macosx/Resources/vlcmenubaricon/statusBarIcon.pdf \
 	extras/package/macosx/Resources/vlcmenubaricon/stopIcon.png \
 	extras/package/macosx/Resources/vlcmenubaricon/stopIcon@2x.png \
 	extras/package/macosx/Resources/vlc.scriptSuite \

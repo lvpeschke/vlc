@@ -39,9 +39,7 @@
 #include <linux/dvb/dmx.h>
 
 #include "dtv/dtv.h"
-#ifdef HAVE_DVBPSI
-# include "dtv/en50221.h"
-#endif
+#include "dtv/en50221.h"
 
 #ifndef O_SEARCH
 # define O_SEARCH O_RDONLY
@@ -158,9 +156,7 @@ struct dvb_device
         uint16_t pid;
     } pids[MAX_PIDS];
 #endif
-#ifdef HAVE_DVBPSI
     cam_t *cam;
-#endif
     uint8_t device;
     bool budget;
     //size_t buffer_size;
@@ -207,9 +203,7 @@ dvb_device_t *dvb_open (vlc_object_t *obj)
         return NULL;
     }
     d->frontend = -1;
-#ifdef HAVE_DVBPSI
     d->cam = NULL;
-#endif
     d->budget = var_InheritBool (obj, "dvb-budget-mode");
 
 #ifndef USE_DMX
@@ -221,7 +215,7 @@ dvb_device_t *dvb_open (vlc_object_t *obj)
        {
            msg_Err (obj, "cannot access demultiplexer: %s",
                     vlc_strerror_c(errno));
-           close (d->dir);
+           vlc_close (d->dir);
            free (d);
            return NULL;
        }
@@ -255,25 +249,23 @@ dvb_device_t *dvb_open (vlc_object_t *obj)
         if (d->demux == -1)
         {
             msg_Err (obj, "cannot access DVR: %s", vlc_strerror_c(errno));
-            close (d->dir);
+            vlc_close (d->dir);
             free (d);
             return NULL;
         }
 #endif
     }
 
-#ifdef HAVE_DVBPSI
     int ca = dvb_open_node (d, "ca", O_RDWR);
     if (ca != -1)
     {
         d->cam = en50221_Init (obj, ca);
         if (d->cam == NULL)
-            close (ca);
+            vlc_close (ca);
     }
     else
         msg_Dbg (obj, "conditional access module not available: %s",
                  vlc_strerror_c(errno));
-#endif
     return d;
 
 error:
@@ -288,17 +280,15 @@ void dvb_close (dvb_device_t *d)
     {
         for (size_t i = 0; i < MAX_PIDS; i++)
             if (d->pids[i].fd != -1)
-                close (d->pids[i].fd);
+                vlc_close (d->pids[i].fd);
     }
 #endif
-#ifdef HAVE_DVBPSI
     if (d->cam != NULL)
         en50221_End (d->cam);
-#endif
     if (d->frontend != -1)
-        close (d->frontend);
-    close (d->demux);
-    close (d->dir);
+        vlc_close (d->frontend);
+    vlc_close (d->demux);
+    vlc_close (d->dir);
     free (d);
 }
 
@@ -323,15 +313,13 @@ static void dvb_frontend_status(vlc_object_t *obj, fe_status_t s)
  * Reads TS data from the tuner.
  * @return number of bytes read, 0 on EOF, -1 if no data (yet).
  */
-ssize_t dvb_read (dvb_device_t *d, void *buf, size_t len)
+ssize_t dvb_read (dvb_device_t *d, void *buf, size_t len, int ms)
 {
     struct pollfd ufd[2];
     int n;
 
-#ifdef HAVE_DVBPSI
     if (d->cam != NULL)
         en50221_Poll (d->cam);
-#endif
 
     ufd[0].fd = d->demux;
     ufd[0].events = POLLIN;
@@ -344,7 +332,10 @@ ssize_t dvb_read (dvb_device_t *d, void *buf, size_t len)
     else
         n = 1;
 
-    if (vlc_poll_i11e (ufd, n, -1) < 0)
+    n = vlc_poll_i11e (ufd, n, ms);
+    if (n == 0)
+        errno = EAGAIN;
+    if (n <= 0)
         return -1;
 
     if (d->frontend != -1 && ufd[1].revents)
@@ -415,7 +406,7 @@ int dvb_add_pid (dvb_device_t *d, uint16_t pid)
         param.flags = DMX_IMMEDIATE_START;
         if (ioctl (fd, DMX_SET_PES_FILTER, &param) < 0)
         {
-            close (fd);
+            vlc_close (fd);
             goto error;
         }
         d->pids[i].fd = fd;
@@ -442,7 +433,7 @@ void dvb_remove_pid (dvb_device_t *d, uint16_t pid)
     {
         if (d->pids[i].pid == pid)
         {
-            close (d->pids[i].fd);
+            vlc_close (d->pids[i].fd);
             d->pids[i].pid = d->pids[i].fd = -1;
             return;
         }
@@ -642,13 +633,15 @@ float dvb_get_snr (dvb_device_t *d)
     return snr / 65535.;
 }
 
-#ifdef HAVE_DVBPSI
-void dvb_set_ca_pmt (dvb_device_t *d, struct dvbpsi_pmt_s *pmt)
+bool dvb_set_ca_pmt (dvb_device_t *d, en50221_capmt_info_t *p_capmtinfo)
 {
     if (d->cam != NULL)
-        en50221_SetCAPMT (d->cam, pmt);
+    {
+        en50221_SetCAPMT (d->cam, p_capmtinfo);
+        return true;
+    }
+    return false;
 }
-#endif
 
 static int dvb_vset_props (dvb_device_t *d, size_t n, va_list ap)
 {

@@ -2754,7 +2754,9 @@ static char *LanguageGetName( const char *psz_code )
     }
     else
     {
-        return strdup( psz_code );
+        char *lang = LanguageGetCode( psz_code );
+        pl = GetLang_1( lang );
+        free( lang );
     }
 
     if( !strcmp( pl->psz_iso639_1, "??" ) )
@@ -2977,15 +2979,16 @@ static void EsOutUpdateInfo( es_out_t *out, es_out_id_t *es, const es_format_t *
     case VIDEO_ES:
         info_category_AddInfo( p_cat, _("Type"), _("Video") );
 
-        if( fmt->video.i_width > 0 && fmt->video.i_height > 0 )
-            info_category_AddInfo( p_cat, _("Resolution"), "%ux%u",
-                                   fmt->video.i_width, fmt->video.i_height );
-
         if( fmt->video.i_visible_width > 0 &&
             fmt->video.i_visible_height > 0 )
             info_category_AddInfo( p_cat, _("Display resolution"), "%ux%u",
                                    fmt->video.i_visible_width,
                                    fmt->video.i_visible_height);
+
+        if( fmt->video.i_width > 0 && fmt->video.i_height > 0 )
+            info_category_AddInfo( p_cat, _("Buffer dimensions"), "%ux%u",
+                                   fmt->video.i_width, fmt->video.i_height );
+
        if( fmt->video.i_frame_rate > 0 &&
            fmt->video.i_frame_rate_base > 0 )
        {
@@ -3007,7 +3010,66 @@ static void EsOutUpdateInfo( es_out_t *out, es_out_id_t *es, const es_format_t *
                info_category_AddInfo( p_cat, _("Decoded format"), "%s",
                                       psz_chroma_description );
        }
-
+       {
+           static const char orient_names[][13] = {
+               N_("Top left"), N_("Left top"),
+               N_("Right bottom"), N_("Top right"),
+               N_("Bottom left"), N_("Bottom right"),
+               N_("Left bottom"), N_("Right top"),
+           };
+           info_category_AddInfo( p_cat, _("Orientation"), "%s",
+                                  _(orient_names[fmt->video.orientation]) );
+       }
+       if( fmt->video.primaries != COLOR_PRIMARIES_UNDEF )
+       {
+           static const char *primaries_names[] = { N_("Undefined"),
+               N_("ITU-R BT.601 (525 lines, 60 Hz)"),
+               N_("ITU-R BT.601 (625 lines, 50 Hz)"),
+               N_("ITU-R BT.709"),
+               N_("ITU-R BT.2020"),
+               N_("DCI/P3 D65"),
+           };
+           info_category_AddInfo( p_cat, _("Color primaries"), "%s",
+                                  _(primaries_names[fmt->video.primaries]) );
+       }
+       if( fmt->video.transfer != TRANSFER_FUNC_UNDEF )
+       {
+           static const char *func_names[] = { N_("Undefined"),
+               N_("Linear"),
+               N_("sRGB"),
+               N_("ITU-R BT.709 or BT.2020"),
+           };
+           info_category_AddInfo( p_cat, _("Color transfer function"), "%s",
+                                  _(func_names[fmt->video.transfer]) );
+       }
+       if( fmt->video.space != COLOR_SPACE_UNDEF )
+       {
+           static const char *space_names[] = { N_("Undefined"),
+               N_("ITU-R BT.601"),
+               N_("ITU-R BT.709"),
+               N_("ITU-R BT.2020"),
+           };
+           static const char *range_names[] = {
+               N_("Limited Range"),
+               N_("Full Range"),
+           };
+           info_category_AddInfo( p_cat, _("Color space"), "%s %s",
+                                  _(space_names[fmt->video.space]),
+                                  _(range_names[fmt->video.b_color_range_full]) );
+       }
+       if( fmt->video.chroma_location != CHROMA_LOCATION_UNDEF )
+       {
+           static const char *c_loc_names[] = { N_("Undefined"),
+               N_("Left"),
+               N_("Center"),
+               N_("Top Left"),
+               N_("Top Center"),
+               N_("Bottom Left"),
+               N_("Bottom Center"),
+           };
+           info_category_AddInfo( p_cat, _("Chroma location"), "%s",
+                   _(c_loc_names[fmt->video.chroma_location]) );
+       }
        break;
 
     case SPU_ES:

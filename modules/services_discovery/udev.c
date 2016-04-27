@@ -38,6 +38,7 @@
 #ifdef HAVE_ALSA
 # include <vlc_modules.h>
 #endif
+#include <vlc_fs.h>
 #include <vlc_url.h>
 
 static int OpenV4L (vlc_object_t *);
@@ -168,9 +169,8 @@ static int AddDevice (services_discovery_t *sd, struct udev_device *dev)
     if (mrl == NULL)
         return 0; /* don't know if it was an error... */
     char *name = p_sys->subsys->get_name (dev);
-    input_item_t *item = input_item_NewWithType (mrl, name ? name : mrl,
-                                                 0, NULL, 0, -1,
-                                                 p_sys->subsys->item_type);
+    input_item_t *item = input_item_NewExt (mrl, name ? name : mrl, -1,
+                                            p_sys->subsys->item_type, ITEM_LOCAL);
     msg_Dbg (sd, "adding %s (%s)", mrl, name);
     free (name);
     free (mrl);
@@ -536,9 +536,9 @@ static char *disc_get_mrl (struct udev_device *dev)
     val = udev_device_get_property_value (dev, "ID_CDROM_MEDIA_STATE");
     if (val == NULL)
     {   /* Force probing of the disc in the drive if any. */
-        int fd = open (node, O_RDONLY|O_CLOEXEC);
+        int fd = vlc_open (node, O_RDONLY);
         if (fd != -1)
-            close (fd);
+            vlc_close (fd);
         return NULL;
     }
     if (!strcmp (val, "blank"))

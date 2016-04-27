@@ -311,13 +311,11 @@ libdtv_plugin_la_SOURCES = \
 libdtv_plugin_la_CFLAGS = $(AM_CFLAGS)
 
 if HAVE_LINUX_DVB
-libdtv_plugin_la_SOURCES += access/dtv/linux.c
+libdtv_plugin_la_SOURCES += access/dtv/linux.c \
+                            access/dtv/en50221.c \
+                            access/dtv/en50221.h \
+                            access/dtv/en50221_capmt.h
 libdtv_plugin_la_CFLAGS += -DHAVE_LINUX_DVB
-if HAVE_DVBPSI
-libdtv_plugin_la_SOURCES += access/dtv/en50221.c access/dtv/en50221.h mux/mpeg/dvbpsi_compat.h
-libdtv_plugin_la_CFLAGS += -DHAVE_DVBPSI $(DVBPSI_CFLAGS)
-libdtv_plugin_la_LIBADD = $(DVBPSI_LIBS)
-endif
 access_LTLIBRARIES += libdtv_plugin.la
 endif
 
@@ -341,6 +339,7 @@ libdvb_plugin_la_SOURCES = \
 	access/dvb/access.c \
 	access/dvb/linux_dvb.c \
 	access/dvb/scan.c access/dvb/scan.h \
+	access/dvb/scan_list.c access/dvb/scan_list.h \
 	access/dvb/dvb.h
 libdvb_plugin_la_CFLAGS = $(AM_CFLAGS)
 if HAVE_LINUX_DVB

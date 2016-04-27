@@ -509,7 +509,7 @@ static block_t *Read (access_t *access)
         return NULL;
 
     access_sys_t *sys = access->p_sys;
-    ssize_t val = dvb_read (sys->dev, block->p_buffer, BUFSIZE);
+    ssize_t val = dvb_read (sys->dev, block->p_buffer, BUFSIZE, -1);
 
     if (val <= 0)
     {
@@ -576,15 +576,15 @@ static int Control (access_t *access, int query, va_list args)
             break;
         }
 
-#ifdef HAVE_DVBPSI
         case ACCESS_SET_PRIVATE_ID_CA:
         {
-            struct dvbpsi_pmt_s *pmt = va_arg (args, struct dvbpsi_pmt_s *);
+            en50221_capmt_info_t *pmt = va_arg (args, en50221_capmt_info_t *);
 
-            dvb_set_ca_pmt (dev, pmt);
+            if( !dvb_set_ca_pmt (dev, pmt) )
+                return VLC_EGENERIC;
             break;
         }
-#endif
+
         case ACCESS_GET_PRIVATE_ID_STATE:
         {
             unsigned pid = va_arg (args, int);

@@ -278,6 +278,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     if(!prepare())
     {
         done = true;
+        eof = true;
         vlc_cond_signal(&avail);
         vlc_mutex_unlock(&lock);
         return;
@@ -293,7 +294,10 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
 
     block_t *p_block = block_Alloc(readsize);
     if(!p_block)
+    {
+        eof = true;
         return;
+    }
 
     struct
     {
@@ -308,6 +312,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
         block_Release(p_block);
         vlc_mutex_lock(&lock);
         done = true;
+        eof = true;
         rate.size = buffered + consumed;
         rate.time = mdate() - downloadstart;
         downloadstart = 0;
@@ -322,6 +327,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
         if((size_t) ret < readsize)
         {
             done = true;
+            eof = true;
             rate.size = buffered + consumed;
             rate.time = mdate() - downloadstart;
             downloadstart = 0;
