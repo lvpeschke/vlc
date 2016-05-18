@@ -58,6 +58,24 @@
 static int  Open ( vlc_object_t * );
 static void Close( vlc_object_t * );
 
+#define CDAUDIO_DEV_TEXT N_("Audio CD device")
+#if defined( _WIN32 ) || defined( __OS2__ )
+# define CDAUDIO_DEV_LONGTEXT N_( \
+    "This is the default Audio CD drive (or file) to use. Don't forget the " \
+    "colon after the drive letter (e.g. D:)")
+# define CD_DEVICE      "D:"
+#else
+# define CDAUDIO_DEV_LONGTEXT N_( \
+    "This is the default Audio CD device to use." )
+# if defined(__OpenBSD__)
+#  define CD_DEVICE      "/dev/cd0c"
+# elif defined(__linux__)
+#  define CD_DEVICE      "/dev/sr0"
+# else
+#  define CD_DEVICE      "/dev/cdrom"
+# endif
+#endif
+
 vlc_module_begin ()
     set_shortname( N_("Audio CD") )
     set_description( N_("Audio CD input") )
@@ -65,6 +83,9 @@ vlc_module_begin ()
     set_category( CAT_INPUT )
     set_subcategory( SUBCAT_INPUT_ACCESS )
     set_callbacks( Open, Close )
+
+    add_loadfile( "cd-audio", CD_DEVICE, CDAUDIO_DEV_TEXT,
+                  CDAUDIO_DEV_LONGTEXT, false )
 
     add_usage_hint( N_("[cdda:][device][@[track]]") )
     add_integer( "cdda-track", 0 , NULL, NULL, true )
@@ -132,10 +153,6 @@ static int Open( vlc_object_t *p_this )
 
     if( !p_access->psz_filepath || !*p_access->psz_filepath )
     {
-        /* Only when selected */
-        if( !p_access->psz_access || !*p_access->psz_access )
-            return VLC_EGENERIC;
-
         psz_name = var_InheritString( p_this, "cd-audio" );
         if( !psz_name )
             return VLC_EGENERIC;
@@ -484,17 +501,15 @@ static int GetTracks( access_t *p_access, input_item_t *p_current )
         const mtime_t i_duration = (int64_t)( p_sys->p_sectors[i+1] - p_sys->p_sectors[i] ) *
                                    CDDA_DATA_SIZE * 1000000 / 44100 / 2 / 2;
 
-        input_item_t *p_item = input_item_NewWithType( p_access->psz_url,
-                                                       psz_name, 0, NULL, 0,
-                                                       i_duration,
-                                                       ITEM_TYPE_DISC );
+        input_item_t *p_item = input_item_NewDisc( p_access->psz_url,
+                                                   psz_name, i_duration );
         if( likely(psz_name != p_access->psz_url) )
             free( psz_name );
 
         if( unlikely(p_item == NULL) )
             continue;
 
-        input_item_CopyOptions( p_current, p_item );
+        input_item_CopyOptions( p_item, p_current );
 
         if( likely(asprintf( &psz_opt, "cdda-track=%i", i+1 ) != -1) )
         {

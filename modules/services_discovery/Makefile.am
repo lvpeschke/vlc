@@ -60,7 +60,7 @@ sd_LTLIBRARIES += libxcb_apps_plugin.la
 endif
 
 libwindrive_plugin_la_SOURCES = services_discovery/windrive.c
-if HAVE_WIN32
+if HAVE_WIN32_DESKTOP
 sd_LTLIBRARIES += libwindrive_plugin.la
 endif
 

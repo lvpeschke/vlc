@@ -188,10 +188,8 @@ endif
 libdshow_plugin_la_SOURCES = access/dshow/vlc_dshow.h access/dshow/dshow.cpp access/dshow/access.h \
 	access/dshow/filter.cpp access/dshow/filter.h access/dshow/crossbar.cpp
 libdshow_plugin_la_LIBADD = -lole32 -loleaut32 -luuid -lstrmiids -lksuser
-if HAVE_WIN32
-if !HAVE_WINSTORE
+if HAVE_WIN32_DESKTOP
 access_LTLIBRARIES += libdshow_plugin.la
-endif
 endif
 
 
@@ -222,12 +220,10 @@ endif
 
 libscreen_plugin_la_SOURCES = access/screen/screen.c access/screen/screen.h
 libscreen_plugin_la_LDFLAGS = $(AM_LDFLAGS)
-if HAVE_WIN32
-if !HAVE_WINSTORE
+if HAVE_WIN32_DESKTOP
 libscreen_plugin_la_SOURCES += access/screen/win32.c
 libscreen_plugin_la_LIBADD = -lgdi32
 access_LTLIBRARIES += libscreen_plugin.la
-endif
 endif
 if HAVE_MAC_SCREEN
 libscreen_plugin_la_SOURCES += access/screen/mac.c
@@ -311,18 +307,15 @@ libdtv_plugin_la_SOURCES = \
 libdtv_plugin_la_CFLAGS = $(AM_CFLAGS)
 
 if HAVE_LINUX_DVB
-libdtv_plugin_la_SOURCES += access/dtv/linux.c
+libdtv_plugin_la_SOURCES += access/dtv/linux.c \
+                            access/dtv/en50221.c \
+                            access/dtv/en50221.h \
+                            access/dtv/en50221_capmt.h
 libdtv_plugin_la_CFLAGS += -DHAVE_LINUX_DVB
-if HAVE_DVBPSI
-libdtv_plugin_la_SOURCES += access/dtv/en50221.c access/dtv/en50221.h mux/mpeg/dvbpsi_compat.h
-libdtv_plugin_la_CFLAGS += -DHAVE_DVBPSI $(DVBPSI_CFLAGS)
-libdtv_plugin_la_LIBADD = $(DVBPSI_LIBS)
-endif
 access_LTLIBRARIES += libdtv_plugin.la
 endif
 
-if HAVE_WIN32
-if !HAVE_WINSTORE
+if HAVE_WIN32_DESKTOP
 # Work-around automake bug:
 # Use an import library for C++ to retain C linker on other platforms.
 libbda_la_SOURCES = access/dtv/bdadefs.h access/dtv/bdagraph.cpp access/dtv/bdagraph.hpp
@@ -334,13 +327,13 @@ libdtv_plugin_la_DEPENDENCIES = libbda.la
 libdtv_plugin_la_LIBADD = libbda.la -lstdc++
 access_LTLIBRARIES += libdtv_plugin.la
 endif
-endif
 
 # Old Linux DVB scanner
 libdvb_plugin_la_SOURCES = \
 	access/dvb/access.c \
 	access/dvb/linux_dvb.c \
 	access/dvb/scan.c access/dvb/scan.h \
+	access/dvb/scan_list.c access/dvb/scan_list.h \
 	access/dvb/dvb.h
 libdvb_plugin_la_CFLAGS = $(AM_CFLAGS)
 if HAVE_LINUX_DVB

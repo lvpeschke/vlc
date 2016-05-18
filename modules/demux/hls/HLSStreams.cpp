@@ -98,26 +98,58 @@ void HLSStream::prepareFormatChange()
     }
 }
 
+static uint32_t ReadID3Size(const uint8_t *p_buffer)
+{
+    return ( (uint32_t)p_buffer[3] & 0x7F ) |
+          (( (uint32_t)p_buffer[2] & 0x7F ) << 7) |
+          (( (uint32_t)p_buffer[1] & 0x7F ) << 14) |
+          (( (uint32_t)p_buffer[0] & 0x7F ) << 21);
+}
+
+static bool IsID3Tag(const uint8_t *p_buffer, bool b_footer)
+{
+    return( memcmp(p_buffer, (b_footer) ? "3DI" : "ID3", 3) == 0 &&
+            p_buffer[3] < 0xFF &&
+            p_buffer[4] < 0xFF &&
+           ((GetDWBE(&p_buffer[6]) & 0x80808080) == 0) );
+}
+
 block_t * HLSStream::checkBlock(block_t *p_block, bool b_first)
 {
     if(b_first && p_block &&
-       p_block->i_buffer >= 10 && !memcmp(p_block->p_buffer, "ID3", 3))
+       p_block->i_buffer >= 10 && IsID3Tag(p_block->p_buffer, false))
     {
-        uint32_t size = GetDWBE(&p_block->p_buffer[6]) + 10;
-        size = __MIN(p_block->i_buffer, size);
-        if(size >= 73 && !b_timestamps_offset_set)
+        uint32_t size = ReadID3Size(&p_block->p_buffer[6]);
+        size = __MIN(p_block->i_buffer, size + 10);
+        const uint8_t *p_frame = &p_block->p_buffer[10];
+        uint32_t i_left = (size >= 10) ? size - 10 : 0;
+        while(i_left >= 10 && !b_timestamps_offset_set)
         {
-            if(!memcmp(&p_block->p_buffer[10], "PRIV", 4) &&
-               !memcmp(&p_block->p_buffer[20], "com.apple.streaming.transportStreamTimestamp", 45))
+            uint32_t i_framesize = ReadID3Size(&p_frame[4]) + 10;
+            if( i_framesize > i_left )
+                break;
+            if(i_framesize == 63 && !memcmp(p_frame, "PRIV", 4))
             {
-                i_aac_offset = GetQWBE(&p_block->p_buffer[65]) * 100 / 9;
-                b_timestamps_offset_set = true;
+                if(!memcmp(&p_frame[10], "com.apple.streaming.transportStreamTimestamp", 45))
+                {
+                    i_aac_offset = GetQWBE(&p_frame[55]) * 100 / 9;
+                    b_timestamps_offset_set = true;
+                }
             }
+            i_left -= i_framesize;
+            p_frame += i_framesize;
         }
 
         /* Skip ID3 for demuxer */
         p_block->p_buffer += size;
         p_block->i_buffer -= size;
+
+        /* Skip ID3 footer */
+        if(p_block->i_buffer >= 10 && IsID3Tag(p_block->p_buffer, true))
+        {
+            p_block->p_buffer += 10;
+            p_block->i_buffer -= 10;
+        }
     }
 
     return p_block;

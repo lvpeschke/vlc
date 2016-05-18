@@ -52,6 +52,8 @@
 #include "ts_psip.h"
 #include "ts_psi_eit.h"
 
+#include "../access/dtv/en50221_capmt.h"
+
 #include <assert.h>
 
 static void PIDFillFormat( demux_t *, ts_pes_t *p_pes, int i_stream_type, ts_transport_type_t * );
@@ -348,10 +350,14 @@ static void SetupISO14496Descriptors( demux_t *p_demux, ts_pes_t *p_pes,
         switch( p_dr->i_tag )
         {
             case 0x1f: /* FMC Descriptor */
-                while( i_length >= 3 && !p_es->i_sl_es_id )
+                while( i_length >= 2 /* see below */ && !p_es->i_sl_es_id )
                 {
                     p_es->i_sl_es_id = ( p_dr->p_data[0] << 8 ) | p_dr->p_data[1];
                     /* FIXME: map all ids and flexmux channels */
+                    /* Handle broken streams with 2 byte 0x1F descriptors
+                     * see samples/A-codecs/AAC/freetv_aac_latm.txt */
+                    if( i_length == 2 )
+                        break;
                     i_length -= 3;
                     msg_Dbg( p_demux, "     - found FMC_descriptor mapping es_id=%"PRIu16, p_es->i_sl_es_id );
                 }
@@ -1195,6 +1201,9 @@ static void PIDFillFormat( demux_t *p_demux, ts_pes_t *p_pes,
     switch( i_stream_type )
     {
     case 0x01:  /* MPEG-1 video */
+        es_format_Init( fmt, VIDEO_ES, VLC_CODEC_MPGV );
+        fmt->i_original_fourcc = VLC_CODEC_MP1V;
+        break;
     case 0x02:  /* MPEG-2 video */
     case 0x80:  /* MPEG-2 MOTO video */
         es_format_Init( fmt, VIDEO_ES, VLC_CODEC_MPGV );
@@ -1361,6 +1370,40 @@ static void FillPESFromDvbpsiES( demux_t *p_demux,
     p_pes->p_es->fmt.i_group = p_dvbpsipmt->i_program_number;
     if( p_demux->p_sys->b_es_id_pid )
         p_pes->p_es->fmt.i_id = p_dvbpsies->i_pid;
+}
+
+static en50221_capmt_info_t * CreateCAPMTInfo( const dvbpsi_pmt_t *p_pmt )
+{
+    en50221_capmt_info_t *p_en = en50221_capmt_New( p_pmt->i_version,
+                                                    p_pmt->i_program_number );
+    if( unlikely(p_en == NULL) )
+        return p_en;
+
+    for( const dvbpsi_descriptor_t *p_dr = p_pmt->p_first_descriptor;
+                                           p_dr; p_dr = p_dr->p_next )
+    {
+        if( p_dr->i_tag == 0x09 )
+            en50221_capmt_AddCADescriptor( p_en, p_dr->p_data, p_dr->i_length );
+    }
+
+    for( const dvbpsi_pmt_es_t *p_es = p_pmt->p_first_es;
+                                       p_es; p_es = p_es->p_next )
+    {
+        en50221_capmt_es_info_t *p_enes = en50221_capmt_EsAdd( p_en,
+                                                               p_es->i_type,
+                                                               p_es->i_pid );
+        if( likely(p_enes) )
+        {
+            for( const dvbpsi_descriptor_t *p_dr = p_es->p_first_descriptor;
+                                                   p_dr; p_dr = p_dr->p_next )
+            {
+                if( p_dr->i_tag == 0x09 )
+                    en50221_capmt_AddESCADescriptor( p_enes, p_dr->p_data, p_dr->i_length );
+            }
+        }
+    }
+
+    return p_en;
 }
 
 static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
@@ -1605,18 +1648,21 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
     /* Set CAM descrambling */
     if( ProgramIsSelected( p_sys, p_pmt->i_number ) )
     {
-        /* DTV/CAM takes ownership of p_dvbpsipmt on success */
-        if( stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA, p_dvbpsipmt ) != VLC_SUCCESS )
+        en50221_capmt_info_t *p_en = CreateCAPMTInfo( p_dvbpsipmt );
+        if( p_en )
         {
-            if ( p_sys->standard == TS_STANDARD_ARIB && !p_sys->arib.b25stream )
+            /* DTV/CAM takes ownership of en50221_capmt_info_t on success */
+            if( stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA, p_en ) != VLC_SUCCESS )
             {
-                p_sys->arib.b25stream = stream_FilterNew( p_demux->s, "aribcam" );
-                p_sys->stream = ( p_sys->arib.b25stream ) ? p_sys->arib.b25stream : p_demux->s;
+                en50221_capmt_Delete( p_en );
+                if ( p_sys->standard == TS_STANDARD_ARIB && !p_sys->arib.b25stream )
+                {
+                    p_sys->arib.b25stream = stream_FilterNew( p_demux->s, "aribcam" );
+                    p_sys->stream = ( p_sys->arib.b25stream ) ? p_sys->arib.b25stream : p_demux->s;
+                }
             }
-            dvbpsi_pmt_delete( p_dvbpsipmt );
         }
     }
-    else dvbpsi_pmt_delete( p_dvbpsipmt );
 
      /* Add arbitrary PID from here */
     if ( p_sys->standard == TS_STANDARD_ATSC )
@@ -1717,6 +1763,8 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
         ProbeStart( p_demux, p_pmt->i_number );
         ProbeEnd( p_demux, p_pmt->i_number );
     }
+
+    dvbpsi_pmt_delete( p_dvbpsipmt );
 }
 
 int UserPmt( demux_t *p_demux, const char *psz_fmt )

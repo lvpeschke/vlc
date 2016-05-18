@@ -132,6 +132,10 @@ typedef enum vlc_event_type_t {
     vlc_ServicesDiscoveryStarted,
     vlc_ServicesDiscoveryEnded,
 
+    /* Renderer Discovery events */
+    vlc_RendererDiscoveryItemAdded,
+    vlc_RendererDiscoveryItemRemoved,
+
     /* Addons Manager events */
     vlc_AddonFound,
     vlc_AddonsDiscoveryEnded,
@@ -188,6 +192,10 @@ typedef struct vlc_event_t
         {
             bool new_value;
         } input_item_error_when_reading_changed;
+        struct input_item_preparse_ended
+        {
+            int new_status;
+        } input_item_preparse_ended;
 
         /* Service discovery events */
         struct vlc_services_discovery_item_added
@@ -207,6 +215,16 @@ typedef struct vlc_event_t
         {
             void * unused;
         } services_discovery_ended;
+
+        /* Renderer discovery events */
+        struct vlc_renderer_discovery_item_added
+        {
+            vlc_renderer_item * p_new_item;
+        } renderer_discovery_item_added;
+        struct vlc_renderer_discovery_item_removed
+        {
+            vlc_renderer_item * p_item;
+        } renderer_discovery_item_removed;
 
         /* Addons */
         struct vlc_addon_generic_event

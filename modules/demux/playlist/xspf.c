@@ -502,7 +502,7 @@ static bool parse_track_node COMPLEX_INTERFACE
             }
             else
                 input_item_SetURI(p_new_input, psz_value);
-            input_item_CopyOptions(p_input_item, p_new_input);
+            input_item_CopyOptions(p_new_input, p_input_item);
         }
         else
         {
@@ -631,9 +631,8 @@ static bool parse_extension_node COMPLEX_INTERFACE
             msg_Warn(p_demux, "<vlc:node> requires \"title\" attribute");
             return false;
         }
-        p_new_input = input_item_NewWithType("vlc://nop", psz_title,
-                                              0, NULL, 0, -1,
-                                              ITEM_TYPE_DIRECTORY);
+        p_new_input = input_item_NewDirectory("vlc://nop", psz_title,
+                                              ITEM_NET_UNKNOWN);
         if (p_new_input)
         {
             p_input_node =

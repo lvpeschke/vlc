@@ -321,10 +321,15 @@ case "${OS}" in
 			;;
 		esac
 		case "${HOST}" in
-			*winphone*|*windowsphone*|*winrt*)
+			*winphone*|*windowsphone*|*winrt*|*uwp*)
 			add_make_enabled "HAVE_WINSTORE"
 			;;
 		esac
+        case "${HOST}" in
+            armv7*)
+                add_make_enabled "HAVE_ARMV7A"
+                ;;
+        esac
 		;;
 	*solaris*)
 		add_make_enabled "HAVE_SOLARIS"

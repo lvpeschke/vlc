@@ -34,13 +34,16 @@
 #include <vlc_access.h>
 #include <vlc_variables.h>
 #include <vlc_keystore.h>
+#include <vlc_network.h>
 
 #include <assert.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
+#ifdef HAVE_SYS_SOCKET_H
+# include <sys/socket.h>
+# include <netinet/in.h>
+# include <arpa/inet.h>
+# include <netdb.h>
+#endif
 
 #include <bdsm/bdsm.h>
 #include "../smb_common.h"
@@ -225,7 +228,7 @@ static int get_address( access_t *p_access )
 {
     access_sys_t *p_sys = p_access->p_sys;
 
-    if( !inet_aton( p_sys->url.psz_host, &p_sys->addr ) )
+    if( !inet_pton( AF_INET, p_sys->url.psz_host, &p_sys->addr ) )
     {
         /* This is not an ip address, let's try netbios/dns resolve */
         struct addrinfo *p_info = NULL;
@@ -362,7 +365,7 @@ static int login( access_t *p_access )
                  psz_login, psz_domain );
         goto error;
     }
-    else if( smb_session_is_guest( p_sys->p_session )  )
+    else if( smb_session_is_guest( p_sys->p_session ) == 1 )
     {
         msg_Warn( p_access, "Login failure but you were logged in as a Guest");
         b_guest = true;
@@ -541,8 +544,7 @@ static input_item_t *new_item( access_t *p_access, const char *psz_name,
     if( i_ret == -1 )
         return NULL;
 
-    p_item = input_item_NewWithTypeExt( psz_uri, psz_name, 0, NULL, 0, -1,
-                                        i_type, 1 );
+    p_item = input_item_NewExt( psz_uri, psz_name, -1, i_type, ITEM_NET );
     free( psz_uri );
     if( p_item == NULL )
         return NULL;

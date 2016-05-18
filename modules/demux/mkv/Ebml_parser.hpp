@@ -46,7 +46,6 @@ class EbmlParser
     EbmlElement *Get( int n_call = 0 );
     void        Keep( void );
     void        Unkeep( void );
-    EbmlElement *UnGet( uint64 i_block_pos, uint64 i_cluster_pos );
 
     int  GetLevel( void ) const;
 
@@ -60,7 +59,6 @@ class EbmlParser
     EbmlStream  *m_es;
     int          mi_level;
     EbmlElement *m_el[M_EL_MAXSIZE];
-    int64_t      mi_remain_size[10];
 
     EbmlElement *m_got;
 

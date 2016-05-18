@@ -215,11 +215,12 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf )
     {
         if( b_autoresize )
         {
-            CONNECT( this, askVideoToResize( unsigned int, unsigned int ),
-                     this, setVideoSize( unsigned int, unsigned int ) );
             CONNECT( videoWidget, sizeChanged( int, int ),
                      this, videoSizeChanged( int,  int ) );
         }
+        CONNECT( this, askVideoToResize( unsigned int, unsigned int ),
+                 this, setVideoSize( unsigned int, unsigned int ) );
+
         CONNECT( this, askVideoSetFullScreen( bool ),
                  this, setVideoFullScreen( bool ) );
     }
@@ -777,8 +778,17 @@ void MainInterface::releaseVideoSlot( void )
 
 void MainInterface::setVideoSize( unsigned int w, unsigned int h )
 {
-    if( !isFullScreen() && !isMaximized() )
-        videoWidget->setSize( w, h );
+    if (!isFullScreen() && !isMaximized() )
+    {
+        /* Resize video widget to video size, or keep it at the same
+         * size. Call setSize() either way so that vout_window_ReportSize
+         * will always get called.
+         */
+        if (b_autoresize)
+            videoWidget->setSize( w, h );
+        else
+            videoWidget->setSize( videoWidget->width(), videoWidget->height() );
+    }
 }
 
 void MainInterface::videoSizeChanged( int w, int h )
@@ -816,15 +826,15 @@ void MainInterface::setVideoFullScreen( bool fs )
         }
 
         /* */
-        setMinimalView( true );
+        displayNormalView();
         setInterfaceFullScreen( true );
     }
     else
     {
         /* TODO do we want to restore screen and position ? (when
          * qt-fullscreen-screennumber is forced) */
-        setInterfaceFullScreen( b_interfaceFullScreen );
         setMinimalView( b_minimalView );
+        setInterfaceFullScreen( b_interfaceFullScreen );
 #ifdef _WIN32
         changeThumbbarButtons( THEMIM->getIM()->playingStatus() );
 #endif
@@ -976,8 +986,21 @@ void MainInterface::dockPlaylist( bool p_docked )
 }
 
 /*
+ * displayNormalView is the private function used by
+ * the SLOT setVideoFullScreen to restore the menuBar
+ * if minimal view is off
+ */
+void MainInterface::displayNormalView()
+{
+    menuBar()->setVisible( false );
+    controls->setVisible( false );
+    statusBar()->setVisible( false );
+    inputC->setVisible( false );
+}
+
+/*
  * setMinimalView is the private function used by
- * the SLOT toggleMinimalView and setVideoFullScreen
+ * the SLOT toggleMinimalView
  */
 void MainInterface::setMinimalView( bool b_minimal )
 {
@@ -1516,6 +1539,8 @@ void MainInterface::wheelEvent( QWheelEvent *e )
 void MainInterface::closeEvent( QCloseEvent *e )
 {
 //  hide();
+    if ( b_minimalView )
+        setMinimalView( false );
     emit askToQuit(); /* ask THEDP to quit, so we have a unique method */
     /* Accept session quit. Otherwise we break the desktop mamager. */
     e->accept();

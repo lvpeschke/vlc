@@ -148,6 +148,7 @@ enum vlc_module_properties
 #define SUBCAT_AUDIO_AFILTER 203
 #define SUBCAT_AUDIO_VISUAL 204
 #define SUBCAT_AUDIO_MISC 205
+#define SUBCAT_AUDIO_RESAMPLER 206
 
 #define CAT_VIDEO 3
 #define SUBCAT_VIDEO_GENERAL 301
@@ -172,6 +173,7 @@ enum vlc_module_properties
 #define SUBCAT_SOUT_ACO 504
 #define SUBCAT_SOUT_PACKETIZER 505
 #define SUBCAT_SOUT_VOD 507
+#define SUBCAT_SOUT_RENDERER 508
 
 #define CAT_ADVANCED 6
 #define SUBCAT_ADVANCED_MISC 602
@@ -186,8 +188,8 @@ enum vlc_module_properties
 /**
  * Current plugin ABI version
  */
-# define MODULE_SYMBOL 3_0_0a
-# define MODULE_SUFFIX "__3_0_0a"
+# define MODULE_SYMBOL 3_0_0b
+# define MODULE_SUFFIX "__3_0_0b"
 
 /*****************************************************************************
  * Add a few defines. You do not want to read this section. Really.

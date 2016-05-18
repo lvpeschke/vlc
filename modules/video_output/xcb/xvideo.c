@@ -355,9 +355,6 @@ static int Open (vlc_object_t *obj)
     vout_display_t *vd = (vout_display_t *)obj;
     vout_display_sys_t *p_sys;
 
-    if (!var_InheritBool (obj, "overlay"))
-        return VLC_EGENERIC;
-    else
     {   /* NOTE: Reject hardware surface formats. Blending would break. */
         const vlc_chroma_description_t *chroma =
             vlc_fourcc_GetChromaDescription(vd->source.i_chroma);
@@ -537,13 +534,18 @@ static int Open (vlc_object_t *obj)
     }
 
     /* Colour space */
+    fmt.space = COLOR_SPACE_BT601;
     {
         xcb_intern_atom_reply_t *r =
             xcb_intern_atom_reply (conn,
                 xcb_intern_atom (conn, 1, 13, "XV_ITURBT_709"), NULL);
         if (r != NULL && r->atom != 0)
-            xcb_xv_set_port_attribute(conn, p_sys->port, r->atom,
-                                      fmt.i_height > 576);
+        {
+            int_fast32_t value = (vd->source.space == COLOR_SPACE_BT709);
+            xcb_xv_set_port_attribute(conn, p_sys->port, r->atom, value);
+            if (value)
+                fmt.space = COLOR_SPACE_BT709;
+        }
         free(r);
     }
 

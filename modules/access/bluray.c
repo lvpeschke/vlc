@@ -211,7 +211,7 @@ struct subpicture_updater_sys_t
 static void unref_subpicture_updater(subpicture_updater_sys_t *p_sys)
 {
     vlc_mutex_lock(&p_sys->lock);
-    int refs = p_sys->ref_cnt--;
+    int refs = --p_sys->ref_cnt;
     p_sys->p_overlay = NULL;
     vlc_mutex_unlock(&p_sys->lock);
 
@@ -610,7 +610,7 @@ static int probeFile(const char *psz_name)
     ret = VLC_SUCCESS;
 
 bailout:
-    close(fd);
+    vlc_close(fd);
     return ret;
 }
 
@@ -1633,15 +1633,15 @@ static void blurayUpdateTitleInfo(input_title_t *t, BLURAY_TITLE_INFO *title_inf
         vlc_seekpoint_Delete( t->seekpoint[i] );
     TAB_CLEAN(t->i_seekpoint, t->seekpoint);
 
-        for (unsigned int j = 0; j < title_info->chapter_count; j++) {
-            seekpoint_t *s = vlc_seekpoint_New();
-            if (!s) {
-                break;
-            }
-            s->i_time_offset = title_info->chapters[j].offset;
-
-            TAB_APPEND(t->i_seekpoint, t->seekpoint, s);
+    for (unsigned int j = 0; j < title_info->chapter_count; j++) {
+        seekpoint_t *s = vlc_seekpoint_New();
+        if (!s) {
+            break;
         }
+        s->i_time_offset = FROM_TICKS(title_info->chapters[j].start);
+
+        TAB_APPEND(t->i_seekpoint, t->seekpoint, s);
+    }
 }
 
 static void blurayInitTitles(demux_t *p_demux, int menu_titles)
@@ -1961,6 +1961,16 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
         return sendKeyEvent(p_sys, BD_VK_RIGHT);
     case DEMUX_NAV_POPUP:
         return sendKeyEvent(p_sys, BD_VK_POPUP);
+    case DEMUX_NAV_MENU:
+        if (p_sys->b_menu) {
+            if (bd_menu_call(p_sys->bluray, -1) == 1) {
+                p_demux->info.i_update |= INPUT_UPDATE_TITLE | INPUT_UPDATE_SEEKPOINT;
+                return VLC_SUCCESS;
+            }
+            msg_Err(p_demux, "Can't select Top Menu title");
+            return sendKeyEvent(p_sys, BD_VK_POPUP);
+        }
+        return VLC_EGENERIC;
 
     case DEMUX_CAN_RECORD:
     case DEMUX_GET_FPS:

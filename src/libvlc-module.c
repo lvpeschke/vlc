@@ -296,11 +296,6 @@ static const char *const ppsz_align_descriptions[] =
 #define FULLSCREEN_LONGTEXT N_( \
     "Start video in fullscreen mode" )
 
-#define OVERLAY_TEXT N_("Overlay video output")
-#define OVERLAY_LONGTEXT N_( \
-    "Overlay is the hardware acceleration capability of your video card " \
-    "(ability to render video directly). VLC will try to use it by default." )
-
 #define VIDEO_ON_TOP_TEXT N_("Always on top")
 #define VIDEO_ON_TOP_LONGTEXT N_( \
     "Always place the video window on top of other windows." )
@@ -761,7 +756,7 @@ static const char *const ppsz_prefres[] = {
     "This is the default Audio CD drive (or file) to use. Don't forget the " \
     "colon after the drive letter (e.g. D:)")
 # define DVD_DEVICE     NULL
-# define CD_DEVICE      "D:"
+# define VCD_DEVICE     "D:"
 
 #else
 # define DVD_DEV_LONGTEXT N_( \
@@ -773,18 +768,15 @@ static const char *const ppsz_prefres[] = {
 
 # if defined(__OpenBSD__)
 #  define DVD_DEVICE     "/dev/cd0c"
-#  define CD_DEVICE      "/dev/cd0c"
+#  define VCD_DEVICE     "/dev/cd0c"
 # elif defined(__linux__)
 #  define DVD_DEVICE     "/dev/sr0"
-#  define CD_DEVICE      "/dev/sr0"
+#  define VCD_DEVICE     "/dev/sr0"
 # else
 #  define DVD_DEVICE     "/dev/dvd"
-#  define CD_DEVICE      "/dev/cdrom"
+#  define VCD_DEVICE     "/dev/cdrom"
 # endif
 #endif
-
-#define VCD_DEVICE       CD_DEVICE
-#define CDAUDIO_DEVICE   CD_DEVICE
 
 #define TIMEOUT_TEXT N_("TCP connection timeout")
 #define TIMEOUT_LONGTEXT N_( \
@@ -1456,9 +1448,6 @@ vlc_module_begin ()
                  DESYNC_LONGTEXT, true )
         change_safe ()
 
-    add_module( "audio-resampler", "audio resampler", NULL,
-                AUDIO_RESAMPLER_TEXT, AUDIO_RESAMPLER_LONGTEXT, true )
-
     /* FIXME TODO create a subcat replay gain ? */
     add_string( "audio-replay-gain-mode", ppsz_replay_gain_mode[0], AUDIO_REPLAY_GAIN_MODE_TEXT,
                 AUDIO_REPLAY_GAIN_MODE_LONGTEXT, false )
@@ -1483,6 +1472,11 @@ vlc_module_begin ()
     set_subcategory( SUBCAT_AUDIO_VISUAL )
     add_module( "audio-visual", "visualization", "none", AUDIO_VISUAL_TEXT,
                 AUDIO_VISUAL_LONGTEXT, false )
+
+    set_subcategory( SUBCAT_AUDIO_RESAMPLER )
+    add_module( "audio-resampler", "audio resampler", NULL,
+                AUDIO_RESAMPLER_TEXT, AUDIO_RESAMPLER_LONGTEXT, true )
+
 
 /* Video options */
     set_category( CAT_VIDEO )
@@ -1513,10 +1507,7 @@ vlc_module_begin ()
               MOUSE_EVENTS_LONGTEXT, true )
     add_obsolete_integer( "vout-event" ) /* deprecated since 1.1.0 */
     add_obsolete_integer( "x11-event" ) /* renamed since 1.0.0 */
-#ifndef __APPLE__
-    add_bool( "overlay", 1, OVERLAY_TEXT, OVERLAY_LONGTEXT, false )
-        change_safe()
-#endif
+    add_obsolete_bool( "overlay" ) /* renamed since 3.0.0 */
     add_bool( "video-on-top", 0, VIDEO_ON_TOP_TEXT,
               VIDEO_ON_TOP_LONGTEXT, false )
     add_bool( "video-wallpaper", false, WALLPAPER_TEXT,
@@ -1723,8 +1714,6 @@ vlc_module_begin ()
                   false )
     add_loadfile( "vcd", VCD_DEVICE, VCD_DEV_TEXT, VCD_DEV_LONGTEXT,
                   false )
-    add_loadfile( "cd-audio", CDAUDIO_DEVICE, CDAUDIO_DEV_TEXT,
-                  CDAUDIO_DEV_LONGTEXT, false )
 
     set_section( N_( "Network settings" ), NULL )
 

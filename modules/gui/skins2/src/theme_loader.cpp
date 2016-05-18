@@ -529,7 +529,7 @@ int tar_open( TAR **t, char *pathname, int oflags )
     if( f == NULL )
     {
         fprintf( stderr, "Couldn't gzopen %s\n", pathname );
-        close( fd );
+        vlc_close( fd );
         return -1;
     }
 
@@ -549,7 +549,13 @@ int tar_extract_all( TAR *t, char *prefix )
     union tar_buffer buffer;
     int   len, err, getheader = 1, remaining = 0;
     FILE  *outfile = NULL;
-    char  fname[BLOCKSIZE + PATH_MAX];
+#if defined( _WIN32 )
+    long  path_max = PATH_MAX;
+#else
+    long  path_max = pathconf (".", _PC_PATH_MAX);
+#endif
+    size_t maxsize = (path_max == -1 || path_max > 4096) ? 4096 : path_max;
+    char  fname[BLOCKSIZE + maxsize];
 
     while( 1 )
     {
@@ -583,7 +589,7 @@ int tar_extract_all( TAR *t, char *prefix )
                 break;
             }
 
-            sprintf( fname, "%s/%s", prefix, buffer.header.name );
+            snprintf( fname, sizeof(fname), "%s/%s", prefix, buffer.header.name );
 
             /* Check magic value in header */
             if( strncmp( buffer.header.magic, "GNUtar", 6 ) &&
@@ -775,7 +781,7 @@ int gzopen_frontend( const char *pathname, int oflags, int mode )
     if( !gzf )
     {
         errno = ENOMEM;
-        close( fd );
+        vlc_close( fd );
         return -1;
     }
 

@@ -25,6 +25,7 @@
 #endif
 
 #include "dxgi_fmt.h"
+#include <vlc_es.h>
 
 typedef struct
 {
@@ -57,8 +58,6 @@ static const dxgi_format_t dxgi_formats[] = {
 };
 
 static const d3d_format_t d3d_formats[] = {
-    { "I420",     DXGI_FORMAT_NV12,           VLC_CODEC_I420,     DXGI_FORMAT_R8_UNORM,           DXGI_FORMAT_R8G8_UNORM },
-    { "YV12",     DXGI_FORMAT_NV12,           VLC_CODEC_YV12,     DXGI_FORMAT_R8_UNORM,           DXGI_FORMAT_R8G8_UNORM },
     { "NV12",     DXGI_FORMAT_NV12,           VLC_CODEC_NV12,     DXGI_FORMAT_R8_UNORM,           DXGI_FORMAT_R8G8_UNORM },
     { "VA_NV12",  DXGI_FORMAT_NV12,           VLC_CODEC_D3D11_OPAQUE, DXGI_FORMAT_R8_UNORM,       DXGI_FORMAT_R8G8_UNORM },
 #ifdef BROKEN_PIXEL
@@ -95,4 +94,14 @@ const char *DxgiFormatToStr(DXGI_FORMAT format)
 const d3d_format_t *GetRenderFormatList(void)
 {
     return d3d_formats;
+}
+
+void DxgiFormatMask(DXGI_FORMAT format, video_format_t *fmt)
+{
+    if (format == DXGI_FORMAT_B8G8R8X8_UNORM)
+    {
+        fmt->i_rmask = 0x0000ff00;
+        fmt->i_gmask = 0x00ff0000;
+        fmt->i_bmask = 0xff000000;
+    }
 }

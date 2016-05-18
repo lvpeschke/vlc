@@ -28,6 +28,8 @@
 # include "config.h"
 #endif
 
+#include "qt.hpp"
+
 #include <QList>
 #include <QString>
 #include <QUrl>
@@ -51,7 +53,7 @@ public:
     virtual ~AbstractPLItem() {}
 
 protected:
-    virtual int id( int type ) = 0;
+    virtual int id( int type ) const = 0;
     int childCount() const { return children.count(); }
     int indexOf( AbstractPLItem *item ) const { return children.indexOf( item ); };
     int lastIndexOf( AbstractPLItem *item ) const { return children.lastIndexOf( item ); };
@@ -64,6 +66,7 @@ protected:
     void clearChildren();
     virtual QUrl getURI() const = 0;
     virtual QString getTitle() const = 0;
+    virtual bool readOnly() const = 0;
 
     QList<AbstractPLItem *> children;
     AbstractPLItem *parentItem;
@@ -80,11 +83,12 @@ public:
 
 private:
     /* AbstractPLItem */
-    int id( int type );
-    input_item_t *inputItem() { return p_input; }
-    AbstractPLItem *child( int id ) const { return children.value( id ); };
-    virtual QUrl getURI() const;
-    virtual QString getTitle() const;
+    int id( int type ) const Q_DECL_OVERRIDE;
+    input_item_t *inputItem() Q_DECL_OVERRIDE { return p_input; }
+    AbstractPLItem *child( int id ) const Q_DECL_OVERRIDE { return children.value( id ); };
+    virtual QUrl getURI() const Q_DECL_OVERRIDE;
+    virtual QString getTitle() const Q_DECL_OVERRIDE;
+    virtual bool readOnly() const Q_DECL_OVERRIDE;
 
     /* Local */
     PLItem( playlist_item_t *, PLItem *parent );
@@ -94,6 +98,7 @@ private:
     PLItem( playlist_item_t * );
     void init( playlist_item_t *, PLItem * );
     int i_playlist_id;
+    int i_flags;
     input_item_t *p_input;
 };
 

@@ -31,7 +31,6 @@ include/vlc_keys.h
 include/vlc/libvlc_events.h
 include/vlc/libvlc.h
 include/vlc/libvlc_media_list.h
-include/vlc/libvlc_structures.h
 include/vlc/libvlc_vlm.h
 include/vlc_main.h
 include/vlc_md5.h
@@ -390,7 +389,6 @@ modules/codec/omxil/vout.c
 modules/codec/opus.c
 modules/codec/png.c
 modules/codec/qsv.c
-modules/codec/quicktime.c
 modules/codec/rawvideo.c
 modules/codec/rtpvideo.c
 modules/codec/schroedinger.c
@@ -1080,6 +1078,7 @@ modules/video_chroma/i422_yuy2.h
 modules/video_chroma/omxdl.c
 modules/video_chroma/rv32.c
 modules/video_chroma/swscale.c
+modules/video_chroma/yuvp.c
 modules/video_chroma/yuy2_i420.c
 modules/video_chroma/yuy2_i422.c
 modules/video_filter/adjust.c
@@ -1144,7 +1143,6 @@ modules/video_filter/subsdelay.c
 modules/video_filter/transform.c
 modules/video_filter/vhs.c
 modules/video_filter/wave.c
-modules/video_filter/yuvp.c
 modules/video_output/aa.c
 modules/video_output/android/android_window.c
 modules/video_output/android/nativewindow.c
@@ -1161,13 +1159,13 @@ modules/video_output/glx.c
 modules/video_output/ios2.m
 modules/video_output/kva.c
 modules/video_output/macosx.m
-modules/video_output/msw/direct2d.c
-modules/video_output/msw/direct3d9.c
-modules/video_output/msw/direct3d11.c
-modules/video_output/msw/directdraw.c
-modules/video_output/msw/events.c
-modules/video_output/msw/glwin32.c
-modules/video_output/msw/wingdi.c
+modules/video_output/win32/direct2d.c
+modules/video_output/win32/direct3d9.c
+modules/video_output/win32/direct3d11.c
+modules/video_output/win32/directdraw.c
+modules/video_output/win32/events.c
+modules/video_output/win32/glwin32.c
+modules/video_output/win32/wingdi.c
 modules/video_output/sdl.c
 modules/video_output/vdummy.c
 modules/video_output/vmem.c

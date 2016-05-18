@@ -22,7 +22,7 @@ ifdef HAVE_IOS
 WITH_FONTCONFIG = 0
 WITH_HARFBUZZ = 1
 else
-ifdef HAVE_WINRT
+ifdef HAVE_WINSTORE
 WITH_FONTCONFIG = 0
 WITH_HARFBUZZ = 1
 else
@@ -42,6 +42,9 @@ libass: libass-$(ASS_VERSION).tar.gz .sum-ass
 	$(UNPACK)
 	$(APPLY) $(SRC)/ass/ass-macosx.patch
 	$(APPLY) $(SRC)/ass/ass-solaris.patch
+ifdef HAVE_WIN32
+	$(APPLY) $(SRC)/ass/use-topendir.patch
+endif
 	$(UPDATE_AUTOCONFIG)
 	$(MOVE)
 

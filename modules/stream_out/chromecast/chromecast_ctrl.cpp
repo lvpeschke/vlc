@@ -32,8 +32,6 @@
 
 #include "chromecast.h"
 
-#include <vlc_playlist.h>
-
 #include <cassert>
 #include <cerrno>
 #ifdef HAVE_POLL
@@ -47,8 +45,6 @@
 // Media player Chromecast app id
 #define APP_ID "CC1AD845" // Default media player aka DEFAULT_MEDIA_RECEIVER_APPLICATION_ID
 
-static const int CHROMECAST_CONTROL_PORT = 8009;
-
 /* deadline regarding pings sent from receiver */
 #define PING_WAIT_TIME 6000
 #define PING_WAIT_RETRIES 0
@@ -56,156 +52,14 @@ static const int CHROMECAST_CONTROL_PORT = 8009;
 #define PONG_WAIT_TIME 500
 #define PONG_WAIT_RETRIES 2
 
+static const mtime_t SEEK_FORWARD_OFFSET = 1000000;
+
 #define CONTROL_CFG_PREFIX "chromecast-"
 
 static const std::string NAMESPACE_DEVICEAUTH       = "urn:x-cast:com.google.cast.tp.deviceauth";
 static const std::string NAMESPACE_CONNECTION       = "urn:x-cast:com.google.cast.tp.connection";
 static const std::string NAMESPACE_HEARTBEAT        = "urn:x-cast:com.google.cast.tp.heartbeat";
 static const std::string NAMESPACE_RECEIVER         = "urn:x-cast:com.google.cast.receiver";
-
-/*****************************************************************************
- * Local prototypes
- *****************************************************************************/
-static int Open(vlc_object_t *);
-static void Close(vlc_object_t *);
-
-static void *ChromecastThread(void *data);
-
-/*****************************************************************************
- * Module descriptor
- *****************************************************************************/
-
-#define IP_TEXT N_("Chromecast IP address")
-#define IP_LONGTEXT N_("This sets the IP address of the Chromecast receiver.")
-#define HTTP_PORT_TEXT N_("HTTP port")
-#define HTTP_PORT_LONGTEXT N_("This sets the HTTP port of the server " \
-                              "used to stream the media to the Chromecast.")
-#define MUXER_TEXT N_("Muxer")
-#define MUXER_LONGTEXT N_("This sets the muxer used to stream to the Chromecast.")
-#define MIME_TEXT N_("MIME content type")
-#define MIME_LONGTEXT N_("This sets the media MIME content type sent to the Chromecast.")
-
-vlc_module_begin ()
-    set_shortname( N_("Chromecast") )
-    set_category( CAT_INTERFACE )
-    set_subcategory( SUBCAT_INTERFACE_CONTROL )
-    set_description( N_("Chromecast interface") )
-    set_capability( "interface", 0 )
-    add_shortcut("chromecast")
-    add_string(CONTROL_CFG_PREFIX "addr", "", IP_TEXT, IP_LONGTEXT, false)
-    add_integer(CONTROL_CFG_PREFIX "http-port", HTTP_PORT, HTTP_PORT_TEXT, HTTP_PORT_LONGTEXT, false)
-    add_string(CONTROL_CFG_PREFIX "mime", "video/x-matroska", MIME_TEXT, MIME_LONGTEXT, false)
-    add_string(CONTROL_CFG_PREFIX "mux", "avformat{mux=matroska}", MUXER_TEXT, MUXER_LONGTEXT, false)
-    set_callbacks( Open, Close )
-
-vlc_module_end ()
-
-/*****************************************************************************
- * Open: connect to the Chromecast and initialize the sout
- *****************************************************************************/
-int Open(vlc_object_t *p_module)
-{
-    intf_thread_t *p_intf = reinterpret_cast<intf_thread_t*>(p_module);
-    intf_sys_t *p_sys = new(std::nothrow) intf_sys_t(p_module);
-    if (unlikely(p_sys == NULL))
-        return VLC_ENOMEM;
-    p_intf->p_sys = p_sys;
-
-    mtime_t deadline;
-    char *psz_mux;
-
-    char *psz_ipChromecast = var_InheritString( p_module, CONTROL_CFG_PREFIX "addr");
-    if (psz_ipChromecast == NULL)
-    {
-        msg_Err( p_module, "No Chromecast receiver IP provided");
-        goto error;
-    }
-
-    p_sys->i_sock_fd = p_sys->connectChromecast(psz_ipChromecast);
-    free(psz_ipChromecast);
-    if (p_sys->i_sock_fd < 0)
-    {
-        msg_Err( p_module, "Could not connect the Chromecast");
-        goto error;
-    }
-    p_sys->setConnectionStatus(CHROMECAST_TLS_CONNECTED);
-
-    char psz_localIP[NI_MAXNUMERICHOST];
-    if (net_GetSockAddress(p_sys->i_sock_fd, psz_localIP, NULL))
-    {
-        msg_Err( p_module, "Cannot get local IP address");
-        goto error;
-    }
-    p_sys->serverIP = psz_localIP;
-
-    psz_mux = var_InheritString( p_module, CONTROL_CFG_PREFIX "mux");
-    if (psz_mux == NULL)
-    {
-        msg_Err( p_module, "Bad muxer provided");
-        goto error;
-    }
-    p_sys->muxer = psz_mux;
-    free(psz_mux);
-
-    psz_mux = var_InheritString( p_module, CONTROL_CFG_PREFIX "mime");
-    if (psz_mux == NULL)
-    {
-        msg_Err( p_module, "Bad MIME type provided");
-        goto error;
-    }
-    p_sys->mime = psz_mux; /* TODO get the MIME type from the playlist/input ? */
-    free(psz_mux);
-
-    // Start the Chromecast event thread.
-    if (vlc_clone(&p_sys->chromecastThread, ChromecastThread, p_module,
-                  VLC_THREAD_PRIORITY_LOW))
-    {
-        msg_Err( p_module, "Could not start the Chromecast talking thread");
-        goto error;
-    }
-
-    /* Ugly part:
-     * We want to be sure that the Chromecast receives the first data packet sent by
-     * the HTTP server. */
-
-    // Lock the sout thread until we have sent the media loading command to the Chromecast.
-    deadline = mdate() + 6 * CLOCK_FREQ;
-    vlc_mutex_lock(&p_sys->lock);
-    while (p_sys->getPlayerStatus() != CMD_LOAD_SENT)
-    {
-        int i_ret = vlc_cond_timedwait(&p_sys->loadCommandCond, &p_sys->lock, deadline);
-        if (i_ret == ETIMEDOUT)
-        {
-            msg_Err( p_module, "Timeout reached before sending the media loading command");
-            vlc_mutex_unlock(&p_sys->lock);
-            vlc_cancel(p_sys->chromecastThread);
-            goto error;
-        }
-    }
-    vlc_mutex_unlock(&p_sys->lock);
-
-    /* Even uglier: sleep more to let to the Chromecast initiate the connection
-     * to the http server. */
-    msleep(2 * CLOCK_FREQ);
-
-    return VLC_SUCCESS;
-
-error:
-    delete p_sys;
-    return VLC_EGENERIC;
-}
-
-
-/*****************************************************************************
- * Close: destroy interface
- *****************************************************************************/
-void Close(vlc_object_t *p_module)
-{
-    intf_thread_t *p_intf = reinterpret_cast<intf_thread_t*>(p_module);
-    intf_sys_t *p_sys = p_intf->p_sys;
-
-    delete p_sys;
-}
 
 /**
  * @brief Build a CastMessage to send to the Chromecast
@@ -239,63 +93,120 @@ void intf_sys_t::buildMessage(const std::string & namespace_,
 /*****************************************************************************
  * intf_sys_t: class definition
  *****************************************************************************/
-intf_sys_t::intf_sys_t(vlc_object_t * const p_this)
+intf_sys_t::intf_sys_t(vlc_object_t * const p_this, int port, std::string device_addr, int device_port, vlc_interrupt_t *p_interrupt)
  : p_module(p_this)
+ , i_port(port)
+ , i_target_port(device_port)
+ , targetIP(device_addr)
  , receiverState(RECEIVER_IDLE)
  , i_sock_fd(-1)
  , p_creds(NULL)
  , p_tls(NULL)
+ , requested_stop(false)
+ , requested_seek(false)
  , conn_status(CHROMECAST_DISCONNECTED)
  , cmd_status(NO_CMD_PENDING)
  , i_receiver_requestId(0)
  , i_requestId(0)
+ , has_input(false)
+ , p_ctl_thread_interrupt(p_interrupt)
 {
     vlc_mutex_init(&lock);
     vlc_cond_init(&loadCommandCond);
+
+    // Start the Chromecast event thread.
+    if (vlc_clone(&chromecastThread, ChromecastThread, this,
+                  VLC_THREAD_PRIORITY_LOW))
+    {
+        msg_Err( p_module, "Could not start the Chromecast talking thread");
+    }
 }
 
 intf_sys_t::~intf_sys_t()
 {
-    switch (getConnectionStatus())
+    setHasInput( false );
+
+    switch ( conn_status )
     {
     case CHROMECAST_APP_STARTED:
         // Generate the close messages.
         msgReceiverClose(appTransportId);
         // ft
+    case CHROMECAST_TLS_CONNECTED:
     case CHROMECAST_AUTHENTICATED:
         msgReceiverClose(DEFAULT_CHOMECAST_RECEIVER);
         // ft
+    case CHROMECAST_DISCONNECTED:
+    case CHROMECAST_CONNECTION_DEAD:
     default:
         break;
     }
 
-    vlc_cancel(chromecastThread);
+    vlc_interrupt_kill( p_ctl_thread_interrupt );
+
     vlc_join(chromecastThread, NULL);
 
-    disconnectChromecast();
+    vlc_interrupt_destroy( p_ctl_thread_interrupt );
 
     vlc_cond_destroy(&loadCommandCond);
     vlc_mutex_destroy(&lock);
+}
+
+void intf_sys_t::setHasInput( bool b_has_input, const std::string mime_type )
+{
+    vlc_mutex_locker locker(&lock);
+    msg_Dbg( p_module, "setHasInput device:%s session:%s",
+             targetIP.c_str(), mediaSessionId.c_str() );
+
+    this->has_input = b_has_input;
+    this->mime = mime_type;
+
+    if( this->has_input )
+    {
+        mutex_cleanup_push(&lock);
+        while (conn_status != CHROMECAST_APP_STARTED && conn_status != CHROMECAST_CONNECTION_DEAD)
+        {
+            msg_Dbg( p_module, "setHasInput waiting for Chromecast connection, current %d", conn_status);
+            vlc_cond_wait(&loadCommandCond, &lock);
+        }
+        vlc_cleanup_pop();
+
+        if (conn_status == CHROMECAST_CONNECTION_DEAD)
+        {
+            msg_Warn( p_module, "no Chromecast hook possible");
+            return;
+        }
+
+        if ( receiverState == RECEIVER_IDLE )
+        {
+            // we cannot start a new load when the last one is still processing
+            msgPlayerLoad();
+            setPlayerStatus(CMD_LOAD_SENT);
+        }
+    }
 }
 
 /**
  * @brief Connect to the Chromecast
  * @return the opened socket file descriptor or -1 on error
  */
-int intf_sys_t::connectChromecast(char *psz_ipChromecast)
+int intf_sys_t::connectChromecast()
 {
-    int fd = net_ConnectTCP( p_module, psz_ipChromecast, CHROMECAST_CONTROL_PORT);
+    unsigned devicePort = i_target_port;
+    if (devicePort == 0)
+        devicePort = CHROMECAST_CONTROL_PORT;
+    int fd = net_ConnectTCP( p_module, targetIP.c_str(), devicePort);
     if (fd < 0)
         return -1;
 
-    p_creds = vlc_tls_ClientCreate( p_module );
+    p_creds = vlc_tls_ClientCreate( p_module->p_parent );
     if (p_creds == NULL)
     {
         net_Close(fd);
         return -1;
     }
 
-    p_tls = vlc_tls_ClientSessionCreateFD(p_creds, fd, psz_ipChromecast,
+    p_tls = vlc_tls_ClientSessionCreateFD(p_creds, fd, targetIP.c_str(),
                                                "tcps", NULL, NULL);
 
     if (p_tls == NULL)
@@ -335,9 +246,8 @@ void intf_sys_t::disconnectChromecast()
  * @param i_payloadSize returns the payload size of the message received
  * @return the number of bytes received of -1 on error
  */
-// Use here only C linkage and POD types as this function is a cancelation point.
-extern "C" int recvPacket(vlc_object_t *p_module, bool &b_msgReceived,
-                          uint32_t &i_payloadSize, int i_sock_fd, vlc_tls_t *p_tls,
+int intf_sys_t::recvPacket(bool &b_msgReceived,
+                          uint32_t &i_payloadSize,
                           unsigned *pi_received, uint8_t *p_data, bool *pb_pingTimeout,
                           int *pi_wait_delay, int *pi_wait_retries)
 {
@@ -349,7 +259,11 @@ extern "C" int recvPacket(vlc_object_t *p_module, bool &b_msgReceived,
      * If we do not receive one after 6 seconds, we send a PING.
      * If after this PING, we do not receive a PONG, then we consider the
      * connection as dead. */
-    if (poll(ufd, 1, *pi_wait_delay) == 0)
+    ssize_t val = vlc_poll_i11e(ufd, 1, *pi_wait_delay);
+    if ( val == -1 && errno != EINTR )
+        return -1;
+
+    if (val == 0)
     {
         if (*pb_pingTimeout)
         {
@@ -377,37 +291,54 @@ extern "C" int recvPacket(vlc_object_t *p_module, bool &b_msgReceived,
         *pi_wait_retries = PING_WAIT_RETRIES;
     }
 
-    int i_ret;
-
-    /* Packet structure:
-     * +------------------------------------+------------------------------+
-     * | Payload size (uint32_t big endian) |         Payload data         |
-     * +------------------------------------+------------------------------+ */
-    while (*pi_received < PACKET_HEADER_LEN)
+    int i_ret = 0;
+    if ( ufd[0].revents & POLLIN )
     {
-        // We receive the header.
-        i_ret = tls_Recv(p_tls, p_data + *pi_received, PACKET_HEADER_LEN - *pi_received);
-        if (i_ret <= 0)
-            return i_ret;
-        *pi_received += i_ret;
-    }
+        /* we have received stuff */
 
-    // We receive the payload.
+        /* Packet structure:
+         * +------------------------------------+------------------------------+
+         * | Payload size (uint32_t big endian) |         Payload data         |
+         * +------------------------------------+------------------------------+ */
+        while (*pi_received < PACKET_HEADER_LEN)
+        {
+            // We receive the header.
+            i_ret = tls_Recv(p_tls, p_data + *pi_received, PACKET_HEADER_LEN - *pi_received);
+            if (i_ret <= 0)
+                return i_ret;
+            *pi_received += i_ret;
+        }
 
-    // Get the size of the payload
-    i_payloadSize = U32_AT( p_data );
-    const uint32_t i_maxPayloadSize = PACKET_MAX_LEN - PACKET_HEADER_LEN;
+        // We receive the payload.
 
-    if (i_payloadSize > i_maxPayloadSize)
-    {
-        // Error case: the packet sent by the Chromecast is too long: we drop it.
-        msg_Err( p_module, "Packet too long: droping its data");
+        // Get the size of the payload
+        i_payloadSize = U32_AT( p_data );
+        const uint32_t i_maxPayloadSize = PACKET_MAX_LEN - PACKET_HEADER_LEN;
 
-        uint32_t i_size = i_payloadSize - (*pi_received - PACKET_HEADER_LEN);
-        if (i_size > i_maxPayloadSize)
-            i_size = i_maxPayloadSize;
+        if (i_payloadSize > i_maxPayloadSize)
+        {
+            // Error case: the packet sent by the Chromecast is too long: we drop it.
+            msg_Err( p_module, "Packet too long: droping its data");
 
-        i_ret = tls_Recv(p_tls, p_data + PACKET_HEADER_LEN, i_size);
+            uint32_t i_size = i_payloadSize - (*pi_received - PACKET_HEADER_LEN);
+            if (i_size > i_maxPayloadSize)
+                i_size = i_maxPayloadSize;
+
+            i_ret = tls_Recv(p_tls, p_data + PACKET_HEADER_LEN, i_size);
+            if (i_ret <= 0)
+                return i_ret;
+            *pi_received += i_ret;
+
+            if (*pi_received < i_payloadSize + PACKET_HEADER_LEN)
+                return i_ret;
+
+            *pi_received = 0;
+            return -1;
+        }
+
+        // Normal case
+        i_ret = tls_Recv(p_tls, p_data + *pi_received,
+                         i_payloadSize - (*pi_received - PACKET_HEADER_LEN));
         if (i_ret <= 0)
             return i_ret;
         *pi_received += i_ret;
@@ -415,23 +346,15 @@ extern "C" int recvPacket(vlc_object_t *p_module, bool &b_msgReceived,
         if (*pi_received < i_payloadSize + PACKET_HEADER_LEN)
             return i_ret;
 
+        assert(*pi_received == i_payloadSize + PACKET_HEADER_LEN);
         *pi_received = 0;
-        return -1;
+        b_msgReceived = true;
     }
 
-    // Normal case
-    i_ret = tls_Recv(p_tls, p_data + *pi_received,
-                     i_payloadSize - (*pi_received - PACKET_HEADER_LEN));
-    if (i_ret <= 0)
-        return i_ret;
-    *pi_received += i_ret;
+    if ( val == -1 && errno == EINTR )
+        /* we have stuff to send */
+        i_ret = 1;
 
-    if (*pi_received < i_payloadSize + PACKET_HEADER_LEN)
-        return i_ret;
-
-    assert(*pi_received == i_payloadSize + PACKET_HEADER_LEN);
-    *pi_received = 0;
-    b_msgReceived = true;
     return i_ret;
 }
 
@@ -519,18 +442,19 @@ void intf_sys_t::processMessage(const castchannel::CastMessage &msg)
             if ( p_app )
             {
                 if (!appTransportId.empty()
-                        && getConnectionStatus() == CHROMECAST_AUTHENTICATED)
+                        && conn_status == CHROMECAST_AUTHENTICATED)
                 {
                     msgConnect(appTransportId);
                     setConnectionStatus(CHROMECAST_APP_STARTED);
-                    msgPlayerLoad();
-                    setPlayerStatus(CMD_LOAD_SENT);
-                    vlc_cond_signal(&loadCommandCond);
+                }
+                else
+                {
+                    msgPlayerGetStatus();
                 }
             }
             else
             {
-                switch(getConnectionStatus())
+                switch( conn_status )
                 {
                 /* If the app is no longer present */
                 case CHROMECAST_APP_STARTED:
@@ -630,9 +554,17 @@ void intf_sys_t::processMessage(const castchannel::CastMessage &msg)
                     break;
 
                 case RECEIVER_IDLE:
-                    setPlayerStatus(NO_CMD_PENDING);
+                    if ( has_input )
+                        setPlayerStatus(NO_CMD_PENDING);
                     break;
                 }
+            }
+
+            if ( cmd_status != CMD_LOAD_SENT && receiverState == RECEIVER_IDLE && has_input )
+            {
+                msg_Dbg( p_module, "the device missed the LOAD command");
+                msgPlayerLoad();
+                setPlayerStatus(CMD_LOAD_SENT);
             }
         }
         else if (type == "LOAD_FAILED")
@@ -640,7 +572,7 @@ void intf_sys_t::processMessage(const castchannel::CastMessage &msg)
             msg_Err( p_module, "Media load failed");
             vlc_mutex_locker locker(&lock);
             /* close the app to restart it */
-            if (getConnectionStatus() == CHROMECAST_APP_STARTED)
+            if ( conn_status == CHROMECAST_APP_STARTED )
                 msgReceiverClose(appTransportId);
             else
                 msgReceiverGetStatus();
@@ -666,6 +598,7 @@ void intf_sys_t::processMessage(const castchannel::CastMessage &msg)
         if (type == "CLOSE")
         {
             msg_Warn( p_module, "received close message");
+            setHasInput( false );
             vlc_mutex_locker locker(&lock);
             setConnectionStatus(CHROMECAST_CONNECTION_DEAD);
         }
@@ -758,20 +691,14 @@ void intf_sys_t::msgPlayerGetStatus()
 
 void intf_sys_t::msgPlayerLoad()
 {
-    char *psz_mime = var_InheritString(p_module, CONTROL_CFG_PREFIX "mime");
-    if (psz_mime == NULL)
-        return;
-
     std::stringstream ss;
     ss << "{\"type\":\"LOAD\","
        <<  "\"media\":{\"contentId\":\"http://" << serverIP << ":"
-           << var_InheritInteger(p_module, CONTROL_CFG_PREFIX"http-port")
+           << i_port
            << "/stream\","
        <<             "\"streamType\":\"LIVE\","
-       <<             "\"contentType\":\"" << std::string(psz_mime) << "\"},"
+       <<             "\"contentType\":\"" << mime << "\"},"
        <<  "\"requestId\":" << i_requestId++ << "}";
-
-    free(psz_mime);
 
     pushMediaPlayerMessage( ss );
 }
@@ -879,11 +806,12 @@ int intf_sys_t::sendMessage(const castchannel::CastMessage &msg)
     SetDWBE(p_data, i_size);
     msg.SerializeWithCachedSizesToArray(p_data + PACKET_HEADER_LEN);
 
-    vlc_mutex_locker locker(&lock);
     int i_ret = tls_Send(p_tls, p_data, PACKET_HEADER_LEN + i_size);
     delete[] p_data;
     if (i_ret == PACKET_HEADER_LEN + i_size)
         return VLC_SUCCESS;
+
+    msg_Warn( p_module, "failed to send message %s", msg.payload_utf8().c_str() );
 
     return VLC_EGENERIC;
 }
@@ -896,29 +824,46 @@ void intf_sys_t::pushMediaPlayerMessage(const std::stringstream & payload) {
 /*****************************************************************************
  * Chromecast thread
  *****************************************************************************/
-static void* ChromecastThread(void* p_data)
+void* intf_sys_t::ChromecastThread(void* p_data)
 {
-    int canc = vlc_savecancel();
-    // Not cancellation-safe part.
-    intf_thread_t *p_stream = reinterpret_cast<intf_thread_t*>(p_data);
-    intf_sys_t *p_sys = p_stream->p_sys;
+    intf_sys_t *p_sys = reinterpret_cast<intf_sys_t*>(p_data);
+    p_sys->setConnectionStatus( CHROMECAST_DISCONNECTED );
+
+    p_sys->i_sock_fd = p_sys->connectChromecast();
+    if (p_sys->i_sock_fd < 0)
+    {
+        msg_Err( p_sys->p_module, "Could not connect the Chromecast" );
+        vlc_mutex_locker locker(&p_sys->lock);
+        p_sys->setConnectionStatus(CHROMECAST_CONNECTION_DEAD);
+        return NULL;
+    }
+
+    char psz_localIP[NI_MAXNUMERICHOST];
+    if (net_GetSockAddress(p_sys->i_sock_fd, psz_localIP, NULL))
+    {
+        msg_Err( p_sys->p_module, "Cannot get local IP address" );
+        vlc_mutex_locker locker(&p_sys->lock);
+        p_sys->disconnectChromecast();
+        return NULL;
+    }
+
+    vlc_interrupt_set( p_sys->p_ctl_thread_interrupt );
+    p_sys->serverIP = psz_localIP;
+
+    vlc_mutex_lock(&p_sys->lock);
+    p_sys->setConnectionStatus(CHROMECAST_TLS_CONNECTED);
+    vlc_mutex_unlock(&p_sys->lock);
 
     p_sys->msgAuth();
-    vlc_restorecancel(canc);
 
-    while (1)
-    {
-        p_sys->handleMessages();
+    while ( !vlc_killed() && p_sys->handleMessages() );
 
-        vlc_mutex_locker locker(&p_sys->lock);
-        if ( p_sys->getConnectionStatus() == CHROMECAST_CONNECTION_DEAD )
-            break;
-    }
+    p_sys->disconnectChromecast();
 
     return NULL;
 }
 
-void intf_sys_t::handleMessages()
+bool intf_sys_t::handleMessages()
 {
     unsigned i_received = 0;
     uint8_t p_packet[PACKET_MAX_LEN];
@@ -929,12 +874,31 @@ void intf_sys_t::handleMessages()
 
     bool b_msgReceived = false;
     uint32_t i_payloadSize = 0;
-    int i_ret = recvPacket( p_module, b_msgReceived, i_payloadSize, i_sock_fd,
-                           p_tls, &i_received, p_packet, &b_pingTimeout,
-                           &i_waitdelay, &i_retries);
 
-    int canc = vlc_savecancel();
-    // Not cancellation-safe part.
+    if ( requested_stop.exchange(false) && !mediaSessionId.empty() )
+    {
+        msgPlayerStop();
+    }
+
+    if ( requested_seek.exchange(false) && !mediaSessionId.empty() )
+    {
+        char current_time[32];
+        mtime_t m_seek_request_time = mdate() + SEEK_FORWARD_OFFSET;
+        if( snprintf( current_time, sizeof(current_time), "%.3f", double( m_seek_request_time ) / 1000000.0 ) >= (int)sizeof(current_time) )
+        {
+            msg_Err( p_module, "snprintf() truncated string for mediaSessionId" );
+            current_time[sizeof(current_time) - 1] = '\0';
+        }
+        vlc_mutex_locker locker(&lock);
+        setPlayerStatus(CMD_SEEK_SENT);
+        /* send a fake time to seek to, to make sure the device flushes its buffers */
+        msgPlayerSeek( current_time );
+    }
+
+    int i_ret = recvPacket( b_msgReceived, i_payloadSize,
+                            &i_received, p_packet, &b_pingTimeout,
+                            &i_waitdelay, &i_retries);
+
 
 #if defined(_WIN32)
     if ((i_ret < 0 && WSAGetLastError() != WSAEWOULDBLOCK) || (i_ret == 0))
@@ -945,8 +909,6 @@ void intf_sys_t::handleMessages()
         msg_Err( p_module, "The connection to the Chromecast died (receiving).");
         vlc_mutex_locker locker(&lock);
         setConnectionStatus(CHROMECAST_CONNECTION_DEAD);
-        vlc_restorecancel(canc);
-        return;
     }
 
     if (b_pingTimeout)
@@ -962,5 +924,23 @@ void intf_sys_t::handleMessages()
         processMessage(msg);
     }
 
-    vlc_restorecancel(canc);
+    vlc_mutex_locker locker(&lock);
+    return conn_status != CHROMECAST_CONNECTION_DEAD;
+}
+
+void intf_sys_t::notifySendRequest()
+{
+    vlc_interrupt_raise( p_ctl_thread_interrupt );
+}
+
+void intf_sys_t::requestPlayerStop()
+{
+    requested_stop = true;
+    notifySendRequest();
+}
+
+void intf_sys_t::requestPlayerSeek()
+{
+    requested_seek = true;
+    notifySendRequest();
 }

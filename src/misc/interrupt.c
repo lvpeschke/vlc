@@ -365,8 +365,8 @@ static void vlc_poll_i11e_cleanup(void *opaque)
 
     vlc_interrupt_finish(ctx);
     if (fd[1] != fd[0])
-        close(fd[1]);
-    close(fd[0]);
+        vlc_close(fd[1]);
+    vlc_close(fd[0]);
 }
 
 static int vlc_poll_i11e_inner(struct pollfd *restrict fds, unsigned nfds,
@@ -426,8 +426,8 @@ static int vlc_poll_i11e_inner(struct pollfd *restrict fds, unsigned nfds,
 
     canc = vlc_savecancel();
     if (fd[1] != fd[0])
-        close(fd[1]);
-    close(fd[0]);
+        vlc_close(fd[1]);
+    vlc_close(fd[0]);
     vlc_restorecancel(canc);
     return ret;
 }
@@ -648,7 +648,7 @@ int vlc_poll_i11e(struct pollfd *fds, unsigned nfds, int timeout)
 
     vlc_interrupt_prepare(ctx, vlc_poll_i11e_wake, th);
 
-    vlc_cleanup_push(vlc_poll_i11e_cleanup, th);
+    vlc_cleanup_push(vlc_poll_i11e_cleanup, ctx);
     ret = vlc_poll(fds, nfds, timeout);
     vlc_cleanup_pop();
 

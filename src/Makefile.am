@@ -82,6 +82,7 @@ pluginsinclude_HEADERS = \
 	../include/vlc_services_discovery.h \
 	../include/vlc_fingerprinter.h \
 	../include/vlc_interrupt.h \
+	../include/vlc_renderer_discovery.h \
 	../include/vlc_sout.h \
 	../include/vlc_spu.h \
 	../include/vlc_stream.h \
@@ -192,8 +193,7 @@ libvlccore_la_LIBADD = $(LIBS_libvlccore) \
 libvlccore_la_DEPENDENCIES = libvlccore.sym
 if HAVE_WIN32
 libvlccore_la_DEPENDENCIES += libvlc_win32_rc.$(OBJEXT)
-libvlccore_la_LDFLAGS += -Wl,libvlc_win32_rc.$(OBJEXT) -avoid-version \
-						 -Wc,--static -Wc,-static-libgcc
+libvlccore_la_LDFLAGS += -Wl,libvlc_win32_rc.$(OBJEXT) -avoid-version -Wc,-static
 endif
 if HAVE_OS2
 libvlccore_la_LDFLAGS += -avoid-version
@@ -444,6 +444,7 @@ SOURCES_libvlc_common = \
 	misc/interrupt.h \
 	misc/interrupt.c \
 	misc/keystore.c \
+	misc/renderer_discovery.c \
 	modules/modules.h \
 	modules/modules.c \
 	modules/bank.c \

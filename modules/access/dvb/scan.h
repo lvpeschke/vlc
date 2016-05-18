@@ -23,7 +23,7 @@
 
 typedef enum
 {
-    SCAN_NONE,
+    SCAN_NONE = 0,
     SCAN_DVB_T,
     SCAN_DVB_S,
     SCAN_DVB_C,
@@ -31,11 +31,18 @@ typedef enum
 
 typedef struct
 {
-    int i_frequency;
-    int i_symbol_rate;
+    unsigned i_frequency;
+    union
+    {
+        unsigned i_bandwidth;
+        unsigned i_symbolrate;
+    };
     int i_fec;
+    int i_modulation;
     char c_polarization;
-} scan_dvbs_transponder_t;
+    scan_type_t type;
+
+} scan_tuner_config_t;
 
 typedef struct scan_parameter_t
 {
@@ -43,69 +50,62 @@ typedef struct scan_parameter_t
     bool b_exhaustive;
     bool b_use_nit;
     bool b_free_only;
-    bool b_modulation_set;
-    bool b_symbolrate_set;
 
-    int i_modulation;
-    int i_symbolrate;
+    bool b_modulation_set;
+    unsigned i_symbolrate;
+
     struct
     {
-        int i_min;
-        int i_max;
-        int i_step;
-
-        unsigned i_count;    /* Number of frequency test to do */
+        unsigned i_min;
+        unsigned i_max;
+        unsigned i_step;
     } frequency;
 
     struct
     {
-        /* Bandwidth should be 6, 7 or 8 */
-        int i_min;
-        int i_max;
-        int i_step;
+        unsigned i_min;
+        unsigned i_max;
+    } bandwidth;/* Bandwidth should be 6, 7 or 8 */
 
-        unsigned i_count;
-    } bandwidth;
-
-    struct
+    char *psz_scanlist_file;
+    enum
     {
-        char *psz_name;         /* satellite name */
-        char *psz_path;         /* config file path */
+        FORMAT_DVBv3,
+        FORMAT_DVBv5,
+    } scanlist_format;
 
-        scan_dvbs_transponder_t *p_transponders;
-        unsigned i_count;
-    } sat_info;
 } scan_parameter_t;
 
-typedef struct
-{
-    int i_frequency;
-    union
-    {
-        int i_bandwidth;
-        int i_symbol_rate;
-    };
-    int i_fec;
-    int i_modulation;
-    int i_symbolrate;
-    char c_polarization;
-} scan_configuration_t;
+#define SCAN_READ_BUFFER_COUNT 20
 
 typedef struct scan_t scan_t;
+typedef int (*scan_frontend_tune_cb)( scan_t *, void *, const scan_tuner_config_t * );
+typedef int (*scan_frontend_stats_cb)( scan_t *, void *, int * );
+typedef int (*scan_demux_filter_cb)( scan_t *, void *, uint16_t, bool );
+typedef int (*scan_demux_read_cb)( scan_t *, void *, unsigned, size_t, uint8_t *, size_t * );
 
-scan_t *scan_New( vlc_object_t *p_obj, const scan_parameter_t *p_parameter );
+typedef struct scan_service_t scan_service_t;
+typedef const void * (*scan_service_notify_cb)( scan_t *, void *, const scan_service_t *, const void *, bool );
+void scan_set_NotifyCB( scan_t *, scan_service_notify_cb );
+
+const char * scan_service_GetName( const scan_service_t *s );
+const char * scan_service_GetProvider( const scan_service_t *s );
+char * scan_service_GetUri( const scan_service_t *s );
+uint16_t scan_service_GetProgram( const scan_service_t *s );
+const char * scan_service_GetNetworkName( const scan_service_t *s );
+
+void scan_parameter_Init( scan_parameter_t * );
+void scan_parameter_Clean( scan_parameter_t * );
+
+scan_t *scan_New( vlc_object_t *p_obj, const scan_parameter_t *p_parameter,
+                  scan_frontend_tune_cb,
+                  scan_frontend_stats_cb,
+                  scan_demux_filter_cb,
+                  scan_demux_read_cb,
+                  void * );
 void scan_Destroy( scan_t *p_scan );
 
-int scan_Next( scan_t *p_scan, scan_configuration_t *p_cfg );
+int scan_Run( scan_t *p_scan );
 
 block_t *scan_GetM3U( scan_t *p_scan );
 bool scan_IsCancelled( scan_t *p_scan );
-
-typedef struct scan_session_t scan_session_t;
-
-scan_session_t *scan_session_New( vlc_object_t *,
-                                  const scan_configuration_t * );
-void scan_session_Destroy( scan_t *, scan_session_t * );
-bool scan_session_Push( scan_session_t *p_scan, block_t *p_block );
-void scan_service_SetSNR( scan_session_t *p_scan, int i_snr );
-

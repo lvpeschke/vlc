@@ -62,9 +62,10 @@ static inline void registerAndCheckEventIds( int start, int end )
  * But can also be used for VLM dialog or similar
  **********************************************************************/
 
-InputManager::InputManager( QObject *parent, intf_thread_t *_p_intf) :
-                           QObject( parent ), p_intf( _p_intf )
+InputManager::InputManager( MainInputManager *mim, intf_thread_t *_p_intf) :
+                           QObject( mim ), p_intf( _p_intf )
 {
+    p_mim        = mim;
     i_old_playing_status = END_S;
     oldName      = "";
     artUrl       = "";
@@ -87,7 +88,7 @@ InputManager::~InputManager()
 
 void InputManager::inputChangedHandler()
 {
-    setInput( THEMIM->getInput() );
+    setInput( p_mim->getInput() );
 }
 
 /* Define the Input used.
@@ -454,10 +455,27 @@ void InputManager::UpdateNavigation()
 
     if( val.i_int > 0 )
     {
+        bool b_menu = false;
+        if( val.i_int > 1 )
+        {
+            input_title_t **pp_title = NULL;
+            int i_title = 0;
+            if( input_Control( p_input, INPUT_GET_FULL_TITLE_INFO, &pp_title, &i_title ) == VLC_SUCCESS )
+            {
+                for( int i = 0; i < i_title; i++ )
+                {
+                    if( pp_title[i]->i_flags & INPUT_TITLE_MENU )
+                        b_menu = true;
+                    vlc_input_title_Delete(pp_title[i]);
+                }
+                free( pp_title );
+            }
+        }
+
         /* p_input != NULL since val.i_int != 0 */
         var_Change( p_input, "chapter", VLC_VAR_CHOICESCOUNT, &val2, NULL );
 
-        emit titleChanged( val.i_int > 1 );
+        emit titleChanged( b_menu );
         emit chapterChanged( val2.i_int > 1 );
     }
     else
@@ -731,7 +749,7 @@ void InputManager::setArt( input_item_t *p_item, QString fileUrl )
     if( hasInput() )
     {
         char *psz_cachedir = config_GetUserDir( VLC_CACHE_DIR );
-        QString old_url = THEMIM->getIM()->decodeArtURL( p_item );
+        QString old_url = p_mim->getIM()->decodeArtURL( p_item );
         old_url = QDir( old_url ).canonicalPath();
 
         if( old_url.startsWith( QString::fromUtf8( psz_cachedir ) ) )
@@ -809,21 +827,7 @@ void InputManager::sectionMenu()
 {
     if( hasInput() )
     {
-        vlc_value_t val, text;
-
-        if( var_Change( p_input, "title  0", VLC_VAR_GETCHOICES, &val, &text ) < 0 )
-            return;
-
-        /* XXX is it "Root" or "Title" we want here ?" (set 0 by default) */
-        int root = 0;
-        for( int i = 0; i < val.p_list->i_count; i++ )
-        {
-            if( !strcmp( text.p_list->p_values[i].psz_string, "Title" ) )
-                root = i;
-        }
-        var_FreeList( &val, &text );
-
-        var_SetInteger( p_input, "title  0", root );
+        var_TriggerCallback( p_input, "menu-title" );
     }
 }
 
@@ -945,12 +949,12 @@ void InputManager::setAtoB()
 {
     if( !timeA )
     {
-        timeA = var_GetInteger( THEMIM->getInput(), "time"  );
+        timeA = var_GetInteger( p_mim->getInput(), "time"  );
     }
     else if( !timeB )
     {
-        timeB = var_GetInteger( THEMIM->getInput(), "time"  );
-        var_SetInteger( THEMIM->getInput(), "time" , timeA );
+        timeB = var_GetInteger( p_mim->getInput(), "time"  );
+        var_SetInteger( p_mim->getInput(), "time" , timeA );
         CONNECT( this, positionUpdated( float, int64_t, int ),
                  this, AtoBLoop( float, int64_t, int ) );
     }
@@ -968,7 +972,7 @@ void InputManager::setAtoB()
 void InputManager::AtoBLoop( float, int64_t i_time, int )
 {
     if( timeB && i_time >= timeB )
-        var_SetInteger( THEMIM->getInput(), "time" , timeA );
+        var_SetInteger( p_mim->getInput(), "time" , timeA );
 }
 
 /**********************************************************************
@@ -1260,4 +1264,10 @@ int MainInputManager::PLItemRemoved
         QApplication::postEvent( mim, event );
     }
     return VLC_SUCCESS;
+}
+
+void MainInputManager::changeFullscreen( bool new_val )
+{
+    if ( var_GetBool( THEPL, "fullscreen" ) != new_val)
+	var_SetBool( THEPL, "fullscreen", new_val );
 }

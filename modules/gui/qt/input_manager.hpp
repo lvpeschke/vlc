@@ -120,13 +120,15 @@ private:
     int i_parent;
 };
 
+class MainInputManager;
+
 class InputManager : public QObject
 {
     Q_OBJECT
     friend class MainInputManager;
 
 public:
-    InputManager( QObject *, intf_thread_t * );
+    InputManager( MainInputManager *, intf_thread_t * );
     virtual ~InputManager();
 
     void delInput();
@@ -144,6 +146,7 @@ public:
 
 private:
     intf_thread_t  *p_intf;
+    MainInputManager* p_mim;
     input_thread_t *p_input;
     vlc_object_t   *p_input_vbi;
     input_item_t   *p_item;
@@ -212,6 +215,7 @@ private slots:
 signals:
     /// Send new position, new time and new length
     void positionUpdated( float , int64_t, int );
+    void remainingTimeChanged( bool );
     void seekRequested( float pos );
     void rateChanged( float );
     void nameChanged( const QString& );
@@ -315,6 +319,7 @@ public slots:
     void activatePlayQuit( bool );
 
     void loopRepeatLoopStatus();
+    void changeFullscreen( bool );
 
 private slots:
     void notifyRandom( bool );

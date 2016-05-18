@@ -54,12 +54,6 @@ namespace adaptive
             bool    start();
 
             AbstractStream::status demux(mtime_t, bool);
-            mtime_t getDuration() const;
-            mtime_t getPCR() const;
-            mtime_t getFirstDTS() const;
-            int     esCount() const;
-            bool    setPosition(mtime_t);
-            bool    seekAble() const;
             virtual bool needsUpdate() const;
             virtual bool updatePlaylist();
             virtual void scheduleNextUpdate();
@@ -73,6 +67,16 @@ namespace adaptive
             virtual int doControl(int, va_list);
             virtual int doDemux(int64_t);
 
+            virtual bool    setPosition(mtime_t);
+            virtual mtime_t getDuration() const;
+            mtime_t getPCR() const;
+            mtime_t getFirstDTS() const;
+
+            virtual mtime_t getFirstPlaybackTime() const;
+            mtime_t getCurrentPlaybackTime() const;
+
+            int     esCount() const;
+            bool    seekAble() const;
             void pruneLiveStream();
             virtual bool reactivateStream(AbstractStream *);
             bool setupPeriod();
@@ -90,6 +94,7 @@ namespace adaptive
             std::vector<AbstractStream *>        streams;
             time_t                               nextPlaylistupdate;
             mtime_t                              i_nzpcr;
+            mtime_t                              i_firstpcr;
             BasePeriod                          *currentPeriod;
             int                                  failedupdates;
     };

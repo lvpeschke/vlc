@@ -183,6 +183,16 @@ WId VideoWidget::request( struct vout_window_t *p_wnd, unsigned int *pi_width,
    Parent has to care about resizing itself */
 void VideoWidget::setSize( unsigned int w, unsigned int h )
 {
+    /* If the size changed, resizeEvent will be called, otherwise not,
+     * in which case we need to tell the vout what the size actually is
+     */
+    if( (unsigned)size().width() == w && (unsigned)size().height() == h )
+    {
+        if( p_window != NULL )
+            vout_window_ReportSize( p_window, w, h );
+        return;
+    }
+
     resize( w, h );
     emit sizeChanged( w, h );
     /* Work-around a bug?misconception? that would happen when vout core resize
@@ -797,7 +807,18 @@ TimeLabel::TimeLabel( intf_thread_t *_p_intf, TimeLabel::Display _displayType  )
     CONNECT( THEMIM->getIM(), positionUpdated( float, int64_t, int ),
               this, setDisplayPosition( float, int64_t, int ) );
 
+    connect( this, SIGNAL( broadcastRemainingTime( bool ) ),
+	     THEMIM->getIM(), SIGNAL( remainingTimeChanged( bool ) ) );
+
+    CONNECT( THEMIM->getIM(), remainingTimeChanged( bool ),
+              this, setRemainingTime( bool ) );
+
     setStyleSheet( "QLabel { padding-left: 4px; padding-right: 4px; }" );
+}
+
+void TimeLabel::setRemainingTime( bool remainingTime )
+{
+    b_remainingTime = remainingTime;
 }
 
 void TimeLabel::setDisplayPosition( float pos, int64_t t, int length )
@@ -890,5 +911,6 @@ void TimeLabel::toggleTimeDisplay()
 {
     b_remainingTime = !b_remainingTime;
     getSettings()->setValue( "MainWindow/ShowRemainingTime", b_remainingTime );
+    emit broadcastRemainingTime( b_remainingTime );
 }
 

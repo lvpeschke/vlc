@@ -289,7 +289,7 @@ static input_thread_t *Create( vlc_object_t *p_parent, input_item_t *p_item,
     snprintf( psz_timer_name, sizeof(psz_timer_name),
               "input launching for '%s'", psz_name );
 
-    msg_Dbg( p_input, "Creating an input for '%s'", psz_name);
+    msg_Dbg( p_input, "Creating an input for %s'%s'", b_quick ? "preparsing " : "", psz_name);
 
     free( psz_name );
 
@@ -547,11 +547,13 @@ static void MainLoopDemux( input_thread_t *p_input, bool *pb_changed )
     *pb_changed = false;
 
     if( p_input->p->i_stop > 0 && p_input->p->i_time >= p_input->p->i_stop )
-        i_ret = 0; /* EOF */
+        i_ret = VLC_DEMUXER_EOF;
     else
         i_ret = demux_Demux( p_input->p->master->p_demux );
 
-    if( i_ret > 0 )
+    i_ret = i_ret > 0 ? VLC_DEMUXER_SUCCESS : ( i_ret < 0 ? VLC_DEMUXER_EGENERIC : VLC_DEMUXER_EOF);
+
+    if( i_ret == VLC_DEMUXER_SUCCESS )
     {
         if( p_input->p->master->p_demux->info.i_update )
         {
@@ -569,18 +571,17 @@ static void MainLoopDemux( input_thread_t *p_input, bool *pb_changed )
         }
     }
 
-    if( i_ret == 0 )    /* EOF */
+    if( i_ret == VLC_DEMUXER_EOF )
     {
         msg_Dbg( p_input, "EOF reached" );
         p_input->p->master->b_eof = true;
         es_out_Eos(p_input->p->p_es_out);
     }
-    else if( i_ret < 0 )
+    else if( i_ret == VLC_DEMUXER_EGENERIC )
     {
         input_ChangeState( p_input, ERROR_S );
     }
-
-    if( i_ret > 0 && p_input->p->i_slave > 0 )
+    else if( p_input->p->i_slave > 0 )
         SlaveDemux( p_input );
 }
 
@@ -1143,18 +1144,15 @@ static int Init( input_thread_t * p_input )
 {
     input_source_t *master;
 
-    for( int i = 0; i < p_input->p->p_item->i_options; i++ )
+    if( var_Type( p_input->p_parent, "meta-file" ) )
     {
-        if( !strncmp( p_input->p->p_item->ppsz_options[i], "meta-file", 9 ) )
-        {
-            msg_Dbg( p_input, "Input is a meta file: disabling unneeded options" );
-            var_SetString( p_input, "sout", "" );
-            var_SetBool( p_input, "sout-all", false );
-            var_SetString( p_input, "input-slave", "" );
-            var_SetInteger( p_input, "input-repeat", 0 );
-            var_SetString( p_input, "sub-file", "" );
-            var_SetBool( p_input, "sub-autodetect-file", false );
-        }
+        msg_Dbg( p_input, "Input is a meta file: disabling unneeded options" );
+        var_SetString( p_input, "sout", "" );
+        var_SetBool( p_input, "sout-all", false );
+        var_SetString( p_input, "input-slave", "" );
+        var_SetInteger( p_input, "input-repeat", 0 );
+        var_SetString( p_input, "sub-file", "" );
+        var_SetBool( p_input, "sub-autodetect-file", false );
     }
 
     InitStatistics( p_input );
@@ -1500,6 +1498,7 @@ static bool ControlIsSeekRequest( int i_type )
     case INPUT_CONTROL_NAV_LEFT:
     case INPUT_CONTROL_NAV_RIGHT:
     case INPUT_CONTROL_NAV_POPUP:
+    case INPUT_CONTROL_NAV_MENU:
         return true;
     default:
         return false;
@@ -1979,6 +1978,7 @@ static bool Control( input_thread_t *p_input,
         case INPUT_CONTROL_NAV_LEFT:
         case INPUT_CONTROL_NAV_RIGHT:
         case INPUT_CONTROL_NAV_POPUP:
+        case INPUT_CONTROL_NAV_MENU:
             demux_Control( p_input->p->master->p_demux, i_type
                            - INPUT_CONTROL_NAV_ACTIVATE + DEMUX_NAV_ACTIVATE );
             break;
@@ -2007,19 +2007,19 @@ static int UpdateTitleSeekpoint( input_thread_t *p_input,
     {
         if( i_title > i_title_end ||
             ( i_title == i_title_end && i_seekpoint > i_seekpoint_end ) )
-            return 0;
+            return VLC_DEMUXER_EOF;
     }
     else if( i_seekpoint_end >= 0 )
     {
         if( i_seekpoint > i_seekpoint_end )
-            return 0;
+            return VLC_DEMUXER_EOF;
     }
     else if( i_title_end >= 0 )
     {
         if( i_title > i_title_end )
-            return 0;
+            return VLC_DEMUXER_EOF;
     }
-    return 1;
+    return VLC_DEMUXER_SUCCESS;
 }
 /*****************************************************************************
  * Update*FromDemux:
