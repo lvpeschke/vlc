@@ -34,12 +34,12 @@
 #include <vlc_common.h>
 #include <assert.h>
 
-/* Needed by str_format_time */
+/* Needed by vlc_strftime */
 #include <time.h>
 #include <limits.h>
 #include <math.h>
 
-/* Needed by str_format_meta */
+/* Needed by vlc_strfinput */
 #include <vlc_input.h>
 #include <vlc_meta.h>
 #include <vlc_aout.h>
@@ -468,12 +468,7 @@ char *vlc_b64_decode( const char *psz_src )
     return p_dst;
 }
 
-/**
- * Formats current time into a heap-allocated string.
- * @param tformat time format (as with C strftime())
- * @return an allocated string (must be free()'d), or NULL on memory error.
- */
-char *str_format_time( const char *tformat )
+char *vlc_strftime( const char *tformat )
 {
     time_t curtime;
     struct tm loctime;
@@ -529,7 +524,7 @@ static int write_meta(FILE *stream, input_item_t *item, vlc_meta_type_t type)
     return ret;
 }
 
-char *str_format_meta(input_thread_t *input, const char *s)
+char *vlc_strfinput(input_thread_t *input, const char *s)
 {
     char *str;
     size_t len;

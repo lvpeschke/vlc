@@ -1249,15 +1249,14 @@ static int onMouseEvent(vlc_object_t *p_vout, const char *psz_var, vlc_value_t o
 {
     demux_t     *p_demux = (demux_t*)p_data;
     demux_sys_t *p_sys   = p_demux->p_sys;
-    mtime_t     now      = mdate();
     VLC_UNUSED(old);
     VLC_UNUSED(p_vout);
 
     if (psz_var[6] == 'm')   //Mouse moved
-        bd_mouse_select(p_sys->bluray, now, val.coords.x, val.coords.y);
+        bd_mouse_select(p_sys->bluray, -1, val.coords.x, val.coords.y);
     else if (psz_var[6] == 'c') {
-        bd_mouse_select(p_sys->bluray, now, val.coords.x, val.coords.y);
-        bd_user_input(p_sys->bluray, now, BD_VK_MOUSE_ACTIVATE);
+        bd_mouse_select(p_sys->bluray, -1, val.coords.x, val.coords.y);
+        bd_user_input(p_sys->bluray, -1, BD_VK_MOUSE_ACTIVATE);
     } else {
         vlc_assert_unreachable();
     }
@@ -1266,8 +1265,7 @@ static int onMouseEvent(vlc_object_t *p_vout, const char *psz_var, vlc_value_t o
 
 static int sendKeyEvent(demux_sys_t *p_sys, unsigned int key)
 {
-    mtime_t now = mdate();
-    if (bd_user_input(p_sys->bluray, now, key) < 0)
+    if (bd_user_input(p_sys->bluray, -1, key) < 0)
         return VLC_EGENERIC;
 
     return VLC_SUCCESS;
@@ -1810,8 +1808,15 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
         break;
 
     case DEMUX_SET_PAUSE_STATE:
-        /* Nothing to do */
+    {
+#ifdef BLURAY_RATE_NORMAL
+        bool b_paused = (bool)va_arg(args, int);
+        if (bd_set_rate(p_sys->bluray, BLURAY_RATE_NORMAL * (!b_paused)) < 0) {
+            return VLC_EGENERIC;
+        }
+#endif
         break;
+    }
     case DEMUX_SET_ES:
     {
         int i_id = (int)va_arg(args, int);
