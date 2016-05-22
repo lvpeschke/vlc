@@ -134,10 +134,6 @@ static void MP4_GetDefaultSizeAndDuration( demux_t *p_demux,
                                            uint32_t *pi_default_size,
                                            uint32_t *pi_default_duration );
 
-static int MP4_PacketsToFrame( demux_t *p_demux,
-                                block_t **pp_block,
-                                uint32_t packetcount );
-
 static bool AddFragment( demux_t *p_demux, MP4_Box_t *p_moox );
 static int  ProbeFragments( demux_t *p_demux, bool b_force );
 static int  ProbeIndex( demux_t *p_demux );
@@ -152,6 +148,10 @@ static int LeafMapTrafTrunContextes( demux_t *p_demux, MP4_Box_t *p_moof );
 static asf_track_info_t * MP4ASF_GetTrackInfo( asf_packet_sys_t *p_packetsys, uint8_t i_stream_number );
 static void MP4ASF_Send(asf_packet_sys_t *p_packetsys, uint8_t i_stream_number, block_t **pp_frame);
 static void MP4ASF_ResetFrames( demux_sys_t *p_sys );
+
+/* RTP Hint track */
+static block_t * MP4_RTPHint_Convert( demux_t *p_demux, block_t *p_block, vlc_fourcc_t i_codec );
+static block_t * MP4_RTPHintToFrame( demux_t *p_demux, block_t *p_block, uint32_t packetcount );
 
 /* Helpers */
 
@@ -423,6 +423,10 @@ static block_t * MP4_Block_Read( demux_t *p_demux, const mp4_track_t *p_track, i
             p_block->i_buffer = 0;
             break;
         }
+    }
+    else if( p_track->fmt.i_original_fourcc == ATOM_rrtp )
+    {
+        p_block = MP4_RTPHint_Convert( p_demux, p_block, p_track->fmt.i_codec );
     }
 
     return p_block;
@@ -877,101 +881,128 @@ const unsigned int RTPPACKETSIZE = 12;
 const unsigned int CONSTRUCTORSIZE = 16;
 
 /*******************************************************************************
- * MP4_PacketsToFrame: converts RTP Reception Hint Track sample to H.264 frame
+ * MP4_RTPHintToFrame: converts RTP Reception Hint Track sample to H.264 frame
  *******************************************************************************/
-static int MP4_PacketsToFrame( demux_t *p_demux, block_t **pp_block, uint32_t packetcount )
+static block_t * MP4_RTPHintToFrame( demux_t *p_demux, block_t *p_block, uint32_t packetcount )
 {
-    block_t* p_block = *pp_block;
-    uint32_t frameLength = p_block->i_buffer;
-    uint8_t *currentSlice = p_block->p_buffer + SAMPLEHEADERSIZE;
-    uint32_t sampleLength = 0;
+    uint8_t *p_slice = p_block->p_buffer + SAMPLEHEADERSIZE;
+    block_t *p_newblock = NULL;
+    size_t i_payload = 0;
 
-    if( currentSlice + RTPPACKETSIZE + CONSTRUCTORSIZE > p_block->p_buffer + p_block->i_buffer )
+    if( p_block->i_buffer < SAMPLEHEADERSIZE + RTPPACKETSIZE + CONSTRUCTORSIZE )
     {
         msg_Err( p_demux, "Sample not large enough for necessary structs");
-        return VLC_EGENERIC;
+        block_Release( p_block );
+        return NULL;
     }
 
-    uint8_t *temp_sample = malloc(frameLength + packetcount*10);
-    if( !temp_sample )
+    for( uint32_t i = 0; i < packetcount; ++i )
     {
-        msg_Err( p_demux, "Failed to allocate memory. Enough memory available?");
-        return VLC_ENOMEM;
-    }
+        if( (size_t)(p_slice - p_block->p_buffer) + RTPPACKETSIZE + CONSTRUCTORSIZE > p_block->i_buffer )
+            goto error;
 
-    uint8_t *dst = temp_sample;
-
-    for( unsigned int i = 0; i < packetcount; ++i )
-    {
         /* skip RTP header in sample. Could be used to detect packet losses */
-        currentSlice += RTPPACKETSIZE;
+        p_slice += RTPPACKETSIZE;
 
         mp4_rtpsampleconstructor_t sample_cons;
 
-        sample_cons.type =                      currentSlice[0];
-        sample_cons.trackrefindex =             currentSlice[1];
-        sample_cons.length =          GetWBE(  &currentSlice[2] );
-        sample_cons.samplenumber =    GetDWBE( &currentSlice[4] );
-        sample_cons.sampleoffset =    GetDWBE( &currentSlice[8] );
-        sample_cons.bytesperblock =   GetWBE(  &currentSlice[12] );
-        sample_cons.samplesperblock = GetWBE(  &currentSlice[14] );
+        sample_cons.type =                      p_slice[0];
+        sample_cons.trackrefindex =             p_slice[1];
+        sample_cons.length =          GetWBE(  &p_slice[2] );
+        sample_cons.samplenumber =    GetDWBE( &p_slice[4] );
+        sample_cons.sampleoffset =    GetDWBE( &p_slice[8] );
+        sample_cons.bytesperblock =   GetWBE(  &p_slice[12] );
+        sample_cons.samplesperblock = GetWBE(  &p_slice[14] );
 
         /* skip packet constructor */
-        currentSlice += CONSTRUCTORSIZE;
+        p_slice += CONSTRUCTORSIZE;
 
         /* check that is RTPsampleconstructor, referencing itself and no weird audio stuff */
         if( sample_cons.type != 2||sample_cons.trackrefindex != -1
             ||sample_cons.samplesperblock != 1||sample_cons.bytesperblock != 1 )
         {
             msg_Err(p_demux, "Unhandled constructor in RTP Reception Hint Track. Type:%u", sample_cons.type);
-            free(temp_sample);
-            return VLC_EGENERIC;
+            goto error;
         }
 
         /* slice doesn't fit in buffer */
         if( sample_cons.sampleoffset + sample_cons.length > p_block->i_buffer)
         {
             msg_Err(p_demux, "Sample buffer is smaller than sample" );
-            free(temp_sample);
-            return VLC_EGENERIC;
+            goto error;
         }
 
-        uint8_t* src = p_block->p_buffer + sample_cons.sampleoffset;
-        uint8_t type = (*src) & ((1<<5)-1);
+        block_t *p_realloc = block_Realloc( p_newblock, 0, i_payload + sample_cons.length + 4 );
+        if( !p_realloc )
+            goto error;
 
-        if( src[0] == 0 && src[1] == 0 && src[2] == 0 && src[3] == 1 )
+        p_newblock = p_realloc;
+        uint8_t *p_dst = &p_newblock->p_buffer[i_payload];
+
+        const uint8_t* p_src = p_block->p_buffer + sample_cons.sampleoffset;
+        uint8_t i_type = (*p_src) & ((1<<5)-1);
+
+        const uint8_t synccode[4] = { 0, 0, 0, 1 };
+        if( memcmp( p_src, synccode, 4 ) )
         {
-            memcpy( dst,src,sample_cons.length );
-            dst+=sample_cons.length;
-            sampleLength += sample_cons.length;
+            if( i_type == 7 || i_type == 8 )
+                *p_dst++=0;
+
+            p_dst[0] = 0;
+            p_dst[1] = 0;
+            p_dst[2] = 1;
+            p_dst += 3;
+        }
+
+        memcpy( p_dst, p_src, sample_cons.length );
+        p_dst += sample_cons.length;
+
+        i_payload += p_dst - p_newblock->p_buffer;
+    }
+
+    block_Release( p_block );
+    if( p_newblock )
+        p_newblock->i_buffer = i_payload;
+    return p_newblock;
+
+error:
+    block_Release( p_block );
+    if( p_newblock )
+        block_Release( p_newblock );
+    return NULL;
+}
+
+/* RTP Reception Hint Track */
+static block_t * MP4_RTPHint_Convert( demux_t *p_demux, block_t *p_block, vlc_fourcc_t i_codec )
+{
+    block_t *p_converted = NULL;
+    if( p_block->i_buffer < 2 )
+    {
+        block_Release( p_block );
+        return NULL;
+    }
+
+    /* number of RTP packets contained in this sample */
+    const uint16_t i_packets = GetWBE( p_block->p_buffer );
+    if( i_packets <= 1 || i_codec != VLC_CODEC_H264 )
+    {
+        const size_t i_skip = SAMPLEHEADERSIZE + i_packets * ( RTPPACKETSIZE + CONSTRUCTORSIZE );
+        if( i_packets == 1 && i_skip < p_block->i_buffer )
+        {
+            p_block->p_buffer += i_skip;
+            p_converted = p_block;
         }
         else
         {
-            if( type == 7 || type == 8 )
-            {
-                *dst++=0;
-                ++sampleLength;
-            }
-            sampleLength += sample_cons.length + 3;
-
-            *dst++ = 0;
-            *dst++ = 0;
-            *dst++ = 1;
-
-            memcpy(dst, src, sample_cons.length);
-            dst += sample_cons.length;
+            block_Release( p_block );
         }
     }
-    block_Release( p_block );
-    p_block = block_Alloc( sampleLength );
-    if( !p_block )
-      return VLC_ENOMEM;
-    memcpy( p_block->p_buffer, temp_sample, sampleLength );
+    else
+    {
+        p_converted = MP4_RTPHintToFrame( p_demux, p_block, i_packets );
+    }
 
-    *pp_block = p_block;
-    free( temp_sample );
-
-    return VLC_SUCCESS;
+    return p_converted;
 }
 
 /*****************************************************************************
@@ -1131,39 +1162,7 @@ static int Demux( demux_t *p_demux )
             MP4_TrackUnselect( p_demux, tk );
             goto end;
         }
-        /* RTP Reception Hint Track */
-        if( tk->fmt.i_original_fourcc == VLC_FOURCC( 'r','r','t','p') )
-        {
-            for( unsigned int i = 0; i < i_nb_samples; ++i )
-            {
-                /* number of RTP packets contained in this sample */
-                uint16_t packetcount = GetWBE( p_block->p_buffer );
 
-                if( packetcount == 1 )
-                {
-                    int skip = SAMPLEHEADERSIZE + RTPPACKETSIZE + CONSTRUCTORSIZE;
-                    p_block = block_Realloc( p_block, -skip, p_block->i_buffer);
-                }
-                if( packetcount > 1 )
-                {
-                    if(tk->fmt.i_codec == VLC_CODEC_H264)
-                    {
-                        int status = MP4_PacketsToFrame( p_demux, &p_block, packetcount );
-                        if( status != VLC_SUCCESS )
-                          return status;
-                    }
-                    else
-                    {
-                        msg_Warn( p_demux, "Unsupported rrtp codec" );
-                        /* this may work with some codecs, skip all unnecessary stuff leaving payloads */
-                        int skip = SAMPLEHEADERSIZE + (RTPPACKETSIZE + CONSTRUCTORSIZE) * packetcount;
-                        p_block = block_Realloc( p_block, -skip, p_block->i_buffer);
-                    }
-                }
-                if( !p_block )
-                    return VLC_ENOMEM;
-            }
-        }
         /* dts */
         p_block->i_dts = VLC_TS_0 + MP4_TrackGetDTS( p_demux, tk );
         /* pts */

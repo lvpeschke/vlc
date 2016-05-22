@@ -2313,7 +2313,12 @@ static int MP4_ReadBox_sample_mp4s( stream_t *p_stream, MP4_Box_t *p_box )
     MP4_READBOX_EXIT( 1 );
 }
 
-int MP4_ReadBox_sample_hint8( stream_t *p_stream, MP4_Box_t *p_box )
+static void MP4_FreeBox_sample_hint( MP4_Box_t *p_box )
+{
+    FREENULL( p_box->data.p_sample_hint->p_data );
+}
+
+static int MP4_ReadBox_sample_hint8( stream_t *p_stream, MP4_Box_t *p_box )
 {
     MP4_READBOX_ENTER_PARTIAL( MP4_Box_data_sample_hint_t, 24, MP4_FreeBox_sample_hint );
 
@@ -2335,11 +2340,6 @@ int MP4_ReadBox_sample_hint8( stream_t *p_stream, MP4_Box_t *p_box )
         MP4_READBOX_EXIT( 0 );
 
     MP4_READBOX_EXIT( 1 );
-}
-
-void MP4_FreeBox_sample_hint( MP4_Box_t *p_box )
-{
-    FREENULL( p_box->data.p_sample_hint->p_data );
 }
 
 static int MP4_ReadBox_sample_text( stream_t *p_stream, MP4_Box_t *p_box )
@@ -3919,6 +3919,8 @@ static const struct
     { ATOM_wave,    MP4_ReadBoxContainer,     ATOM_fl64 },
     { ATOM_wave,    MP4_ReadBoxContainer,     ATOM_QDMC },
     { ATOM_wave,    MP4_ReadBoxContainer,     ATOM_QDM2 },
+    { ATOM_wave,    MP4_ReadBoxContainer,     ATOM_XiFL }, /* XiphQT */
+    { ATOM_wave,    MP4_ReadBoxContainer,     ATOM_XiVs }, /* XiphQT */
     { ATOM_ilst,    MP4_ReadBox_ilst,         ATOM_meta },
     { ATOM_mvex,    MP4_ReadBoxContainer,     ATOM_moov },
     { ATOM_mvex,    MP4_ReadBoxContainer,     ATOM_ftyp },
@@ -3975,6 +3977,12 @@ static const struct
     { ATOM_btrt,    MP4_ReadBox_btrt,         0 }, /* codecs bitrate stsd/????/btrt */
     { ATOM_keys,    MP4_ReadBox_keys,         ATOM_meta },
     { ATOM_colr,    MP4_ReadBox_colr,         0 },
+
+    /* XiphQT */
+    { ATOM_vCtH,    MP4_ReadBox_Binary,       ATOM_wave },
+    { ATOM_vCtC,    MP4_ReadBox_Binary,       ATOM_wave },
+    { ATOM_vCtd,    MP4_ReadBox_Binary,       ATOM_wave },
+    { ATOM_fCtS,    MP4_ReadBox_Binary,       ATOM_wave },
 
     /* Samples groups specific information */
     { ATOM_sbgp,    MP4_ReadBox_sbgp,         ATOM_stbl },

@@ -103,7 +103,7 @@ enum {
 };
 
 static void input_SubtitleAdd( input_thread_t *, const char *, unsigned );
-static void input_SubtitleFileAdd( input_thread_t *, const char *, unsigned, bool );
+static char *input_SubtitleFile2Uri( input_thread_t *, const char * );
 static void input_ChangeState( input_thread_t *p_input, int i_state ); /* TODO fix name */
 
 #undef input_Create
@@ -924,9 +924,40 @@ static void StartTitle( input_thread_t * p_input )
     p_input->p->b_fast_seek = var_GetBool( p_input, "input-fast-seek" );
 }
 
-static void LoadSubtitles( input_thread_t *p_input )
+static int SlaveCompare(const void *a, const void *b)
 {
-    /* Load subtitles */
+    const input_item_slave_t *p_slave0 = *((const input_item_slave_t **) a);
+    const input_item_slave_t *p_slave1 = *((const input_item_slave_t **) b);
+
+    if( p_slave0 == NULL || p_slave1 == NULL )
+    {
+        /* Put NULL (or rejected) subs at the end */
+        return p_slave0 == NULL ? 1 : p_slave1 == NULL ? -1 : 0;
+    }
+
+    if( p_slave0->i_priority > p_slave1->i_priority )
+        return -1;
+
+    if( p_slave0->i_priority < p_slave1->i_priority )
+        return 1;
+
+    return 0;
+}
+
+static bool SlaveExists( input_item_slave_t **pp_slaves, int i_slaves,
+                         const char *psz_uri)
+{
+    for( int i = 0; i < i_slaves; i++ )
+    {
+        if( pp_slaves[i] != NULL
+         && !strcmp( pp_slaves[i]->psz_uri, psz_uri ) )
+            return true;
+    }
+    return false;
+}
+
+static void SetSubtitlesOptions( input_thread_t *p_input )
+{
     /* Get fps and set it if not already set */
     const float f_fps = p_input->p->master->f_fps;
     if( f_fps > 1.f )
@@ -946,37 +977,95 @@ static void LoadSubtitles( input_thread_t *p_input )
     const int i_delay = var_CreateGetInteger( p_input, "sub-delay" );
     if( i_delay != 0 )
         var_SetInteger( p_input, "spu-delay", (mtime_t)i_delay * 100000 );
+}
 
-    /* Look for and add subtitle files */
-    unsigned i_flags = SUB_FORCED;
+static void LoadSlaves( input_thread_t *p_input )
+{
+    /* Look for and add slaves */
 
     char *psz_subtitle = var_GetNonEmptyString( p_input, "sub-file" );
     if( psz_subtitle != NULL )
     {
         msg_Dbg( p_input, "forced subtitle: %s", psz_subtitle );
-        input_SubtitleFileAdd( p_input, psz_subtitle, i_flags, true );
-        i_flags = SUB_NOFLAG;
+        char *psz_uri = input_SubtitleFile2Uri( p_input, psz_subtitle );
+        if( psz_uri != NULL )
+        {
+            free( psz_subtitle );
+            psz_subtitle = psz_uri;
+            input_SubtitleAdd( p_input, psz_uri, SUB_FORCED  );
+        }
     }
 
     if( var_GetBool( p_input, "sub-autodetect-file" ) )
     {
+        /* Add local subtitles */
+        input_item_slave_t **pp_slaves;
+        int i_slaves;
+        TAB_INIT( i_slaves, pp_slaves );
         char *psz_autopath = var_GetNonEmptyString( p_input, "sub-autodetect-path" );
-        char **ppsz_subs = subtitles_Detect( p_input, psz_autopath,
-                                             p_input->p->p_item->psz_uri );
+
+        if( subtitles_Detect( p_input, psz_autopath, p_input->p->p_item->psz_uri,
+                              &pp_slaves, &i_slaves ) == VLC_SUCCESS )
+        {
+            /* check that we did not add the subtitle through sub-file */
+            for( int i = 0; i < i_slaves; i++ )
+            {
+                input_item_slave_t *p_curr = pp_slaves[i];
+                if( p_curr != NULL && psz_subtitle != NULL
+                 && !strcmp( psz_subtitle, p_curr->psz_uri ) )
+                {
+                    /* reject current sub */
+                    input_item_slave_Delete( p_curr );
+                    pp_slaves[i] = NULL;
+                }
+            }
+        }
         free( psz_autopath );
 
-        for( int i = 0; ppsz_subs && ppsz_subs[i]; i++ )
+        /* Add slaves found by the directory demuxer */
+        input_item_t *p_item = p_input->p->p_item;
+        vlc_mutex_lock( &p_item->lock );
+        for( int i = 0; i < p_item->i_slaves; i++ )
         {
-            if( !psz_subtitle || strcmp( psz_subtitle, ppsz_subs[i] ) )
+            input_item_slave_t *p_slave = p_item->pp_slaves[i];
+            if( !SlaveExists( pp_slaves, i_slaves, p_slave->psz_uri )
+             && ( !psz_subtitle || strcmp( psz_subtitle, p_slave->psz_uri ) ) )
             {
-                i_flags |= SUB_CANFAIL;
-                input_SubtitleFileAdd( p_input, ppsz_subs[i], i_flags, false );
-                i_flags = SUB_NOFLAG;
+                input_item_slave_t *p_dup_slave =
+                    input_item_slave_New( p_slave->psz_uri, p_slave->i_type,
+                                          p_slave->i_priority );
+                if( p_dup_slave )
+                    INSERT_ELEM( pp_slaves, i_slaves, i_slaves, p_dup_slave );
             }
-
-            free( ppsz_subs[i] );
         }
-        free( ppsz_subs );
+        vlc_mutex_unlock( &p_item->lock );
+
+        if( i_slaves > 0 )
+            qsort( pp_slaves, i_slaves, sizeof (input_item_slave_t*),
+                   SlaveCompare );
+
+        /* add all detected slaves */
+        for( int i = 0; i < i_slaves && pp_slaves[i] != NULL; i++ )
+        {
+            input_item_slave_t *p_slave = pp_slaves[i];
+            if( p_slave->i_type == SLAVE_TYPE_SPU )
+            {
+                msg_Err( p_input, "Loading spu slave: %s", p_slave->psz_uri );
+                input_SubtitleAdd( p_input, p_slave->psz_uri, SUB_CANFAIL );
+            }
+            else
+            {
+                msg_Err( p_input, "Loading slave: %s", p_slave->psz_uri );
+                input_source_t *p_source = InputSourceNew( p_input,
+                                                           p_slave->psz_uri,
+                                                           NULL, true );
+                if( p_source )
+                    TAB_APPEND( p_input->p->i_slave, p_input->p->slave, p_source );
+            }
+            input_item_slave_Delete( pp_slaves[i] );
+        }
+
+        TAB_CLEAN( i_slaves, pp_slaves );
     }
     free( psz_subtitle );
 
@@ -1008,9 +1097,8 @@ static void LoadSubtitles( input_thread_t *p_input )
         {
             var_SetString( p_input, "sub-description", a->psz_description ? a->psz_description : "");
 
-            input_SubtitleAdd( p_input, psz_mrl, i_flags );
+            input_SubtitleAdd( p_input, psz_mrl, SUB_NOFLAG );
 
-            i_flags = SUB_NOFLAG;
             free( psz_mrl );
         }
         vlc_input_attachment_Delete( a );
@@ -1020,7 +1108,7 @@ static void LoadSubtitles( input_thread_t *p_input )
         var_Destroy( p_input, "sub-description" );
 }
 
-static void LoadSlaves( input_thread_t *p_input )
+static void LoadVarSlaves( input_thread_t *p_input )
 {
     char *psz = var_GetNonEmptyString( p_input, "input-slave" );
     if( !psz )
@@ -1191,8 +1279,9 @@ static int Init( input_thread_t * p_input )
     if( !p_input->b_preparsing )
     {
         StartTitle( p_input );
-        LoadSubtitles( p_input );
+        SetSubtitlesOptions( p_input );
         LoadSlaves( p_input );
+        LoadVarSlaves( p_input );
         InitPrograms( p_input );
 
         double f_rate = var_InheritFloat( p_input, "rate" );
@@ -1867,7 +1956,14 @@ static bool Control( input_thread_t *p_input,
 
         case INPUT_CONTROL_ADD_SUBTITLE:
             if( val.psz_string )
-                input_SubtitleFileAdd( p_input, val.psz_string, SUB_FORCED, true );
+            {
+                char *psz_uri = input_SubtitleFile2Uri( p_input, val.psz_string );
+                if( psz_uri != NULL )
+                {
+                    input_SubtitleAdd( p_input, psz_uri, SUB_FORCED );
+                    free( psz_uri );
+                }
+            }
             break;
 
         case INPUT_CONTROL_ADD_SLAVE:
@@ -2811,14 +2907,13 @@ static void input_SubtitleAdd( input_thread_t *p_input,
     var_FreeList( &list, NULL );
 }
 
-static void input_SubtitleFileAdd( input_thread_t *p_input,
-                                   const char *psz_subtitle, unsigned i_flags,
-                                   bool b_check_idx )
+static char *input_SubtitleFile2Uri( input_thread_t *p_input,
+                                     const char *psz_subtitle )
 {
     /* if we are provided a subtitle.sub file,
      * see if we don't have a subtitle.idx and use it instead */
     char *psz_idxpath = NULL;
-    char *psz_extension = b_check_idx ? strrchr( psz_subtitle, '.') : NULL;
+    char *psz_extension = strrchr( psz_subtitle, '.');
     if( psz_extension && strcmp( psz_extension, ".sub" ) == 0 )
     {
         psz_idxpath = strdup( psz_subtitle );
@@ -2838,13 +2933,7 @@ static void input_SubtitleFileAdd( input_thread_t *p_input,
         }
     }
 
-    char *url = vlc_path2uri( psz_subtitle, NULL );
-    free( psz_idxpath );
-    if( url == NULL )
-        return;
-
-    input_SubtitleAdd( p_input, url, i_flags );
-    free( url );
+    return vlc_path2uri( psz_subtitle, NULL );
 }
 
 /*****************************************************************************

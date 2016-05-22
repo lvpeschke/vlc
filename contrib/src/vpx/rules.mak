@@ -14,6 +14,10 @@ libvpx: libvpx-$(VPX_VERSION).tar.bz2 .sum-vpx
 	$(APPLY) $(SRC)/vpx/libvpx-no-cross.patch
 	$(APPLY) $(SRC)/vpx/libvpx-mac.patch
 	$(APPLY) $(SRC)/vpx/libvpx-ios.patch
+	$(APPLY) $(SRC)/vpx/libvpx-arm.patch
+ifdef HAVE_ANDROID
+	$(APPLY) $(SRC)/vpx/libvpx-android.patch
+endif
 	$(MOVE)
 
 DEPS_vpx =
@@ -77,7 +81,8 @@ VPX_CONF := \
 	--disable-examples \
 	--disable-unit-tests \
 	--disable-install-bins \
-	--disable-install-docs
+	--disable-install-docs \
+	--disable-dependency-tracking
 
 ifndef BUILD_ENCODERS
 	VPX_CONF += --disable-vp8-encoder --disable-vp9-encoder
@@ -106,8 +111,12 @@ ifdef HAVE_ANDROID
 # vpx configure.sh overrides our sysroot and it looks for it itself, and
 # uses that path to look for the compiler (which we already know)
 VPX_CONF += --sdk-path=$(shell dirname $(shell which $(HOST)-gcc))
-# needed for cpu-features.h
-VPX_CONF += --extra-cflags="-I $(ANDROID_NDK)/sources/cpufeatures/"
+# put sysroot
+VPX_CONF += --libc=$(ANDROID_NDK)/platforms/$(ANDROID_API)/arch-$(PLATFORM_SHORT_ARCH)
+endif
+
+ifndef WITH_OPTIMIZATION
+VPX_CONF += --enable-debug --disable-optimizations
 endif
 
 .vpx: libvpx
