@@ -326,12 +326,13 @@ ssize_t dvb_read (dvb_device_t *d, void *buf, size_t len, int ms)
     if (d->frontend != -1)
     {
         ufd[1].fd = d->frontend;
-        ufd[1].events = POLLIN;
+        ufd[1].events = POLLPRI;
         n = 2;
     }
     else
         n = 1;
 
+    errno = 0;
     n = vlc_poll_i11e (ufd, n, ms);
     if (n == 0)
         errno = EAGAIN;
@@ -497,24 +498,24 @@ unsigned dvb_enum_systems (dvb_device_t *d)
 
     static const unsigned systab[] = {
         [SYS_UNDEFINED]    = 0,
-        [SYS_DVBC_ANNEX_A] = DVB_C,
-        [SYS_DVBC_ANNEX_B] = CQAM,
-        [SYS_DVBT]         = DVB_T,
+        [SYS_DVBC_ANNEX_A] = DTV_DELIVERY_DVB_C,
+        [SYS_DVBC_ANNEX_B] = DTV_DELIVERY_CQAM,
+        [SYS_DVBT]         = DTV_DELIVERY_DVB_T,
         //[SYS_DSS]
-        [SYS_DVBS]         = DVB_S,
-        [SYS_DVBS2]        = DVB_S2,
+        [SYS_DVBS]         = DTV_DELIVERY_DVB_S,
+        [SYS_DVBS2]        = DTV_DELIVERY_DVB_S2,
         //[SYS_DVBH]
-        [SYS_ISDBT]        = ISDB_T,
-        [SYS_ISDBS]        = ISDB_S,
-        [SYS_ISDBC]        = ISDB_C, // no drivers exist (as of 3.3-rc6)
-        [SYS_ATSC]         = ATSC,
+        [SYS_ISDBT]        = DTV_DELIVERY_ISDB_T,
+        [SYS_ISDBS]        = DTV_DELIVERY_ISDB_S,
+        [SYS_ISDBC]        = DTV_DELIVERY_ISDB_C, // no drivers exist (as of 3.3-rc6)
+        [SYS_ATSC]         = DTV_DELIVERY_ATSC,
         //[SYS_ATSCMH]
         //[SYS_DMBTH]
         //[SYS_CMMB]
         //[SYS_DAB]
-        [SYS_DVBT2]        = DVB_T2,
+        [SYS_DVBT2]        = DTV_DELIVERY_DVB_T2,
         //[SYS_TURBO]
-        [SYS_DVBC_ANNEX_C] = ISDB_C, // another name for ISDB-C?
+        [SYS_DVBC_ANNEX_C] = DTV_DELIVERY_ISDB_C, // another name for ISDB-C?
     };
     unsigned systems = 0;
 
@@ -587,10 +588,10 @@ legacy:
     /* DVB first generation and ATSC */
     switch (info.type)
     {
-        case FE_QPSK: systems = DVB_S; break;
-        case FE_QAM:  systems = DVB_C; break;
-        case FE_OFDM: systems = DVB_T; break;
-        case FE_ATSC: systems = ATSC | CQAM; break;
+        case FE_QPSK: systems = DTV_DELIVERY_DVB_S; break;
+        case FE_QAM:  systems = DTV_DELIVERY_DVB_C; break;
+        case FE_OFDM: systems = DTV_DELIVERY_DVB_T; break;
+        case FE_ATSC: systems = DTV_DELIVERY_ATSC | DTV_DELIVERY_CQAM; break;
         default:
             msg_Err (d->obj, "unknown frontend type %u", info.type);
     }
@@ -609,7 +610,7 @@ legacy:
 
     /* ISDB (only terrestrial before DVBv5.5)  */
     if (info.type == FE_OFDM)
-        systems |= ISDB_T;
+        systems |= DTV_DELIVERY_ISDB_T;
 
     return systems;
 }
@@ -703,6 +704,24 @@ int dvb_tune (dvb_device_t *d)
     return dvb_set_prop (d, DTV_TUNE, 0 /* dummy */);
 }
 
+int dvb_fill_device_caps(dvb_device_t *d, dvb_device_caps_t *caps)
+{
+    struct dvb_frontend_info info;
+    if (ioctl (d->frontend, FE_GET_INFO, &info) < 0)
+    {
+        msg_Err (d->obj, "cannot get frontend info: %s",
+                 vlc_strerror_c(errno));
+        return -1;
+    }
+
+    caps->frequency.min = info.frequency_min;
+    caps->frequency.max = info.frequency_max;
+    caps->symbolrate.min = info.symbol_rate_min;
+    caps->symbolrate.max = info.symbol_rate_max;
+    caps->b_can_cam_auto = ( info.caps & FE_CAN_QAM_AUTO );
+
+    return 0;
+}
 
 /*** DVB-C ***/
 int dvb_set_dvbc (dvb_device_t *d, uint32_t freq, const char *modstr,
@@ -711,7 +730,7 @@ int dvb_set_dvbc (dvb_device_t *d, uint32_t freq, const char *modstr,
     unsigned mod = dvb_parse_modulation (modstr, QAM_AUTO);
     fec = dvb_parse_fec (fec);
 
-    if (dvb_find_frontend (d, DVB_C))
+    if (dvb_find_frontend (d, DTV_DELIVERY_DVB_C))
         return -1;
     return dvb_set_props (d, 6, DTV_CLEAR, 0,
 #if DVBv5(5)
@@ -886,7 +905,7 @@ int dvb_set_dvbs (dvb_device_t *d, uint64_t freq_Hz,
     uint32_t freq = freq_Hz / 1000;
     fec = dvb_parse_fec (fec);
 
-    if (dvb_find_frontend (d, DVB_S))
+    if (dvb_find_frontend (d, DTV_DELIVERY_DVB_S))
         return -1;
     return dvb_set_props (d, 5, DTV_CLEAR, 0, DTV_DELIVERY_SYSTEM, SYS_DVBS,
                           DTV_FREQUENCY, freq, DTV_SYMBOL_RATE, srate,
@@ -916,7 +935,7 @@ int dvb_set_dvbs2 (dvb_device_t *d, uint64_t freq_Hz, const char *modstr,
         default: rolloff = PILOT_AUTO; break;
     }
 
-    if (dvb_find_frontend (d, DVB_S2))
+    if (dvb_find_frontend (d, DTV_DELIVERY_DVB_S2))
         return -1;
 #if DVBv5(8)
     return dvb_set_props (d, 9, DTV_CLEAR, 0, DTV_DELIVERY_SYSTEM, SYS_DVBS2,
@@ -1012,7 +1031,7 @@ int dvb_set_dvbt (dvb_device_t *d, uint32_t freq, const char *modstr,
     guard = dvb_parse_guard (guard);
     hierarchy = dvb_parse_hierarchy (hierarchy);
 
-    if (dvb_find_frontend (d, DVB_T))
+    if (dvb_find_frontend (d, DTV_DELIVERY_DVB_T))
         return -1;
     return dvb_set_props (d, 10, DTV_CLEAR, 0, DTV_DELIVERY_SYSTEM, SYS_DVBT,
                           DTV_FREQUENCY, freq, DTV_MODULATION, mod,
@@ -1064,7 +1083,7 @@ int dvb_set_isdbc (dvb_device_t *d, uint32_t freq, const char *modstr,
     unsigned mod = dvb_parse_modulation (modstr, QAM_AUTO);
     fec = dvb_parse_fec (fec);
 
-    if (dvb_find_frontend (d, ISDB_C))
+    if (dvb_find_frontend (d, DTV_DELIVERY_ISDB_C))
         return -1;
     return dvb_set_props (d, 6, DTV_CLEAR, 0,
 #if DVBv5(5)
@@ -1083,7 +1102,7 @@ int dvb_set_isdbs (dvb_device_t *d, uint64_t freq_Hz, uint16_t ts_id)
 {
     uint32_t freq = freq_Hz / 1000;
 
-    if (dvb_find_frontend (d, ISDB_S))
+    if (dvb_find_frontend (d, DTV_DELIVERY_ISDB_S))
         return -1;
     return dvb_set_props (d, 4, DTV_CLEAR, 0, DTV_DELIVERY_SYSTEM, SYS_ISDBS,
                           DTV_FREQUENCY, freq,
@@ -1122,7 +1141,7 @@ int dvb_set_isdbt (dvb_device_t *d, uint32_t freq, uint32_t bandwidth,
     transmit_mode = dvb_parse_transmit_mode (transmit_mode);
     guard = dvb_parse_guard (guard);
 
-    if (dvb_find_frontend (d, ISDB_T))
+    if (dvb_find_frontend (d, DTV_DELIVERY_ISDB_T))
         return -1;
     if (dvb_set_props (d, 6, DTV_CLEAR, 0, DTV_DELIVERY_SYSTEM, SYS_ISDBT,
                        DTV_FREQUENCY, freq, DTV_BANDWIDTH_HZ, bandwidth,
@@ -1141,7 +1160,7 @@ int dvb_set_atsc (dvb_device_t *d, uint32_t freq, const char *modstr)
 {
     unsigned mod = dvb_parse_modulation (modstr, VSB_8);
 
-    if (dvb_find_frontend (d, ATSC))
+    if (dvb_find_frontend (d, DTV_DELIVERY_ATSC))
         return -1;
     return dvb_set_props (d, 4, DTV_CLEAR, 0, DTV_DELIVERY_SYSTEM, SYS_ATSC,
                           DTV_FREQUENCY, freq, DTV_MODULATION, mod);
@@ -1151,7 +1170,7 @@ int dvb_set_cqam (dvb_device_t *d, uint32_t freq, const char *modstr)
 {
     unsigned mod = dvb_parse_modulation (modstr, QAM_AUTO);
 
-    if (dvb_find_frontend (d, CQAM))
+    if (dvb_find_frontend (d, DTV_DELIVERY_CQAM))
         return -1;
     return dvb_set_props (d, 4, DTV_CLEAR, 0,
                           DTV_DELIVERY_SYSTEM, SYS_DVBC_ANNEX_B,

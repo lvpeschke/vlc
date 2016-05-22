@@ -211,7 +211,7 @@ struct subpicture_updater_sys_t
 static void unref_subpicture_updater(subpicture_updater_sys_t *p_sys)
 {
     vlc_mutex_lock(&p_sys->lock);
-    int refs = p_sys->ref_cnt--;
+    int refs = --p_sys->ref_cnt;
     p_sys->p_overlay = NULL;
     vlc_mutex_unlock(&p_sys->lock);
 
@@ -1249,15 +1249,14 @@ static int onMouseEvent(vlc_object_t *p_vout, const char *psz_var, vlc_value_t o
 {
     demux_t     *p_demux = (demux_t*)p_data;
     demux_sys_t *p_sys   = p_demux->p_sys;
-    mtime_t     now      = mdate();
     VLC_UNUSED(old);
     VLC_UNUSED(p_vout);
 
     if (psz_var[6] == 'm')   //Mouse moved
-        bd_mouse_select(p_sys->bluray, now, val.coords.x, val.coords.y);
+        bd_mouse_select(p_sys->bluray, -1, val.coords.x, val.coords.y);
     else if (psz_var[6] == 'c') {
-        bd_mouse_select(p_sys->bluray, now, val.coords.x, val.coords.y);
-        bd_user_input(p_sys->bluray, now, BD_VK_MOUSE_ACTIVATE);
+        bd_mouse_select(p_sys->bluray, -1, val.coords.x, val.coords.y);
+        bd_user_input(p_sys->bluray, -1, BD_VK_MOUSE_ACTIVATE);
     } else {
         vlc_assert_unreachable();
     }
@@ -1266,8 +1265,7 @@ static int onMouseEvent(vlc_object_t *p_vout, const char *psz_var, vlc_value_t o
 
 static int sendKeyEvent(demux_sys_t *p_sys, unsigned int key)
 {
-    mtime_t now = mdate();
-    if (bd_user_input(p_sys->bluray, now, key) < 0)
+    if (bd_user_input(p_sys->bluray, -1, key) < 0)
         return VLC_EGENERIC;
 
     return VLC_SUCCESS;
@@ -1633,15 +1631,15 @@ static void blurayUpdateTitleInfo(input_title_t *t, BLURAY_TITLE_INFO *title_inf
         vlc_seekpoint_Delete( t->seekpoint[i] );
     TAB_CLEAN(t->i_seekpoint, t->seekpoint);
 
-        for (unsigned int j = 0; j < title_info->chapter_count; j++) {
-            seekpoint_t *s = vlc_seekpoint_New();
-            if (!s) {
-                break;
-            }
-            s->i_time_offset = FROM_TICKS(title_info->chapters[j].start);
-
-            TAB_APPEND(t->i_seekpoint, t->seekpoint, s);
+    for (unsigned int j = 0; j < title_info->chapter_count; j++) {
+        seekpoint_t *s = vlc_seekpoint_New();
+        if (!s) {
+            break;
         }
+        s->i_time_offset = FROM_TICKS(title_info->chapters[j].start);
+
+        TAB_APPEND(t->i_seekpoint, t->seekpoint, s);
+    }
 }
 
 static void blurayInitTitles(demux_t *p_demux, int menu_titles)
@@ -1810,8 +1808,15 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
         break;
 
     case DEMUX_SET_PAUSE_STATE:
-        /* Nothing to do */
+    {
+#ifdef BLURAY_RATE_NORMAL
+        bool b_paused = (bool)va_arg(args, int);
+        if (bd_set_rate(p_sys->bluray, BLURAY_RATE_NORMAL * (!b_paused)) < 0) {
+            return VLC_EGENERIC;
+        }
+#endif
         break;
+    }
     case DEMUX_SET_ES:
     {
         int i_id = (int)va_arg(args, int);
@@ -1961,6 +1966,16 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
         return sendKeyEvent(p_sys, BD_VK_RIGHT);
     case DEMUX_NAV_POPUP:
         return sendKeyEvent(p_sys, BD_VK_POPUP);
+    case DEMUX_NAV_MENU:
+        if (p_sys->b_menu) {
+            if (bd_menu_call(p_sys->bluray, -1) == 1) {
+                p_demux->info.i_update |= INPUT_UPDATE_TITLE | INPUT_UPDATE_SEEKPOINT;
+                return VLC_SUCCESS;
+            }
+            msg_Err(p_demux, "Can't select Top Menu title");
+            return sendKeyEvent(p_sys, BD_VK_POPUP);
+        }
+        return VLC_EGENERIC;
 
     case DEMUX_CAN_RECORD:
     case DEMUX_GET_FPS:

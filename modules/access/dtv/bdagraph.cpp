@@ -198,6 +198,12 @@ int dvb_tune (dvb_device_t *d)
     return d->module->SubmitTuneRequest ();
 }
 
+int dvb_fill_device_caps( dvb_device_t *, dvb_device_caps_t * )
+{
+
+    return -1;
+}
+
 bool dvb_set_ca_pmt (dvb_device_t *, en50221_capmt_info_t *)
 {
     return false;
@@ -415,15 +421,15 @@ unsigned BDAGraph::GetSystem( REFCLSID clsid )
     unsigned sys = 0;
 
     if( clsid == CLSID_DVBTNetworkProvider )
-        sys = DVB_T;
+        sys = DTV_DELIVERY_DVB_T;
     if( clsid == CLSID_DVBCNetworkProvider )
-        sys = DVB_C;
+        sys = DTV_DELIVERY_DVB_C;
     if( clsid == CLSID_DVBSNetworkProvider )
-        sys = DVB_S;
+        sys = DTV_DELIVERY_DVB_S;
     if( clsid == CLSID_ATSCNetworkProvider )
-        sys = ATSC;
+        sys = DTV_DELIVERY_ATSC;
     if( clsid == CLSID_DigitalCableNetworkType )
-        sys = CQAM;
+        sys = DTV_DELIVERY_CQAM;
 
     return sys;
 }
@@ -1323,7 +1329,7 @@ int BDAGraph::SetInversion(int inversion)
      * in access.c. Since DVBT and DVBC don't support spectral
      * inversion, we need to return VLC_SUCCESS in those cases
      * so that dvb_tune() will be called */
-    if( ( GetSystem( guid_network_type ) & ( DVB_S | DVB_S2 | ISDB_S ) ) == 0 )
+    if( ( GetSystem( guid_network_type ) & ( DTV_DELIVERY_DVB_S | DTV_DELIVERY_DVB_S2 | DTV_DELIVERY_ISDB_S ) ) == 0 )
     {
         msg_Dbg( p_access, "SetInversion: Not Satellite type" );
         return VLC_SUCCESS;

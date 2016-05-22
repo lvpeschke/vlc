@@ -41,11 +41,6 @@ extern "C" {
 
 typedef struct libvlc_media_t libvlc_media_t;
 
-/** defgroup libvlc_meta LibVLC meta data
- * \ingroup libvlc_media
- * @{
- */
-
 /** Meta data types */
 typedef enum libvlc_meta_t {
     libvlc_meta_Title,
@@ -76,8 +71,6 @@ typedef enum libvlc_meta_t {
     libvlc_meta_DiscTotal
     /* Add new meta types HERE */
 } libvlc_meta_t;
-
-/** @}*/
 
 /**
  * Note the order of libvlc_state_t enum must match exactly the order of
@@ -116,10 +109,6 @@ typedef enum libvlc_track_type_t
     libvlc_track_text      = 2
 } libvlc_track_type_t;
 
-/** defgroup libvlc_media_stats_t LibVLC media statistics
- * \ingroup libvlc_media
- * @{
- */
 typedef struct libvlc_media_stats_t
 {
     /* Input */
@@ -149,7 +138,6 @@ typedef struct libvlc_media_stats_t
     int         i_sent_bytes;
     float       f_send_bitrate;
 } libvlc_media_stats_t;
-/** @}*/
 
 typedef struct libvlc_media_track_info_t
 {
@@ -223,11 +211,6 @@ typedef struct libvlc_media_track_t
 
 } libvlc_media_track_t;
 
-/** defgroup libvlc_media_type LibVLC media type
- * \ingroup libvlc_media
- * @{
- */
-
 /**
  * Media type
  *
@@ -241,8 +224,6 @@ typedef enum libvlc_media_type_t {
     libvlc_media_type_stream,
     libvlc_media_type_playlist,
 } libvlc_media_type_t;
-
-/** @}*/
 
 /**
  * Parse flags used by libvlc_media_parse_with_options()
@@ -289,6 +270,26 @@ typedef enum libvlc_media_parsed_status_t
     libvlc_media_parse_failed,
     libvlc_media_parse_done,
 } libvlc_media_parsed_status_t;
+
+/**
+ * Type of a media slave: subtitle or audio.
+ */
+typedef enum
+{
+    libvlc_media_slave_type_subtitle,
+    libvlc_media_slave_type_audio,
+} libvlc_media_slave_type_t;
+
+/**
+ * A slave of a libvlc_media_t
+ * \see libvlc_media_slaves_get
+ */
+typedef struct
+{
+    libvlc_media_slave_type_t       i_type;
+    unsigned int                    i_priority;
+    char                            psz_uri[];
+} libvlc_media_slave_t;
 
 /**
  * Callback prototype to open a custom bitstream input media.
@@ -771,6 +772,75 @@ void libvlc_media_tracks_release( libvlc_media_track_t **p_tracks,
  */
 LIBVLC_API
 libvlc_media_type_t libvlc_media_get_type( libvlc_media_t *p_md );
+
+/**
+ * Add a slave to the current media.
+ *
+ * A slave is an external input source that may contains an additional subtitle
+ * track (like a .srt) or an additional audio track (like a .ac3).
+ *
+ * \note This function must be called before the media is parsed (via
+ * libvlc_media_parse_with_options()) or before the media is played (via
+ * libvlc_media_player_play())
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \param p_md media descriptor object
+ * \param psz_uri Uri of the slave (should contain a valid scheme).
+ * \param i_type subtitle or audio
+ * \param i_priority from 0 (low priority) to 4 (high priority)
+ *
+ * \return 0 on success, -1 on error.
+ */
+LIBVLC_API
+int libvlc_media_slaves_add( libvlc_media_t *p_md,
+                             libvlc_media_slave_type_t i_type,
+                             unsigned int i_priority,
+                             const char *psz_uri );
+
+/**
+ * Clear all slaves previously added by libvlc_media_slaves_add() or
+ * internally.
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \param p_md media descriptor object
+ */
+LIBVLC_API
+void libvlc_media_slaves_clear( libvlc_media_t *p_md );
+
+/**
+ * Get a media descriptor's slave list
+ *
+ * The list will contain slaves parsed by VLC or previously added by
+ * libvlc_media_slaves_add(). The typical use case of this function is to save
+ * a list of slave in a database for a later use.
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \see libvlc_media_slaves_add
+ *
+ * \param p_md media descriptor object
+ * \param ppp_slaves address to store an allocated array of slaves (must be
+ * freed with libvlc_media_slaves_release()) [OUT]
+ *
+ * \return the number of slaves (zero on error)
+ */
+LIBVLC_API
+unsigned int libvlc_media_slaves_get( libvlc_media_t *p_md,
+                                      libvlc_media_slave_t ***ppp_slaves );
+
+/**
+ * Release a media descriptor's slave list
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \param pp_slaves slave array to release
+ * \param i_count number of elements in the array
+ */
+LIBVLC_API
+void libvlc_media_slaves_release( libvlc_media_slave_t **pp_slaves,
+                                  unsigned int i_count );
 
 /** @}*/
 

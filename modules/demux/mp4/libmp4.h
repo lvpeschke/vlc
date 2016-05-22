@@ -142,8 +142,6 @@ typedef int64_t stime_t;
 #define ATOM_tsro VLC_FOURCC( 't', 's', 'r', 'o' )
 #define ATOM_tssy VLC_FOURCC( 't', 's', 's', 'y' )
 
-#define ATOM_isom VLC_FOURCC( 'i', 's', 'o', 'm' )
-#define ATOM_3gp4 VLC_FOURCC( '3', 'g', 'p', '4' )
 #define ATOM_esds VLC_FOURCC( 'e', 's', 'd', 's' )
 
 #define ATOM_lpcm VLC_FOURCC( 'l', 'p', 'c', 'm' )
@@ -155,6 +153,8 @@ typedef int64_t stime_t;
 #define ATOM_sowt VLC_FOURCC( 's', 'o', 'w', 't' )
 #define ATOM_QDMC VLC_FOURCC( 'Q', 'D', 'M', 'C' )
 #define ATOM_QDM2 VLC_FOURCC( 'Q', 'D', 'M', '2' )
+#define ATOM_XiFL VLC_FOURCC( 'X', 'i', 'F', 'L' )
+#define ATOM_XiVs VLC_FOURCC( 'X', 'i', 'V', 's' )
 #define ATOM_ima4 VLC_FOURCC( 'i', 'm', 'a', '4' )
 #define ATOM_IMA4 VLC_FOURCC( 'I', 'M', 'A', '4' )
 #define ATOM_dvi  VLC_FOURCC( 'd', 'v', 'i', ' ' )
@@ -185,6 +185,12 @@ typedef int64_t stime_t;
 #define ATOM_fl32 VLC_FOURCC( 'f', 'l', '3', '2' )
 #define ATOM_fl64 VLC_FOURCC( 'f', 'l', '6', '4' )
 #define ATOM_Opus VLC_FOURCC( 'O', 'p', 'u', 's' )
+
+/* XiphQT */
+#define ATOM_fCtS VLC_FOURCC( 'f', 'C', 't', 'S' )
+#define ATOM_vCtH VLC_FOURCC( 'v', 'C', 't', 'H' )
+#define ATOM_vCtC VLC_FOURCC( 'v', 'C', 't', 'C' )
+#define ATOM_vCtd VLC_FOURCC( 'v', 'C', 't', '#' )
 
 #define ATOM_zlib VLC_FOURCC( 'z', 'l', 'i', 'b' )
 #define ATOM_SVQ1 VLC_FOURCC( 'S', 'V', 'Q', '1' )
@@ -1829,8 +1835,5 @@ int MP4_ReadBoxContainerChildren( stream_t *p_stream, MP4_Box_t *p_container,
                                   const uint32_t stoplist[] );
 int MP4_ReadBox_sample_vide( stream_t *p_stream, MP4_Box_t *p_box );
 void MP4_FreeBox_sample_vide( MP4_Box_t *p_box );
-
-int MP4_ReadBox_sample_hint8( stream_t *p_stream, MP4_Box_t *p_box );
-void MP4_FreeBox_sample_hint( MP4_Box_t *p_box );
 
 #endif

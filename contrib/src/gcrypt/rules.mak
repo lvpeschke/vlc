@@ -15,6 +15,9 @@ libgcrypt: libgcrypt-$(GCRYPT_VERSION).tar.bz2 .sum-gcrypt
 	$(APPLY) $(SRC)/gcrypt/0001-Fix-assembly-division-check.patch
 	$(APPLY) $(SRC)/gcrypt/disable-doc-compilation.patch
 	$(APPLY) $(SRC)/gcrypt/disable-tests-compilation.patch
+ifdef HAVE_WINSTORE
+	$(APPLY) $(SRC)/gcrypt/winrt.patch
+endif
 	$(MOVE)
 
 DEPS_gcrypt = gpg-error
@@ -23,8 +26,9 @@ GCRYPT_CONF = \
 	--enable-ciphers=aes,des,rfc2268,arcfour \
 	--enable-digests=sha1,md5,rmd160,sha256,sha512 \
 	--enable-pubkey-ciphers=dsa,rsa,ecc
+
 ifdef HAVE_WIN64
-GCRYPT_CONF += --disable-asm
+GCRYPT_CONF += --disable-asm --disable-padlock-support
 endif
 ifdef HAVE_IOS
 GCRYPT_EXTRA_CFLAGS = -fheinous-gnu-extensions

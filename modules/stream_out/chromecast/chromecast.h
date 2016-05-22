@@ -30,11 +30,11 @@
 #define VLC_CHROMECAST_H
 
 #include <vlc_common.h>
-#include <vlc_interface.h>
 #include <vlc_plugin.h>
-#include <vlc_sout.h>
 #include <vlc_tls.h>
+#include <vlc_interrupt.h>
 
+#include <atomic>
 #include <sstream>
 
 #include "cast_channel.pb.h"
@@ -46,6 +46,7 @@ static const std::string DEFAULT_CHOMECAST_RECEIVER = "receiver-0";
 /* see https://developers.google.com/cast/docs/reference/messages */
 static const std::string NAMESPACE_MEDIA            = "urn:x-cast:com.google.cast.media";
 
+#define CHROMECAST_CONTROL_PORT 8009
 #define HTTP_PORT               8010
 
 // Status
@@ -72,15 +73,32 @@ enum receiver_state {
     RECEIVER_PAUSED,
 };
 
+
+/*****************************************************************************
+ * intf_sys_t: description and status of interface
+ *****************************************************************************/
 struct intf_sys_t
 {
-    intf_sys_t(vlc_object_t * const p_this);
+    intf_sys_t(vlc_object_t * const p_this, int local_port, std::string device_addr, int device_port, vlc_interrupt_t *);
     ~intf_sys_t();
 
+    bool isFinishedPlaying() {
+        vlc_mutex_locker locker(&lock);
+        return conn_status == CHROMECAST_CONNECTION_DEAD || (receiverState == RECEIVER_BUFFERING && cmd_status != CMD_SEEK_SENT);
+    }
+
+    void setHasInput( bool has_input, const std::string mime_type = "");
+
+    void requestPlayerSeek();
+    void requestPlayerStop();
+
+private:
     vlc_object_t  * const p_module;
+    const int      i_port;
     std::string    serverIP;
+    const int      i_target_port;
+    std::string    targetIP;
     std::string    mime;
-    std::string    muxer;
 
     std::string appTransportId;
     std::string mediaSessionId;
@@ -97,12 +115,7 @@ struct intf_sys_t
     void msgAuth();
     void msgReceiverClose(std::string destinationId);
 
-    void handleMessages();
-
-    connection_status getConnectionStatus() const
-    {
-        return conn_status;
-    }
+    bool handleMessages();
 
     void setConnectionStatus(connection_status status)
     {
@@ -116,7 +129,7 @@ struct intf_sys_t
         }
     }
 
-    int connectChromecast(char *psz_ipChromecast);
+    int connectChromecast();
     void disconnectChromecast();
 
     void msgPing();
@@ -137,12 +150,10 @@ struct intf_sys_t
 
     void processMessage(const castchannel::CastMessage &msg);
 
-    command_status getPlayerStatus() const
-    {
-        return cmd_status;
-    }
+    void notifySendRequest();
+    std::atomic_bool requested_stop;
+    std::atomic_bool requested_seek;
 
-private:
     int sendMessage(const castchannel::CastMessage &msg);
 
     void buildMessage(const std::string & namespace_,
@@ -165,6 +176,14 @@ private:
 
     unsigned i_receiver_requestId;
     unsigned i_requestId;
+
+    bool           has_input;
+    static void* ChromecastThread(void* p_data);
+    vlc_interrupt_t *p_ctl_thread_interrupt;
+
+    int recvPacket(bool &b_msgReceived, uint32_t &i_payloadSize,
+                   unsigned *pi_received, uint8_t *p_data, bool *pb_pingTimeout,
+                   int *pi_wait_delay, int *pi_wait_retries);
 };
 
 #endif /* VLC_CHROMECAST_H */

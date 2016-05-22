@@ -1,6 +1,9 @@
 access_vaDirectoryControlHelper
 vlc_access_NewMRL
 vlc_access_Delete
+access_fsdir_init
+access_fsdir_finish
+access_fsdir_additem
 AddMD5
 aout_BitsPerSample
 aout_ChannelExtract
@@ -206,6 +209,9 @@ input_item_SetMeta
 input_item_SetName
 input_item_SetURI
 input_item_WriteMeta
+input_item_slave_GetType
+input_item_slave_New
+input_item_AddSlave
 input_Read
 input_resource_New
 input_resource_Release
@@ -405,8 +411,8 @@ stream_UrlNew
 stream_vaControl
 stream_ReadDir
 stream_FilterDefaultReadDir
-str_format_meta
-str_format_time
+vlc_strfinput
+vlc_strftime
 subpicture_Delete
 subpicture_New
 subpicture_NewFromPicture

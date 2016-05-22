@@ -181,7 +181,7 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
     {
         if(!rep->consistentSegmentNumber())
             curRepresentation->pruneBySegmentNumber(curNumber);
-        curRepresentation->scheduleNextUpdate(curNumber);
+        curRepresentation->scheduleNextUpdate(next);
     }
 
     if(!init_sent)

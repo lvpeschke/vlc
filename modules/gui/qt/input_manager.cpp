@@ -32,7 +32,7 @@
 
 #include <vlc_keys.h>           /* ACTION_ID */
 #include <vlc_url.h>            /* vlc_uri_decode */
-#include <vlc_strings.h>        /* str_format_meta */
+#include <vlc_strings.h>        /* vlc_strfinput */
 #include <vlc_aout.h>           /* audio_output_t */
 
 #include <QApplication>
@@ -455,10 +455,27 @@ void InputManager::UpdateNavigation()
 
     if( val.i_int > 0 )
     {
+        bool b_menu = false;
+        if( val.i_int > 1 )
+        {
+            input_title_t **pp_title = NULL;
+            int i_title = 0;
+            if( input_Control( p_input, INPUT_GET_FULL_TITLE_INFO, &pp_title, &i_title ) == VLC_SUCCESS )
+            {
+                for( int i = 0; i < i_title; i++ )
+                {
+                    if( pp_title[i]->i_flags & INPUT_TITLE_MENU )
+                        b_menu = true;
+                    vlc_input_title_Delete(pp_title[i]);
+                }
+                free( pp_title );
+            }
+        }
+
         /* p_input != NULL since val.i_int != 0 */
         var_Change( p_input, "chapter", VLC_VAR_CHOICESCOUNT, &val2, NULL );
 
-        emit titleChanged( val.i_int > 1 );
+        emit titleChanged( b_menu );
         emit chapterChanged( val2.i_int > 1 );
     }
     else
@@ -503,7 +520,7 @@ void InputManager::UpdateName()
     char *formatted = NULL;
     if (format != NULL)
     {
-        formatted = str_format_meta( p_input, format );
+        formatted = vlc_strfinput( p_input, format );
         free( format );
         if( formatted != NULL )
         {
@@ -810,21 +827,7 @@ void InputManager::sectionMenu()
 {
     if( hasInput() )
     {
-        vlc_value_t val, text;
-
-        if( var_Change( p_input, "title  0", VLC_VAR_GETCHOICES, &val, &text ) < 0 )
-            return;
-
-        /* XXX is it "Root" or "Title" we want here ?" (set 0 by default) */
-        int root = 0;
-        for( int i = 0; i < val.p_list->i_count; i++ )
-        {
-            if( !strcmp( text.p_list->p_values[i].psz_string, "Title" ) )
-                root = i;
-        }
-        var_FreeList( &val, &text );
-
-        var_SetInteger( p_input, "title  0", root );
+        var_TriggerCallback( p_input, "menu-title" );
     }
 }
 

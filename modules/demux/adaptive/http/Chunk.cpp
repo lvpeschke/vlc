@@ -79,6 +79,14 @@ size_t AbstractChunk::getBytesRead() const
     return this->bytesRead;
 }
 
+uint64_t AbstractChunk::getStartByteInFile() const
+{
+    if(!source || !source->getBytesRange().isValid())
+        return 0;
+
+    return source->getBytesRange().getStartByte();
+}
+
 block_t * AbstractChunk::doRead(size_t size, bool b_block)
 {
     if(!source)
@@ -312,7 +320,6 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
         block_Release(p_block);
         vlc_mutex_lock(&lock);
         done = true;
-        eof = true;
         rate.size = buffered + consumed;
         rate.time = mdate() - downloadstart;
         downloadstart = 0;
@@ -327,7 +334,6 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
         if((size_t) ret < readsize)
         {
             done = true;
-            eof = true;
             rate.size = buffered + consumed;
             rate.time = mdate() - downloadstart;
             downloadstart = 0;

@@ -218,6 +218,9 @@ case "${host_os}" in
     fi
     ;;
   *mingw32* | *cygwin* | *wince* | *mingwce*)
+    dnl Force libtool to not link to (shared) libgcc_s when detecting C++ dependencies
+    dnl When doing this test with -static-libgcc it will link on (static) libgcc_eh
+    CXXFLAGS="${CXXFLAGS} -static-libgcc"
     AC_CHECK_TOOL(WINDRES, windres, :)
     AC_CHECK_TOOL(OBJCOPY, objcopy, :)
     AH_TOP([#if defined(_WIN32) && !defined(_WIN32_WINNT)])
@@ -296,14 +299,36 @@ case "${host_os}" in
     SYS="${host_os}"
     ;;
 esac
-AM_CONDITIONAL(HAVE_DARWIN,  test "${SYS}" = "darwin")
+
+dnl WinRT
+AC_ARG_ENABLE(winstore_app,
+     AS_HELP_STRING([--enable-winstore-app],
+                    [Build targetted for Windows Store apps (default disabled)]))
+
+vlc_winstore_app=0
+AS_IF([test "${SYS}" = "mingw32"],[
+  AS_IF([test "${enable_winstore_app}" = "yes"], [
+    vlc_winstore_app=1
+     VLC_ADD_LIBS([libvlccore], [-lole32 -lruntimeobject])
+     AC_LIBOBJ([gai_strerror])
+    ],[
+     VLC_ADD_LIBS([libvlccore],[-lwinmm])
+    ])
+  ])
+AC_DEFINE_UNQUOTED(VLC_WINSTORE_APP, ${vlc_winstore_app}, [Define to 1 if you want to build for Windows Store apps])
+
 AM_CONDITIONAL(HAVE_LINUX,   test "${SYS}" = "linux")
 AM_CONDITIONAL(HAVE_OS2,     test "${SYS}" = "os2")
-AM_CONDITIONAL(HAVE_WIN32,   test "${SYS}" = "mingw32")
-AM_CONDITIONAL(HAVE_WIN64,   test "${HAVE_WIN64}" = "1")
+
+AM_CONDITIONAL(HAVE_DARWIN,  test "${SYS}" = "darwin")
 AM_CONDITIONAL(HAVE_IOS,     test "${HAVE_IOS}" = "1")
 AM_CONDITIONAL(HAVE_OSX,     test "${HAVE_OSX}" = "1")
 AM_CONDITIONAL(HAVE_TVOS,    test "${HAVE_TVOS}" = "1")
+
+AM_CONDITIONAL(HAVE_WIN32,   test "${SYS}" = "mingw32")
+AM_CONDITIONAL(HAVE_WIN64,   test "${HAVE_WIN64}" = "1") dnl Only used for the packaging
+AM_CONDITIONAL([HAVE_WINSTORE], [test "$vlc_winstore_app" = "1"])
+AM_CONDITIONAL([HAVE_WIN32_DESKTOP], [test "${SYS}" = "mingw32" -a "$vlc_winstore_app" = "0"])
 
 dnl
 dnl Sadly autoconf does not think about testing foo.exe when ask to test
@@ -523,23 +548,6 @@ dnl Check for broken versions of mingw-runtime compatability library
         "${ac_cv_c_fnative_struct}" = "no" && VLC_RESTORE_FLAGS
     fi
 ])
-
-AC_ARG_ENABLE(winstore_app,
-     AS_HELP_STRING([--enable-winstore-app],
-                    [Build targetted for Windows Store apps (default disabled)]))
-
-vlc_winstore_app=0
-AS_IF([test "${SYS}" = "mingw32"],[
-  AS_IF([test "${enable_winstore_app}" = "yes"], [
-    vlc_winstore_app=1
-     VLC_ADD_LIBS([libvlccore], [-lole32 -lruntimeobject])
-     AC_LIBOBJ([gai_strerror])
-    ],[
-     VLC_ADD_LIBS([libvlccore],[-lwinmm])
-    ])
-  ])
-AC_DEFINE_UNQUOTED(VLC_WINSTORE_APP, ${vlc_winstore_app}, [Define to 1 if you want to build for Windows Store apps])
-AM_CONDITIONAL([HAVE_WINSTORE], [test "$vlc_winstore_app" = "1"])
 
 
 dnl
@@ -3309,13 +3317,10 @@ AC_ARG_ENABLE(directx,
     enable_directx="no"
   ])
 ])
-have_directx="no"
 AS_IF([test "${enable_directx}" != "no"], [
   dnl DirectDraw
   AC_CHECK_HEADERS(ddraw.h, [
-    have_directx="yes"
-  ], [
-    AC_MSG_ERROR([Cannot find DirectX headers!])
+    VLC_ADD_PLUGIN([directdraw])
   ])
 
   dnl OpenGL
@@ -3341,7 +3346,6 @@ AS_IF([test "${enable_directx}" != "no"], [
     VLC_ADD_PLUGIN([direct2d])
   ])
 ])
-AM_CONDITIONAL([HAVE_DIRECTX], [test "$have_directx" = "yes"])
 
 dnl
 dnl  Linux framebuffer module

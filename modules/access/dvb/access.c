@@ -37,6 +37,7 @@
 #include <vlc_access.h>
 #include <vlc_input.h>
 #include <vlc_interrupt.h>
+#include <vlc_dialog.h>
 
 #include <sys/types.h>
 #include <poll.h>
@@ -45,6 +46,15 @@
 
 #include "dvb.h"
 #include "scan.h"
+
+struct access_sys_t
+{
+    demux_handle_t p_demux_handles[MAX_DEMUX];
+    dvb_sys_t dvb;
+
+    /* Scan */
+    struct scan_t *scan;
+};
 
 /*****************************************************************************
  * Module descriptor
@@ -116,10 +126,6 @@ static int Open( vlc_object_t *p_this )
 {
     access_t     *p_access = (access_t*)p_this;
     access_sys_t *p_sys;
-
-    /* Only if selected */
-    if( *p_access->psz_access == '\0' )
-        return VLC_EGENERIC;
 
     p_access->p_sys = p_sys = calloc( 1, sizeof( access_sys_t ) );
     if( !p_sys )
@@ -216,8 +222,8 @@ static int ScanFrontendTuningHandler( scan_t *p_scan, void *p_privdata,
     var_SetInteger( p_access, "dvb-frequency", p_cfg->i_frequency );
     var_SetInteger( p_access, "dvb-bandwidth", p_cfg->i_bandwidth );
 
-    if ( p_cfg->c_polarization )
-        var_SetInteger( p_access, "dvb-voltage", p_cfg->c_polarization == 'H' ? 18 : 13 );
+    if ( p_cfg->polarization != SCAN_POLARIZATION_NONE )
+        var_SetInteger( p_access, "dvb-voltage", p_cfg->polarization == SCAN_POLARIZATION_HORIZONTAL ? 18 : 13 );
 
     if ( p_cfg->i_symbolrate )
         var_SetInteger( p_access, "dvb-srate", p_cfg->i_symbolrate );

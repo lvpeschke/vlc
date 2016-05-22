@@ -26,8 +26,12 @@
 #define VLC_MKV_MATROSKA_SEGMENT_HPP_
 
 #include "mkv.hpp"
+#include "matroska_segment_seeker.hpp"
 #include <vector>
 #include <string>
+
+#include <map>
+#include <set>
 
 class EbmlParser;
 
@@ -71,7 +75,7 @@ public:
 class matroska_segment_c
 {
 public:
-    typedef std::vector<mkv_index_t> indexes_t;
+    typedef std::map<mkv_track_t::track_id_t, mkv_track_t> tracks_map_t;
     typedef std::vector<Tag>            tags_t;
 
     matroska_segment_c( demux_sys_t & demuxer, EbmlStream & estream );
@@ -88,7 +92,7 @@ public:
     mtime_t                 i_mk_start_time;
 
     /* all tracks */
-    std::vector<mkv_track_t*> tracks;
+    tracks_map_t tracks;
 
     /* from seekhead */
     int                     i_seekhead_count;
@@ -101,14 +105,11 @@ public:
 
     KaxCluster              *cluster;
     uint64                  i_block_pos;
-    uint64                  i_cluster_pos;
-    int64_t                 i_start_pos;
     KaxSegmentUID           *p_segment_uid;
     KaxPrevUID              *p_prev_segment_uid;
     KaxNextUID              *p_next_segment_uid;
 
     bool                    b_cues;
-    indexes_t               indexes;
 
     /* info */
     char                    *psz_muxing_application;
@@ -134,22 +135,18 @@ public:
 
     bool Preload();
     bool PreloadFamily( const matroska_segment_c & segment );
+    bool PreloadClusters( uint64 i_cluster_position );
     void InformationCreate();
-    void Seek( mtime_t i_mk_date, mtime_t i_mk_time_offset, int64_t i_global_position );
+
+    void FastSeek( mtime_t i_mk_date, mtime_t i_mk_time_offset );
+    void Seek( mtime_t i_mk_date, mtime_t i_mk_time_offset );
+
     int BlockGet( KaxBlock * &, KaxSimpleBlock * &, bool *, bool *, int64_t *);
 
-    int BlockFindTrackIndex( size_t *pi_track,
-                             const KaxBlock *, const KaxSimpleBlock * );
+    int FindTrackByBlock(tracks_map_t::iterator* track_it, const KaxBlock *, const KaxSimpleBlock * );
 
-    bool Select( mtime_t i_mk_start_time );
-    void UnSelect();
-
-    size_t        index_idx () const { return indexes.size () - 1; }
-    mkv_index_t&      index ()       { return *(indexes.rbegin()); }
-    mkv_index_t& prev_index ()       { return *(indexes.rbegin()+1); }
-
-    indexes_t::iterator indexes_begin () { return indexes.begin(); }
-    indexes_t::iterator indexes_end   () { return indexes.end() - (indexes.size() ? 1 : 0); }
+    bool ESCreate( );
+    void ESDestroy( );
 
     static bool CompareSegmentUIDs( const matroska_segment_c * item_a, const matroska_segment_c * item_b );
 
@@ -172,6 +169,10 @@ private:
     int32_t TrackInit( mkv_track_t * p_tk );
     void ComputeTrackPriority();
     void EnsureDuration();
+
+    SegmentSeeker _seeker;
+
+    friend SegmentSeeker;
 };
 
 

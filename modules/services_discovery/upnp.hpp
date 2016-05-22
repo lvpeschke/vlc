@@ -141,17 +141,16 @@ private:
 class MediaServer
 {
 public:
-    MediaServer( access_t* p_access );
+    MediaServer( access_t* p_access, input_item_node_t* node );
     ~MediaServer();
-    input_item_t* getNextItem();
+    bool fetchContents();
 
 private:
     MediaServer(const MediaServer&);
     MediaServer& operator=(const MediaServer&);
 
-    void fetchContents();
-    input_item_t* newItem(const char* objectID, const char* title);
-    input_item_t* newItem(const char* title, const char* psz_objectID, mtime_t duration, const char* psz_url );
+    bool addContainer( IXML_Element* containerElement );
+    bool addItem( IXML_Element* itemElement );
 
     IXML_Document* _browseAction(const char*, const char*,
             const char*, const char*, const char* );
@@ -161,11 +160,7 @@ private:
     char* psz_root_;
     char* psz_objectId_;
     access_t* access_;
-    IXML_Document* xmlDocument_;
-    IXML_NodeList* containerNodeList_;
-    unsigned int   containerNodeIndex_;
-    IXML_NodeList* itemNodeList_;
-    unsigned int   itemNodeIndex_;
+    input_item_node_t* node_;
 };
 
 }

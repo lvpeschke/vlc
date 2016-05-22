@@ -257,14 +257,13 @@ static int Open( vlc_object_t *p_this )
     if ( psz_idx )
     {
         char *psz_tmp;
-        psz_tmp = str_format_time( psz_idx );
+        psz_tmp = vlc_strftime( psz_idx );
         free( psz_idx );
         if ( !psz_tmp )
         {
             free( p_sys );
             return VLC_ENOMEM;
         }
-        path_sanitize( psz_tmp );
         p_sys->psz_indexPath = psz_tmp;
         if( p_sys->i_initial_segment != 1 )
             vlc_unlink( p_sys->psz_indexPath );
@@ -475,12 +474,12 @@ static int CryptKey( sout_access_out_t *p_access, uint32_t i_segment )
 /*****************************************************************************
  * formatSegmentPath: create segment path name based on seg #
  *****************************************************************************/
-static char *formatSegmentPath( char *psz_path, uint32_t i_seg, bool b_sanitize )
+static char *formatSegmentPath( char *psz_path, uint32_t i_seg )
 {
     char *psz_result;
     char *psz_firstNumSign;
 
-    if ( ! ( psz_result  = str_format_time( psz_path ) ) )
+    if ( ! ( psz_result  = vlc_strftime( psz_path ) ) )
         return NULL;
 
     psz_firstNumSign = psz_result + strcspn( psz_result, SEG_NUMBER_PLACEHOLDER );
@@ -497,9 +496,6 @@ static char *formatSegmentPath( char *psz_path, uint32_t i_seg, bool b_sanitize 
             return NULL;
         psz_result = psz_newResult;
     }
-
-    if ( b_sanitize )
-        path_sanitize( psz_result );
 
     return psz_result;
 }
@@ -865,9 +861,9 @@ static ssize_t openNextFile( sout_access_out_t *p_access, sout_access_out_sys_t 
         return -1;
 
     segment->i_segment_number = i_newseg;
-    segment->psz_filename = formatSegmentPath( p_access->psz_path, i_newseg, true );
+    segment->psz_filename = formatSegmentPath( p_access->psz_path, i_newseg );
     char *psz_idxFormat = p_sys->psz_indexUrl ? p_sys->psz_indexUrl : p_access->psz_path;
-    segment->psz_uri = formatSegmentPath( psz_idxFormat , i_newseg, false );
+    segment->psz_uri = formatSegmentPath( psz_idxFormat , i_newseg );
 
     if ( unlikely( !segment->psz_filename ) )
     {

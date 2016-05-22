@@ -200,6 +200,7 @@ enum input_control_e
     INPUT_CONTROL_NAV_LEFT,
     INPUT_CONTROL_NAV_RIGHT,
     INPUT_CONTROL_NAV_POPUP,
+    INPUT_CONTROL_NAV_MENU,
 
     INPUT_CONTROL_SET_ES,
     INPUT_CONTROL_RESTART_ES,
@@ -248,7 +249,7 @@ void input_ControlVarTitle( input_thread_t *, int i_title );
 void input_ConfigVarInit ( input_thread_t * );
 
 /* Subtitles */
-char **subtitles_Detect( input_thread_t *, char* path, const char *fname );
+int subtitles_Detect( input_thread_t *, char *, const char *, input_item_slave_t ***, int * );
 int subtitles_Filter( const char *);
 
 /* input.c */

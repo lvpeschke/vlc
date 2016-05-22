@@ -23,42 +23,32 @@
  *****************************************************************************/
 
 #include "chapter_command.hpp"
+#include <algorithm>
 
 void chapter_codec_cmds_c::AddCommand( const KaxChapterProcessCommand & command )
 {
     uint32 codec_time = uint32(-1);
     for( size_t i = 0; i < command.ListSize(); i++ )
     {
-        const EbmlElement *k = command[i];
-
-        if( MKV_IS_ID( k, KaxChapterProcessTime ) )
+        if( MKV_CHECKED_PTR_DECL( p_cpt, KaxChapterProcessTime const, command[i] ) )
         {
-            codec_time = static_cast<uint32>( *static_cast<const KaxChapterProcessTime*>( k ) );
+            codec_time = static_cast<uint32>( *p_cpt );
             break;
         }
     }
 
     for( size_t i = 0; i < command.ListSize(); i++ )
     {
-        const EbmlElement *k = command[i];
-
-        if( MKV_IS_ID( k, KaxChapterProcessData ) )
+        if( MKV_CHECKED_PTR_DECL( p_cpd, KaxChapterProcessData const, command[i] ) )
         {
-            KaxChapterProcessData *p_data =  new KaxChapterProcessData( *static_cast<const KaxChapterProcessData*>( k ) );
-            switch ( codec_time )
-            {
-            case 0:
-                during_cmds.push_back( p_data );
-                break;
-            case 1:
-                enter_cmds.push_back( p_data );
-                break;
-            case 2:
-                leave_cmds.push_back( p_data );
-                break;
-            default:
-                delete p_data;
-            }
+            std::vector<KaxChapterProcessData*> *containers[] = {
+                &during_cmds, /* codec_time = 0 */
+                &enter_cmds,  /* codec_time = 1 */
+                &leave_cmds   /* codec_time = 2 */
+            };
+
+            if( codec_time < 3 )
+                containers[codec_time]->push_back( new KaxChapterProcessData( *p_cpd ) );
         }
     }
 }
@@ -78,49 +68,35 @@ int16 dvd_chapter_codec_c::GetTitleNumber()
 
 bool dvd_chapter_codec_c::Enter()
 {
-    bool f_result = false;
-    std::vector<KaxChapterProcessData*>::iterator index = enter_cmds.begin();
-    while ( index != enter_cmds.end() )
-    {
-        if ( (*index)->GetSize() )
-        {
-            binary *p_data = (*index)->GetBuffer();
-            size_t i_size = *p_data++;
-            // avoid reading too much from the buffer
-            i_size = __MIN( i_size, ((*index)->GetSize() - 1) >> 3 );
-            for ( ; i_size > 0; i_size--, p_data += 8 )
-            {
-                msg_Dbg( &sys.demuxer, "Matroska DVD enter command" );
-                f_result |= sys.dvd_interpretor.Interpret( p_data );
-            }
-        }
-        ++index;
-    }
-    return f_result;
+    return EnterLeaveHelper( "Matroska DVD enter command", &enter_cmds );
 }
 
 bool dvd_chapter_codec_c::Leave()
 {
+    return EnterLeaveHelper( "Matroska DVD leave command", &leave_cmds );
+}
+
+bool dvd_chapter_codec_c::EnterLeaveHelper( char const * str_diag, std::vector<KaxChapterProcessData*> * p_container )
+{
     bool f_result = false;
-    std::vector<KaxChapterProcessData*>::iterator index = leave_cmds.begin();
-    while ( index != leave_cmds.end() )
+    std::vector<KaxChapterProcessData*>::iterator it = p_container->begin ();
+    while( it != p_container->end() )
     {
-        if ( (*index)->GetSize() )
+        if( (*it)->GetSize() )
         {
-            binary *p_data = (*index)->GetBuffer();
-            size_t i_size = *p_data++;
-            // avoid reading too much from the buffer
-            i_size = __MIN( i_size, ((*index)->GetSize() - 1) >> 3 );
-            for ( ; i_size > 0; i_size--, p_data += 8 )
+            binary *p_data = (*it)->GetBuffer();
+            size_t i_size  = std::min<size_t>( *p_data++, ( (*it)->GetSize() - 1 ) >> 3 ); // avoid reading too much
+            for( ; i_size > 0; i_size -=1, p_data += 8 )
             {
-                msg_Dbg( &sys.demuxer, "Matroska DVD leave command" );
+                msg_Dbg( &sys.demuxer, "%s", str_diag);
                 f_result |= sys.dvd_interpretor.Interpret( p_data );
             }
         }
-        ++index;
+        ++it;
     }
     return f_result;
 }
+
 
 std::string dvd_chapter_codec_c::GetCodecName( bool f_for_title ) const
 {
@@ -750,7 +726,7 @@ bool matroska_script_interpretor_c::Interpret( const binary * p_command, size_t 
         else
         {
             if ( !p_vchapter->EnterAndLeave( sys.p_current_vsegment->CurrentChapter() ) )
-                p_vsegment->Seek( sys.demuxer, p_vchapter->i_mk_virtual_start_time, p_vchapter, -1 );
+                p_vsegment->Seek( sys.demuxer, p_vchapter->i_mk_virtual_start_time, p_vchapter );
             b_result = true;
         }
     }

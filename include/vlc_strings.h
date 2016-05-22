@@ -123,49 +123,32 @@ VLC_API size_t vlc_b64_decode_binary_to_buffer( uint8_t *p_dst, size_t i_dst_max
 VLC_API size_t vlc_b64_decode_binary( uint8_t **pp_dst, const char *psz_src );
 VLC_API char * vlc_b64_decode( const char *psz_src );
 
-VLC_API char * str_format_time( const char * );
-VLC_API char * str_format_meta( input_thread_t *, const char * );
+/**
+ * Convenience wrapper for strftime().
+ *
+ * Formats the current time into a heap-allocated string.
+ *
+ * @param tformat time format (as with C strftime())
+ * @return an allocated string (must be free()'d), or NULL on memory error.
+ */
+VLC_API char *vlc_strftime( const char * );
+
+/**
+ * Formats input meta-data.
+ *
+ * Formats input and input item meta-informations into a heap-allocated string.
+ */
+VLC_API char *vlc_strfinput( input_thread_t *, const char * );
 
 static inline char *str_format( input_thread_t *input, const char *fmt )
 {
-    char *s1 = str_format_time( fmt );
-    char *s2 = str_format_meta( input, s1 );
+    char *s1 = vlc_strftime( fmt );
+    char *s2 = vlc_strfinput( input, s1 );
     free( s1 );
     return s2;
 }
 
 void filename_sanitize(char *);
-
-/**
- * Remove forbidden characters from full paths (leaves slashes)
- */
-static inline void path_sanitize(char *str)
-{
-#if defined( _WIN32 ) || defined( __OS2__ )
-    /* check drive prefix if path is absolute */
-    if ((((unsigned char)(str[0] - 'A') < 26)
-      || ((unsigned char)(str[0] - 'a') < 26)) && (str[1] == ':'))
-        str += 2;
-
-    while (*str != '\0')
-    {
-        if (strchr("*\"?:|<>", *str) != NULL)
-            *str = '_';
-        if (*str == '/')
-            *str = DIR_SEP_CHAR;
-        str++;
-    }
-#elif defined( __APPLE__ )
-    while (*str != '\0')
-    {
-        if (*str == ':')
-            *str = '_';
-        str++;
-    }
-#else
-    (void) str;
-#endif
-}
 
 /**
  * @}

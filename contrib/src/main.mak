@@ -21,7 +21,7 @@ DATE := $(shell date +%Y%m%d)
 VPATH := $(TARBALLS)
 
 # Common download locations
-GNU := http://ftp.gnu.org/gnu
+GNU ?= http://ftp.gnu.org/gnu
 SF := http://heanet.dl.sourceforge.net/sourceforge
 VIDEOLAN := http://downloads.videolan.org/pub/videolan
 CONTRIB_VIDEOLAN := http://downloads.videolan.org/pub/contrib
@@ -177,6 +177,9 @@ LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 ifndef WITH_OPTIMIZATION
 CFLAGS := $(CFLAGS) -O0
 CXXFLAGS := $(CXXFLAGS) -O0
+else
+CFLAGS := $(CFLAGS) -O2
+CXXFLAGS := $(CXXFLAGS) -O2
 endif
 
 # Do not export those! Use HOSTVARS.
@@ -439,7 +442,10 @@ list:
 	@echo To-be-built packages:
 	@echo '  $(PKGS)' | tr " " "\n" | sort | tr "\n" " " |fmt
 
-.PHONY: all fetch fetch-all install mostlyclean clean distclean package list prebuilt
+help:
+	@cat $(SRC)/help.txt
+
+.PHONY: all fetch fetch-all install mostlyclean clean distclean package list help prebuilt
 
 # CMake toolchain
 toolchain.cmake:

@@ -30,8 +30,7 @@ FFMPEGCONF = \
 	--disable-protocol=concat \
 	--disable-bsfs \
 	--disable-bzlib \
-	--disable-avresample \
-	--disable-gnutls
+	--disable-avresample
 
 ifdef USE_FFMPEG
 FFMPEGCONF += \
@@ -163,6 +162,10 @@ FFMPEGCONF += --cpu=athlon64 --arch=x86_64
 else
 ifeq ($(ARCH),i386) # 32bits intel
 FFMPEGCONF+= --cpu=i686 --arch=x86
+else
+ifdef HAVE_ARMV7A
+FFMPEGCONF+= --arch=arm
+endif
 endif
 endif
 

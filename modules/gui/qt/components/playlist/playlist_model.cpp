@@ -297,80 +297,90 @@ void PLModel::activateItem( playlist_item_t *p_item )
 /****************** Base model mandatory implementations *****************/
 QVariant PLModel::data( const QModelIndex &index, const int role ) const
 {
+    if( !index.isValid() )
+        return QVariant();
+
     switch( role )
     {
 
-    case Qt::FontRole:
-        return customFont;
+        case Qt::FontRole:
+            return customFont;
 
-    default:
-        if( !index.isValid() )
-            return QVariant();
-    }
-
-    PLItem *item = getItem( index );
-    if( role == Qt::DisplayRole )
-    {
-        int metadata = columnToMeta( index.column() );
-        if( metadata == COLUMN_END ) return QVariant();
-
-        QString returninfo;
-        if( metadata == COLUMN_NUMBER )
-            returninfo = QString::number( index.row() + 1 );
-        else if( metadata == COLUMN_COVER )
+        case Qt::DisplayRole:
         {
-            QString artUrl;
-            artUrl = InputManager::decodeArtURL( item->inputItem() );
-            if( artUrl.isEmpty() )
+            PLItem *item = getItem( index );
+            int metadata = columnToMeta( index.column() );
+            if( metadata == COLUMN_END )
+                return QVariant();
+
+            QString returninfo;
+            if( metadata == COLUMN_NUMBER )
             {
-                for( int i = 0; i < item->childCount(); i++ )
-                {
-                    artUrl = InputManager::decodeArtURL( item->child( i )->inputItem() );
-                    if( !artUrl.isEmpty() )
-                        break;
-                }
+                returninfo = QString::number( index.row() + 1 );
             }
-            return artUrl;
+            else if( metadata == COLUMN_COVER )
+            {
+                QString artUrl;
+                artUrl = InputManager::decodeArtURL( item->inputItem() );
+                if( artUrl.isEmpty() )
+                {
+                    for( int i = 0; i < item->childCount(); i++ )
+                    {
+                        artUrl = InputManager::decodeArtURL( item->child( i )->inputItem() );
+                        if( !artUrl.isEmpty() )
+                            break;
+                    }
+                }
+                return artUrl;
+            }
+            else
+            {
+                char *psz = psz_column_meta( item->inputItem(), metadata );
+                returninfo = qfu( psz );
+                free( psz );
+            }
+
+            return QVariant( returninfo );
         }
-        else
+
+        case Qt::DecorationRole:
         {
-            char *psz = psz_column_meta( item->inputItem(), metadata );
-            returninfo = qfu( psz );
-            free( psz );
+            switch( columnToMeta(index.column()) )
+            {
+                case COLUMN_TITLE:
+                {
+                    PLItem *item = getItem( index );
+                    /* Used to segfault here because i_type wasn't always initialized */
+                    return QVariant( icons[item->inputItem()->i_type] );
+                }
+                case COLUMN_COVER:
+                    /* !warn: changes tree item line height. Otherwise, override
+                     * delegate's sizehint */
+                    return getArtPixmap( index, QSize(16,16) );
+                default:
+                    break;
+            }
+            break;
         }
-        return QVariant( returninfo );
-    }
-    else if( role == Qt::DecorationRole )
-    {
-        switch( columnToMeta(index.column()) )
-        {
-        case COLUMN_TITLE:
-            /* Used to segfault here because i_type wasn't always initialized */
-            return QVariant( icons[item->inputItem()->i_type] );
-        case COLUMN_COVER:
-            /* !warn: changes tree item line height. Otherwise, override
-             * delegate's sizehint */
-            return getArtPixmap( index, QSize(16,16) );
+
+        case Qt::BackgroundRole:
+            if( isCurrent( index ) )
+                return QVariant( QBrush( Qt::gray ) );
+            break;
+
+        case CURRENT_ITEM_ROLE:
+            return QVariant( isCurrent( index ) );
+
+        case CURRENT_ITEM_CHILD_ROLE:
+            return QVariant( isParent( index, currentIndex() ) );
+
+        case LEAF_NODE_ROLE:
+            return QVariant( isLeaf( index ) );
+
         default:
-            return QVariant();
-        }
+            break;
     }
-    else if( role == Qt::BackgroundRole && isCurrent( index ) )
-    {
-        return QVariant( QBrush( Qt::gray ) );
-    }
-    else if( role == IsCurrentRole )
-    {
-        return QVariant( isCurrent( index ) );
-    }
-    else if( role == IsLeafNodeRole )
-    {
-        return QVariant( isLeaf( index ) );
-    }
-    else if( role == IsCurrentsParentNodeRole )
-    {
-        return QVariant( isParent( index, currentIndex() ) );
-    }
+
     return QVariant();
 }
 
@@ -547,30 +557,22 @@ PLModel::pl_nodetype PLModel::getPLRootType() const
 {
     /* can't rely on rootitem as it depends on view / rebuild() */
     AbstractPLItem *plitem = rootItem;
-
     while( plitem->parent() ) plitem = plitem->parent();
 
-    switch( plitem->id( PLAYLIST_ID ) )
-    {
-    case 2:
+    const input_item_t *p_item = plitem->inputItem();
+    if( p_item == p_playlist->p_playing->p_input )
         return ROOTTYPE_CURRENT_PLAYING;
-    case 3:
+
+    if( p_playlist->p_media_library &&
+        p_item == p_playlist->p_media_library->p_input )
         return ROOTTYPE_MEDIA_LIBRARY;
-    default:
-        return ROOTTYPE_OTHER;
-    }
+
+    return ROOTTYPE_OTHER;
 }
 
 bool PLModel::canEdit() const
 {
-    return (
-            rootItem != NULL &&
-            (
-             rootItem->inputItem() == p_playlist->p_playing->p_input ||
-             ( p_playlist->p_media_library &&
-              rootItem->inputItem() == p_playlist->p_media_library->p_input )
-            )
-           );
+    return ( getPLRootType() != ROOTTYPE_OTHER );
 }
 
 /************************* Updates handling *****************************/
@@ -756,10 +758,11 @@ void PLModel::doDelete( QModelIndexList selected )
             recurseDelete( item->children, &selected );
 
         PL_LOCK;
-        playlist_DeleteFromInput( p_playlist, item->inputItem(), pl_Locked );
+        int i_ret = playlist_DeleteFromInput( p_playlist, item->inputItem(), pl_Locked );
         PL_UNLOCK;
 
-        removeItem( item );
+        if( i_ret == VLC_SUCCESS )
+            removeItem( item );
     }
 }
 
@@ -976,34 +979,39 @@ bool PLModel::action( QAction *action, const QModelIndexList &indexes )
 
 bool PLModel::isSupportedAction( actions action, const QModelIndex &index ) const
 {
+    if( !index.isValid() )
+        return false;
+
+    const PLItem *item = getItem( index );
+
     switch ( action )
     {
     case ACTION_ADDTOPLAYLIST:
         /* Only if we are not already in Current Playing */
         if ( getPLRootType() == ROOTTYPE_CURRENT_PLAYING ) return false;
-        if( index.isValid() && index != rootIndex() )
-            return ( itemId( index, PLAYLIST_ID ) != THEPL->p_playing->i_id );
+        if( index != rootIndex() )
+            return ( item->id( PLAYLIST_ID ) != THEPL->p_playing->i_id );
     case ACTION_SORT:
-        return rowCount();
+        return rowCount() && !item->readOnly();
     case ACTION_PLAY:
     case ACTION_STREAM:
     case ACTION_SAVE:
     case ACTION_INFO:
+        return index != rootIndex();
     case ACTION_REMOVE:
-        return index.isValid() && index != rootIndex();
+        return index != rootIndex() && !item->readOnly();
     case ACTION_EXPLORE:
-        if( index.isValid() )
             return getURI( index ).startsWith( "file://" );
     case ACTION_CREATENODE:
-        return ( canEdit() && isTree() );
+            return ( isTree() && !item->readOnly() );
     case ACTION_RENAMENODE:
-        return ( index != rootIndex() ) && !isLeaf( index );
+            return ( index != rootIndex() ) && !isLeaf( index ) && !item->readOnly();
     case ACTION_CLEAR:
-        return rowCount() && canEdit();
+            return rowCount() && !item->readOnly();
     case ACTION_ENQUEUEFILE:
     case ACTION_ENQUEUEDIR:
     case ACTION_ENQUEUEGENERIC:
-        return canEdit();
+        return !item->readOnly();
     case ACTION_SAVETOPLAYLIST:
         return rowCount() > 0;
     default:

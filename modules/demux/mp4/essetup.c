@@ -26,14 +26,13 @@
 
 #include "mp4.h"
 #include "avci.h"
+#include "../xiph.h"
 
 #include <vlc_demux.h>
 #include <vlc_aout.h>
 #include <assert.h>
 
 
-
-int SetupRTPReceptionHintTrack( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample );
 
 
 static void SetupGlobalExtensions( mp4_track_t *p_track, MP4_Box_t *p_sample )
@@ -169,7 +168,7 @@ static void SetupESDS( demux_t *p_demux, mp4_track_t *p_track, const MP4_descrip
     }
 }
 
-int SetupRTPReceptionHintTrack( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
+static int SetupRTPReceptionHintTrack( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
 {
     p_track->fmt.i_original_fourcc = p_sample->i_type;
 
@@ -272,37 +271,32 @@ int SetupRTPReceptionHintTrack( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_
         pch = strtok_r(NULL, " =\n", &strtok_state); /* next attribute */
     }
 
-    MP4_Box_t *p_tims_box = MP4_BoxGet(p_sample, "tims", 0);
-    if( p_tims_box != NULL )
+    const MP4_Box_t *p_tims = MP4_BoxGet(p_sample, "tims");
+    if( p_tims && BOXDATA(p_tims) && BOXDATA(p_tims)->i_timescale )
     {
-        MP4_Box_data_tims_t *p_tims = p_tims_box->data.p_tims;
-        p_track->i_timescale = p_tims->i_timescale;
+        p_track->i_timescale = BOXDATA(p_tims)->i_timescale;
     }
     else
+    {
         msg_Warn(p_demux, "Missing mandatory box tims");
+        return 0;
+    }
 
-    MP4_Box_t *p_tssy_box = MP4_BoxGet(p_sample, "tssy", 0);
-    if( p_tssy_box != NULL )
+    const MP4_Box_t *p_tssy = MP4_BoxGet(p_sample, "tssy");
+    if( p_tssy && BOXDATA(p_tssy) )
     {
-        MP4_Box_data_tssy_t *p_tssy = p_tssy_box->data.p_tssy;
         /* take the 2 last bits which indicate the synchronization mode */
-        uint8_t temp = p_tssy->i_reserved_timestamp_sync & 0x03;
-        p_track->sync_mode = (RTP_timstamp_synchronization_t)temp;
+        p_track->sync_mode = (RTP_timstamp_synchronization_t)
+                             BOXDATA(p_tssy)->i_reserved_timestamp_sync & 0x03;
     }
 
-    MP4_Box_t *p_tsro_box = MP4_BoxGet(p_sample, "tsro", 0);
-    if( p_tsro_box != NULL )
-    {
-        MP4_Box_data_tsro_t *p_tsro = p_tsro_box->data.p_tsro;
-        msg_Dbg(p_demux, "setting tsro: %d",
-            p_tsro->i_offset);
-        p_track->i_tsro_offset = p_tsro->i_offset;
-    }
+    const MP4_Box_t *p_tsro = MP4_BoxGet(p_sample, "tsro");
+    if( p_tsro && BOXDATA(p_tsro) )
+        p_track->i_tsro_offset = BOXDATA(p_tsro)->i_offset;
     else
-    {
-        msg_Dbg(p_demux, "No tsro box present. Assuming 0 as track offset");
-        p_track->i_tsro_offset = 0;
-    }
+        msg_Dbg(p_demux, "No tsro box present");
+    msg_Dbg(p_demux, "setting tsro: %" PRId32, p_track->i_tsro_offset);
+
     return 1;
 }
 
@@ -752,6 +746,57 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
         {
             p_track->fmt.i_codec = VLC_CODEC_MPGA;
             break;
+        }
+        case ATOM_XiVs:
+        {
+            const MP4_Box_t *p_vCtH = MP4_BoxGet( p_sample, "wave/vCtH" ); /* kCookieTypeVorbisHeader */
+            const MP4_Box_t *p_vCtd = MP4_BoxGet( p_sample, "wave/vCt#" ); /* kCookieTypeVorbisComments */
+            const MP4_Box_t *p_vCtC = MP4_BoxGet( p_sample, "wave/vCtC" ); /* kCookieTypeVorbisCodebooks */
+            if( p_vCtH && p_vCtH->data.p_binary &&
+                p_vCtd && p_vCtd->data.p_binary &&
+                p_vCtC && p_vCtC->data.p_binary )
+            {
+                unsigned headers_sizes[3] = {
+                    p_vCtH->data.p_binary->i_blob,
+                    p_vCtd->data.p_binary->i_blob,
+                    p_vCtC->data.p_binary->i_blob
+                };
+
+                const void * headers[3] = {
+                    p_vCtH->data.p_binary->p_blob,
+                    p_vCtd->data.p_binary->p_blob,
+                    p_vCtC->data.p_binary->p_blob
+                };
+
+                if( xiph_PackHeaders( &p_track->fmt.i_extra, &p_track->fmt.p_extra,
+                                      headers_sizes, headers, 3 ) == VLC_SUCCESS )
+                {
+                    p_track->fmt.i_codec = VLC_CODEC_VORBIS;
+                    p_track->fmt.b_packetized = false;
+                }
+            }
+            break;
+        }
+        case ATOM_XiFL:
+        {
+            const MP4_Box_t *p_fCtS = MP4_BoxGet( p_sample, "wave/fCtS" ); /* kCookieTypeFLACStreaminfo */
+            if( p_fCtS && p_fCtS->data.p_binary )
+            {
+                size_t i_extra = 8 + p_fCtS->data.p_binary->i_blob;
+                uint8_t *p_extra = malloc(i_extra);
+                if( p_extra )
+                {
+                    p_track->fmt.i_extra = i_extra;
+                    p_track->fmt.p_extra = p_extra;
+                    memcpy( p_extra, "fLaC", 4 );
+                    SetDWBE( &p_extra[4], p_fCtS->data.p_binary->i_blob ); /* want the lowest 24bits */
+                    p_extra[4] = 0x80; /* 0x80 Last metablock | 0x00 StreamInfo */
+                    memcpy( &p_extra[8], p_fCtS->data.p_binary->p_blob, p_fCtS->data.p_binary->i_blob );
+
+                    p_track->fmt.i_codec = VLC_CODEC_FLAC;
+                    p_track->fmt.b_packetized = false;
+                }
+            }
         }
         case( ATOM_eac3 ):
         {
