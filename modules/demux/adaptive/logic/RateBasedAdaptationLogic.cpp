@@ -173,6 +173,7 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 
     /* LVP added, TFE */ // all in bps (bits per second)
     std::cerr << "TFE download rate updated, " << mdate() << std::endl;
+    std::cerr << "TFE bpsObserved, " << mdate() << ", " << bps << std::endl;
     std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
     std::cerr << "TFE bpsCurrent, " << mdate() << ", " << currentBps << std::endl;
     std::cerr << "TFE bpsUsed, " << mdate() << ", " << usedBps << std::endl;

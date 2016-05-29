@@ -45,6 +45,9 @@
 #include <algorithm>
 #include <ctime>
 
+/* LVP added */
+#include <iostream>
+
 using namespace dash;
 using namespace dash::mpd;
 using namespace adaptive::logic;
@@ -141,6 +144,9 @@ bool DASHManager::updatePlaylist()
         }
         stream_Delete(mpdstream);
         block_Release(p_block);
+
+        /* LVP added, TFE */
+        std::cerr << "TFE DASHManager::updatePlaylist mpd, " << mdate() << std::endl;
     }
 
     return true;

@@ -147,8 +147,12 @@ void HTTPConnectionManager::updateDownloadRate(size_t size, mtime_t time)
     /* LVP added */
     msg_Dbg(p_object, "LVP entered HTTPConnectionManager::updateDownloadRate");
 
-    if(rateObserver)
+    if(rateObserver) {
         rateObserver->updateDownloadRate(size, time);
+        /* LVP added, TFE */
+        std::cerr << "TFE updateDownloadRate in HTTPConnectionManager, " << mdate() << std::endl;
+    }
+
 }
 
 void HTTPConnectionManager::setDownloadRateObserver(IDownloadRateObserver *obs)
