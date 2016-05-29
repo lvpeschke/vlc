@@ -177,6 +177,10 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
     std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
     std::cerr << "TFE bpsCurrent, " << mdate() << ", " << currentBps << std::endl;
     std::cerr << "TFE bpsUsed, " << mdate() << ", " << usedBps << std::endl;
+
+    std::cerr << "TFE diffsum, " << mdate() << ", " << diffsum << std::endl;
+    std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;
+    std::cerr << "TFE alpha, " << mdate() << ", " << alpha << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
