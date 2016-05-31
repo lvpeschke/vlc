@@ -179,7 +179,8 @@ block_t * HTTPChunkSource::read(size_t readsize)
     mtime_t time = mdate();
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
     /* LVP added, TFE */
-    std::cerr << "TFE read HTTP chunck source, " << mdate() << ", " << ret << std::endl;
+    //std::cerr << "TFE read HTTP chunck source, " << mdate() << ", " << ret << std::endl;
+    // not encountered
     time = mdate() - time;
     if(ret < 0)
     {
@@ -195,7 +196,8 @@ block_t * HTTPChunkSource::read(size_t readsize)
             eof = true;
         connManager->updateDownloadRate(p_block->i_buffer, time);
         /* LVP added, TFE */
-        std::cerr << "TFE updateDownloadRate in chunk, " << mdate() << std::endl;
+        //std::cerr << "TFE updateDownloadRate in chunk, " << mdate() << std::endl;
+        // not encountered
     }
 
     return p_block;
@@ -334,6 +336,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
         connManager->updateDownloadRate(rate.size, rate.time);
         /* LVP added, TFE */
         std::cerr << "TFE updateDownloadRate in chunkBuffered, " << mdate() << std::endl;
+        // always after RateBaseAdaptationLogic->updateDownloadRate()
     }
 
     /* LVP added, TFE */
@@ -396,7 +399,8 @@ block_t * HTTPChunkBufferedSource::readBlock()
     vlc_mutex_unlock(&lock);
 
     /* LVP added, TFE */
-    std::cerr << "TFE buffered in HTTPChunkBufferedSource::readBlock, " << mdate() << ", " << buffered << std::endl;
+    //std::cerr << "TFE buffered in HTTPChunkBufferedSource::readBlock, " << mdate() << ", " << buffered << std::endl;
+    // too often, 0 most of the time
 
     return p_block;
 }
@@ -446,7 +450,7 @@ block_t * HTTPChunkBufferedSource::read(size_t readsize)
     vlc_mutex_unlock(&lock);
 
     /* LVP added, TFE */
-    std::cerr << "TFE buffered in HTTPChunkBufferedSource::read, " << mdate() << ", " << buffered << std::endl;
+    //std::cerr << "TFE buffered in HTTPChunkBufferedSource::read, " << mdate() << ", " << buffered << std::endl;
 
     return p_block;
 }

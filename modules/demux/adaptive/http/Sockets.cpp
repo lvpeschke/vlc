@@ -85,7 +85,13 @@ void Socket::disconnect()
 
 ssize_t Socket::read(vlc_object_t *p_object, void *p_buffer, size_t len)
 {
-    return net_Read(p_object, netfd, p_buffer, len);
+
+    //return net_Read(p_object, netfd, p_buffer, len);
+
+    /* LVP added */
+    ssize_t ret = net_Read(p_object, netfd, p_buffer, len);
+    std::cerr << "TFE Socket::read (bytes) " << mdate() << ", " << ret << std::endl;
+    return ret;
 }
 
 std::string Socket::readline(vlc_object_t *p_object)

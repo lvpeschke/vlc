@@ -49,6 +49,9 @@
 #include <vlc_network.h>
 #include <vlc_interrupt.h>
 
+/* LVP added */
+#include <iostream>
+
 extern int rootwrap_bind (int family, int socktype, int protocol,
                           const struct sockaddr *addr, size_t alen);
 
@@ -233,6 +236,9 @@ int *net_Listen (vlc_object_t *p_this, const char *psz_host,
 ssize_t (net_Read)(vlc_object_t *restrict obj, int fd,
                    void *restrict buf, size_t len)
 {
+    /* LVP added */
+    std::cerr << "LVP entered net_Read in network/io.c REMOVE" << std::endl;
+
     size_t rd = 0;
 
     do
