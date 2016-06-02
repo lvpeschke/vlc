@@ -289,6 +289,7 @@ AbstractStream::status AbstractStream::demux(mtime_t nz_deadline, bool send)
              description.c_str(), getPCR(), getFirstDTS(), nz_deadline, getBufferingLevel()));
 
     /* LVP added, TFE */
+	std::cerr << "TFE pcr, " << mdate() << ", " << getPCR() << std::endl;
 	std::cerr << "TFE dts, " << mdate() << ", " << getFirstDTS() << std::endl;
     std::cerr << "TFE buffering level, " << mdate() << ", " << getBufferingLevel() << std::endl;
 
