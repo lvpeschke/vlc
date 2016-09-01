@@ -110,14 +110,21 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
     /* LVP added */
     BwDebug(msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate"));
 
-    if(unlikely(time == 0))
+    if(unlikely(time == 0)){
+        /* LVP added */
+        std::cerr << "LVP unlikely(time==0) happened in ...Logic update download rate, " << std::endl;
         return;
+    }
+
     /* Accumulate up to observation window */
     dllength += time;
     dlsize += size;
 
-    if(dllength < CLOCK_FREQ / 4)
+    if(dllength < CLOCK_FREQ / 4){
+        /* LVP added */
+        std::cerr << "LVP dllength < CLOCK_FREQ / 4 happened in ...Logic update download rate, " << std::endl;
         return;
+    }
 
     const size_t bps = CLOCK_FREQ * dlsize * 8 / dllength;
 
@@ -173,9 +180,15 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 
     /* LVP added, TFE */ // all in bps (bits per second)
     std::cerr << "TFE download rate updated, " << mdate() << std::endl;
+    // always called by HTTPConnectionManager updateDownloadRate, chunkBuffered updateDownloadRate
+    std::cerr << "TFE bpsObserved, " << mdate() << ", " << bps << std::endl;
     std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
     std::cerr << "TFE bpsCurrent, " << mdate() << ", " << currentBps << std::endl;
     std::cerr << "TFE bpsUsed, " << mdate() << ", " << usedBps << std::endl;
+
+    std::cerr << "TFE diffsum, " << mdate() << ", " << diffsum << std::endl;
+    std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;
+    std::cerr << "TFE alpha, " << mdate() << ", " << alpha << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)

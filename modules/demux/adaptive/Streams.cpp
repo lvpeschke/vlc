@@ -385,6 +385,13 @@ AbstractStream::status AbstractStream::dequeue(mtime_t nz_deadline, mtime_t *pi_
     AdvDebug(msg_Dbg(p_realdemux, "Stream %s pcr %ld dts %ld deadline %ld buflevel %ld",
                      description.c_str(), commandsqueue->getPCR(), commandsqueue->getFirstDTS(),
                      nz_deadline, commandsqueue->getBufferingLevel()));
+					 
+	/* LVP added, TFE */
+	std::cerr << "TFE stream, " << mdate() << ", " << description.c_str() << std::endl;
+	std::cerr << "TFE pcr, " << mdate() << ", " << commandsqueue->getPCR() << std::endl;
+	std::cerr << "TFE dts, " << mdate() << ", " << commandsqueue->getFirstDTS() << std::endl;
+	std::cerr << "TFE buffering level, " << mdate() << ", " << commandsqueue->getBufferingLevel() << std::endl;
+	std::cerr << "TFE demuxed amount, " << mdate() << ", " << commandsqueue->getDemuxedAmount() << std::endl; // = bufferinglevel - getFirstDTS
 
     if(nz_deadline + VLC_TS_0 <= commandsqueue->getBufferingLevel()) /* demuxed */
     {
