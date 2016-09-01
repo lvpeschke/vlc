@@ -85,7 +85,7 @@ static int InputEvent( vlc_object_t *p_this, char const *psz_cmd,
     VLC_UNUSED(psz_cmd);
     VLC_UNUSED(oldval);
     input_thread_t *p_input = (input_thread_t *)p_this;
-    vlm_t *p_vlm = libvlc_priv( p_input->p_libvlc )->p_vlm;
+    vlm_t *p_vlm = libvlc_priv( p_input->obj.libvlc )->p_vlm;
     assert( p_vlm );
     vlm_media_sys_t *p_media = p_data;
     const char *psz_instance_name = NULL;
@@ -118,7 +118,7 @@ static vlc_mutex_t vlm_mutex = VLC_STATIC_MUTEX;
  *****************************************************************************/
 vlm_t *vlm_New ( vlc_object_t *p_this )
 {
-    vlm_t *p_vlm = NULL, **pp_vlm = &(libvlc_priv (p_this->p_libvlc)->p_vlm);
+    vlm_t *p_vlm = NULL, **pp_vlm = &(libvlc_priv (p_this->obj.libvlc)->p_vlm);
     char *psz_vlmconf;
 
     /* Avoid multiple creation */
@@ -137,7 +137,7 @@ vlm_t *vlm_New ( vlc_object_t *p_this )
 
     msg_Dbg( p_this, "creating VLM" );
 
-    p_vlm = vlc_custom_create( p_this->p_libvlc, sizeof( *p_vlm ),
+    p_vlm = vlc_custom_create( p_this->obj.libvlc, sizeof( *p_vlm ),
                                "vlm daemon" );
     if( !p_vlm )
     {
@@ -203,7 +203,7 @@ void vlm_Delete( vlm_t *p_vlm )
     vlc_mutex_lock( &vlm_mutex );
     assert( p_vlm->users > 0 );
     if( --p_vlm->users == 0 )
-        assert( libvlc_priv(p_vlm->p_libvlc)->p_vlm == p_vlm );
+        assert( libvlc_priv(p_vlm->obj.libvlc)->p_vlm == p_vlm );
     else
         p_vlm = NULL;
 
@@ -230,7 +230,7 @@ void vlm_Delete( vlm_t *p_vlm )
         vlc_object_release( p_vlm->p_vod );
     }
 
-    libvlc_priv(p_vlm->p_libvlc)->p_vlm = NULL;
+    libvlc_priv(p_vlm->obj.libvlc)->p_vlm = NULL;
     vlc_mutex_unlock( &vlm_mutex );
 
     vlc_join( p_vlm->thread, NULL );
@@ -255,16 +255,6 @@ int vlm_ExecuteCommand( vlm_t *p_vlm, const char *psz_command,
 
     return i_result;
 }
-
-
-int64_t vlm_Date(void)
-{
-    struct timespec ts;
-
-    (void)timespec_get( &ts, TIME_UTC );
-    return ts.tv_sec * INT64_C(1000000) + (ts.tv_nsec / 1000);
-}
-
 
 /*****************************************************************************
  *
@@ -390,11 +380,9 @@ static void* Manage( void* p_object )
 {
     vlm_t *vlm = (vlm_t*)p_object;
     int i, j;
-    mtime_t i_lastcheck;
-    mtime_t i_time;
-    mtime_t i_nextschedule = 0;
+    time_t lastcheck, now, nextschedule = 0;
 
-    i_lastcheck = vlm_Date();
+    time(&lastcheck);
 
     for( ;; )
     {
@@ -406,8 +394,8 @@ static void* Manage( void* p_object )
         mutex_cleanup_push( &vlm->lock_manage );
         while( !vlm->input_state_changed && !scheduled_command )
         {
-            if( i_nextschedule )
-                scheduled_command = vlc_cond_timedwait( &vlm->wait_manage, &vlm->lock_manage, i_nextschedule ) != 0;
+            if( nextschedule != 0 )
+                scheduled_command = vlc_cond_timedwait_daytime( &vlm->wait_manage, &vlm->lock_manage, nextschedule ) != 0;
             else
                 vlc_cond_wait( &vlm->wait_manage, &vlm->lock_manage );
         }
@@ -454,38 +442,38 @@ static void* Manage( void* p_object )
         }
 
         /* scheduling */
-        i_time = vlm_Date();
-        i_nextschedule = 0;
+        time(&now);
+        nextschedule = 0;
 
         for( i = 0; i < vlm->i_schedule; i++ )
         {
-            mtime_t i_real_date = vlm->schedule[i]->i_date;
+            time_t real_date = vlm->schedule[i]->date;
 
             if( vlm->schedule[i]->b_enabled )
             {
-                if( vlm->schedule[i]->i_date == 0 ) // now !
+                if( vlm->schedule[i]->date == 0 ) // now !
                 {
-                    vlm->schedule[i]->i_date = (i_time / 1000000) * 1000000 ;
-                    i_real_date = i_time;
+                    vlm->schedule[i]->date = now;
+                    real_date = now;
                 }
-                else if( vlm->schedule[i]->i_period != 0 )
+                else if( vlm->schedule[i]->period != 0 )
                 {
                     int j = 0;
-                    while( vlm->schedule[i]->i_date + j *
-                           vlm->schedule[i]->i_period <= i_lastcheck &&
+                    while( ((vlm->schedule[i]->date + j *
+                             vlm->schedule[i]->period) <= lastcheck) &&
                            ( vlm->schedule[i]->i_repeat > j ||
-                             vlm->schedule[i]->i_repeat == -1 ) )
+                             vlm->schedule[i]->i_repeat < 0 ) )
                     {
                         j++;
                     }
 
-                    i_real_date = vlm->schedule[i]->i_date + j *
-                        vlm->schedule[i]->i_period;
+                    real_date = vlm->schedule[i]->date + j *
+                        vlm->schedule[i]->period;
                 }
 
-                if( i_real_date <= i_time )
+                if( real_date <= now )
                 {
-                    if( i_real_date > i_lastcheck )
+                    if( real_date > lastcheck )
                     {
                         for( j = 0; j < vlm->schedule[i]->i_command; j++ )
                         {
@@ -495,9 +483,9 @@ static void* Manage( void* p_object )
                         }
                     }
                 }
-                else if( i_nextschedule == 0 || i_real_date < i_nextschedule )
+                else if( nextschedule == 0 || real_date < nextschedule )
                 {
-                    i_nextschedule = i_real_date;
+                    nextschedule = real_date;
                 }
             }
         }
@@ -516,7 +504,7 @@ static void* Manage( void* p_object )
             free( psz_command );
         }
 
-        i_lastcheck = i_time;
+        lastcheck = now;
         vlc_mutex_unlock( &vlm->lock );
         vlc_restorecancel (canc);
     }

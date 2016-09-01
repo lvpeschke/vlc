@@ -29,25 +29,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#ifdef HAVE_MMAP
-# include <sys/mman.h>
-# ifndef MAP_ANONYMOUS
-#  define MAP_ANONYMOUS MAP_ANON
-# endif
-#elif !defined(__OS2__)
-# include <errno.h>
-# define MAP_FAILED ((void *)-1)
-# define mmap(a,l,p,f,d,o) \
-     ((void)(a), (void)(l), (void)(d), (void)(o), errno = ENOMEM, MAP_FAILED)
-# define munmap(a,l) \
-     ((void)(a), (void)(l), errno = EINVAL, -1)
-# define sysconf(a) 1
-#endif
-
-#if defined (_WIN32)
-# include <windows.h>
-#endif
-
 #include <vlc_common.h>
 #include <vlc_plugin.h>
 #include <vlc_stream.h>
@@ -82,7 +63,7 @@ struct stream_sys_t
     size_t       seek_threshold;
 };
 
-static int ThreadRead(stream_t *stream, size_t length)
+static void ThreadRead(stream_t *stream, size_t length)
 {
     stream_sys_t *sys = stream->p_sys;
     int canc = vlc_savecancel();
@@ -90,13 +71,16 @@ static int ThreadRead(stream_t *stream, size_t length)
     vlc_mutex_unlock(&sys->lock);
     assert(length > 0);
 
-    char *p = sys->buffer + (sys->buffer_offset % sys->buffer_size)
-                          + sys->buffer_length;
-    ssize_t val = stream_Read(stream->p_source, p, length);
+    size_t offset = (sys->buffer_offset + sys->buffer_length)
+                    % sys->buffer_size;
+    /* Do not step past the sharp edge of the circular buffer */
+    if (offset + length > sys->buffer_size)
+        length = sys->buffer_size - offset;
+    assert(length > 0);
 
-    if (val < 0)
-        msg_Err(stream, "cannot read data (at offset %"PRIu64")",
-                sys->buffer_offset + sys->buffer_length);
+    char *p = sys->buffer + offset;
+    ssize_t val = vlc_stream_ReadPartial(stream->p_source, p, length);
+
     if (val == 0)
         msg_Dbg(stream, "end of stream");
 
@@ -104,7 +88,7 @@ static int ThreadRead(stream_t *stream, size_t length)
     vlc_restorecancel(canc);
 
     if (val < 0)
-        return -1;
+        return;
 
     if (val == 0)
         sys->eof = true;
@@ -113,7 +97,6 @@ static int ThreadRead(stream_t *stream, size_t length)
     sys->buffer_length += val;
     assert(sys->buffer_length <= sys->buffer_size);
     //msg_Dbg(stream, "buffer: %zu/%zu", sys->buffer_length, sys->buffer_size);
-    return 0;
 }
 
 static int ThreadSeek(stream_t *stream, uint64_t seek_offset)
@@ -123,7 +106,7 @@ static int ThreadSeek(stream_t *stream, uint64_t seek_offset)
 
     vlc_mutex_unlock(&sys->lock);
 
-    int val = stream_Seek(stream->p_source, seek_offset);
+    int val = vlc_stream_Seek(stream->p_source, seek_offset);
     if (val != VLC_SUCCESS)
         msg_Err(stream, "cannot seek (to offset %"PRIu64")", seek_offset);
 
@@ -150,7 +133,7 @@ static int ThreadControl(stream_t *stream, int query, ...)
     int ret;
 
     va_start(ap, query);
-    ret = stream_vaControl(stream->p_source, query, ap);
+    ret = vlc_stream_vaControl(stream->p_source, query, ap);
     va_end(ap);
 
     vlc_mutex_lock(&sys->lock);
@@ -258,9 +241,7 @@ static void *Thread(void *data)
         if (unused > sys->read_size)
             unused = sys->read_size;
 
-        if (ThreadRead(stream, unused))
-            break;
-
+        ThreadRead(stream, unused);
         vlc_cond_signal(&sys->wait_data);
     }
     vlc_cleanup_pop();
@@ -304,7 +285,7 @@ static size_t BufferLevel(const stream_t *stream, bool *eof)
 static ssize_t Read(stream_t *stream, void *buf, size_t buflen)
 {
     stream_sys_t *sys = stream->p_sys;
-    size_t copy;
+    size_t copy, offset;
     bool eof;
 
     if (buflen == 0)
@@ -330,7 +311,7 @@ static ssize_t Read(stream_t *stream, void *buf, size_t buflen)
         if (sys->error)
         {
             vlc_mutex_unlock(&sys->lock);
-            return -1;
+            return 0;
         }
 
         vlc_interrupt_forward_start(sys->interrupt, data);
@@ -338,10 +319,14 @@ static ssize_t Read(stream_t *stream, void *buf, size_t buflen)
         vlc_interrupt_forward_stop(data);
     }
 
-    char *p = sys->buffer + (sys->stream_offset % sys->buffer_size);
+    offset = sys->stream_offset % sys->buffer_size;
     if (copy > buflen)
         copy = buflen;
-    memcpy(buf, p, copy);
+    /* Do not step past the sharp edge of the circular buffer */
+    if (offset + copy > sys->buffer_size)
+        copy = sys->buffer_size - offset;
+
+    memcpy(buf, sys->buffer + offset, copy);
     sys->stream_offset += copy;
     vlc_cond_signal(&sys->wait_space);
     vlc_mutex_unlock(&sys->lock);
@@ -426,7 +411,7 @@ static int Open(vlc_object_t *obj)
      * caching/prefetching. Also, prefetching with this module could cause
      * undesirable high load at start-up. Lastly, local files may require
      * support for title/seekpoint and meta control requests. */
-    stream_Control(stream->p_source, STREAM_CAN_FASTSEEK, &fast_seek);
+    vlc_stream_Control(stream->p_source, STREAM_CAN_FASTSEEK, &fast_seek);
     if (fast_seek)
         return VLC_EGENERIC;
 
@@ -434,8 +419,8 @@ static int Open(vlc_object_t *obj)
      * suffer excessive latency to enable a PID. DVB would also require support
      * for the signal level and Conditional Access controls.
      * TODO? For seekable streams, a forced could work around the problem. */
-    if (stream_Control(stream->p_source, STREAM_GET_PRIVATE_ID_STATE, 0,
-                       &(bool){ false }) == VLC_SUCCESS)
+    if (vlc_stream_Control(stream->p_source, STREAM_GET_PRIVATE_ID_STATE, 0,
+                           &(bool){ false }) == VLC_SUCCESS)
         return VLC_EGENERIC;
 
     stream_sys_t *sys = malloc(sizeof (*sys));
@@ -446,14 +431,16 @@ static int Open(vlc_object_t *obj)
     stream->pf_seek = Seek;
     stream->pf_control = Control;
 
-    stream_Control(stream->p_source, STREAM_CAN_SEEK, &sys->can_seek);
-    stream_Control(stream->p_source, STREAM_CAN_PAUSE, &sys->can_pause);
-    stream_Control(stream->p_source, STREAM_CAN_CONTROL_PACE, &sys->can_pace);
-    if (stream_Control(stream->p_source, STREAM_GET_SIZE, &sys->size))
+    vlc_stream_Control(stream->p_source, STREAM_CAN_SEEK, &sys->can_seek);
+    vlc_stream_Control(stream->p_source, STREAM_CAN_PAUSE, &sys->can_pause);
+    vlc_stream_Control(stream->p_source, STREAM_CAN_CONTROL_PACE,
+                       &sys->can_pace);
+    if (vlc_stream_Control(stream->p_source, STREAM_GET_SIZE, &sys->size))
         sys->size = -1;
-    stream_Control(stream->p_source, STREAM_GET_PTS_DELAY, &sys->pts_delay);
-    if (stream_Control(stream->p_source, STREAM_GET_CONTENT_TYPE,
-                       &sys->content_type))
+    vlc_stream_Control(stream->p_source, STREAM_GET_PTS_DELAY,
+                       &sys->pts_delay);
+    if (vlc_stream_Control(stream->p_source, STREAM_GET_CONTENT_TYPE,
+                           &sys->content_type))
         sys->content_type = NULL;
 
     sys->eof = false;
@@ -477,180 +464,9 @@ static int Open(vlc_object_t *obj)
     if (sys->buffer_size < sys->read_size)
         sys->buffer_size = sys->read_size;
 
-#if !defined(_WIN32) && !defined(__OS2__)
-    /* Round up to a multiple of the page size */
-    long page_size = sysconf(_SC_PAGESIZE);
-
-    sys->buffer_size += page_size - 1;
-    sys->buffer_size &= ~(page_size - 1);
-
-    sys->buffer = mmap(NULL, 2 * sys->buffer_size, PROT_NONE,
-                       MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    if (sys->buffer == MAP_FAILED)
-        goto error;
-
-    int fd = vlc_memfd();
-    if (fd == -1)
-        goto error;
-
-    if (ftruncate(fd, sys->buffer_size)
-     || mmap(sys->buffer, sys->buffer_size,
-             PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0) == MAP_FAILED
-     || mmap(sys->buffer + sys->buffer_size, sys->buffer_size,
-             PROT_READ|PROT_WRITE, MAP_SHARED|MAP_FIXED, fd, 0) == MAP_FAILED)
-    {
-        vlc_close(fd);
-        goto error;
-    }
-    vlc_close(fd);
-#elif defined(__OS2__)
-    /* On OS/2 Warp, page size is 4K, but the smallest chunk size is 64K */
-    int page_size = 64 * 1024;
-
-    sys->buffer_size += page_size - 1;
-    sys->buffer_size &= ~(page_size - 1);
-    sys->buffer = NULL;
-
-    char *buffer;
-
-    if (DosAllocMem(&buffer, 2 * sys->buffer_size, fALLOC))
-        goto error;
-
-    struct buffer_list
-    {
-        char *buffer;
-        struct buffer_list *next;
-    } *buffer_list_start = NULL;
-
-    for (;;)
-    {
-        char *buf;
-        if (DosAllocMem(&buf, sys->buffer_size, fPERM | OBJ_TILE))
-            break;
-
-        struct buffer_list *new_buffer = calloc(1, sizeof(*new_buffer));
-
-        if (!new_buffer)
-        {
-            DosFreeMem(buf);
-            break;
-        }
-
-        new_buffer->buffer = buf;
-        new_buffer->next = buffer_list_start;
-
-        buffer_list_start = new_buffer;
-
-        if (buf > buffer)
-        {
-            /* Disable thread switching */
-            DosEnterCritSec();
-
-            char *addr = buffer;
-
-            DosFreeMem(buffer);
-            buffer = NULL;
-
-            if (DosAllocMem(&buf, sys->buffer_size, fALLOC))
-                goto exitcritsec;
-
-            /* Was hole ? */
-            if (buf < addr)
-            {
-                DosFreeMem(buf);
-                buf = NULL;
-
-                char *tmp;
-
-                /* Try to fill the hole out */
-                if (DosAllocMem(&tmp, addr - buf, fALLOC))
-                    goto exitcritsec;
-
-                DosAllocMem(&buf, sys->buffer_size, fALLOC);
-
-                DosFreeMem(tmp);
-            }
-
-            if (buf != addr)
-            {
-                DosFreeMem(buf);
-                goto exitcritsec;
-            }
-
-            char *alias = NULL;
-
-            if (!DosAliasMem(buf, sys->buffer_size, &alias, 0)
-             && alias == buf + sys->buffer_size)
-                sys->buffer = addr;
-            else
-            {
-                DosFreeMem(buf);
-                DosFreeMem(alias);
-            }
-
-exitcritsec:
-            /* Enable thread switching */
-            DosExitCritSec();
-            break;
-        }
-    }
-
-    DosFreeMem(buffer);
-
-    for (struct buffer_list *l = buffer_list_start, *next; l; l = next)
-    {
-        next = l->next;
-
-        DosFreeMem(l->buffer);
-        free(l);
-    }
-
+    sys->buffer = malloc(sys->buffer_size);
     if (sys->buffer == NULL)
         goto error;
-#else
-    SYSTEM_INFO info;
-    GetSystemInfo(&info);
-
-    sys->buffer_size += info.dwPageSize - 1;
-    sys->buffer_size &= ~(info.dwPageSize - 1);
-    sys->buffer = NULL;
-
-    HANDLE map = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                                   0, sys->buffer_size, NULL);
-    if (map == NULL)
-        goto error;
-
-    for (;;)
-    {
-        char *buffer = VirtualAlloc(NULL, 2 * sys->buffer_size, MEM_RESERVE,
-                                    PAGE_NOACCESS);
-        if (buffer == NULL)
-            break;
-
-        VirtualFree(buffer, 2 * sys->buffer_size, MEM_RELEASE);
-
-        char *a = MapViewOfFileEx(map, FILE_MAP_ALL_ACCESS, 0, 0,
-                                  sys->buffer_size, buffer);
-        char *b = MapViewOfFileEx(map, FILE_MAP_ALL_ACCESS, 0, 0,
-                                  sys->buffer_size, buffer + sys->buffer_size);
-
-        if (a == buffer && b == buffer + sys->buffer_size)
-        {
-            sys->buffer = buffer;
-            break;
-        }
-        if (b != NULL)
-            UnmapViewOfFile(b);
-        if (a != NULL)
-            UnmapViewOfFile(a);
-        if (a == NULL || b == NULL)
-            break; /* ENOMEM */
-    }
-
-    CloseHandle(map);
-    if (sys->buffer == NULL)
-        goto error;
-#endif /* _WIN32 */
 
     sys->interrupt = vlc_interrupt_create();
     if (unlikely(sys->interrupt == NULL))
@@ -679,22 +495,8 @@ exitcritsec:
     return VLC_SUCCESS;
 
 error:
-#if !defined(_WIN32) && !defined(__OS2__)
-    if (sys->buffer != MAP_FAILED)
-        munmap(sys->buffer, 2 * sys->buffer_size);
-#elif defined(__OS2__)
-    if (sys->buffer != NULL)
-    {
-        DosFreeMem(sys->buffer + sys->buffer_size);
-        DosFreeMem(sys->buffer);
-    }
-#else
-    if (sys->buffer != NULL)
-    {
-        UnmapViewOfFile(sys->buffer + sys->buffer_size);
-        UnmapViewOfFile(sys->buffer);
-    }
-#endif
+    free(sys->buffer);
+    free(sys->content_type);
     free(sys);
     return VLC_ENOMEM;
 }
@@ -716,15 +518,7 @@ static void Close (vlc_object_t *obj)
     vlc_cond_destroy(&sys->wait_data);
     vlc_mutex_destroy(&sys->lock);
 
-#if !defined(_WIN32) && !defined(__OS2__)
-    munmap(sys->buffer, 2 * sys->buffer_size);
-#elif defined(__OS2__)
-    DosFreeMem(sys->buffer + sys->buffer_size);
-    DosFreeMem(sys->buffer);
-#else
-    UnmapViewOfFile(sys->buffer + sys->buffer_size);
-    UnmapViewOfFile(sys->buffer);
-#endif
+    free(sys->buffer);
     free(sys->content_type);
     free(sys);
 }

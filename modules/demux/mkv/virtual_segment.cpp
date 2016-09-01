@@ -541,13 +541,8 @@ void virtual_segment_c::Seek( demux_t & demuxer, mtime_t i_mk_date,
 
             seek_callback_t pf_seek = &matroska_segment_c::Seek;
 
-#if 0
-            /* disabled due to non-existing implementation */
             if( ! b_precise )
                 pf_seek = &matroska_segment_c::FastSeek;
-#else
-            VLC_UNUSED( b_precise );
-#endif
 
             p_current_vchapter = p_vchapter;
 
@@ -595,24 +590,23 @@ int virtual_chapter_c::PublishChapters( input_title_t & title, int & i_user_chap
 
     if ( ( p_chapter && p_chapter->b_display_seekpoint &&
          ( ( sub_vchapters.size() > 0 && i_mk_virtual_start_time != sub_vchapters[0]->i_mk_virtual_start_time) ||
-           sub_vchapters.size() == 0 ) ) || !p_chapter )
+           sub_vchapters.size() == 0 ) ) )
     {
-        seekpoint_t *sk = vlc_seekpoint_New();
+        if( p_chapter->b_user_display )
+        {
+            seekpoint_t *sk = vlc_seekpoint_New();
 
-        sk->i_time_offset = i_mk_virtual_start_time;
-        if( p_chapter )
+            sk->i_time_offset = i_mk_virtual_start_time;
             sk->psz_name = strdup( p_chapter->psz_name.c_str() );
-        else
-            sk->psz_name = strdup("dummy chapter");
 
-        /* A start time of '0' is ok. A missing ChapterTime element is ok, too, because '0' is its default value. */
-        title.i_seekpoint++;
-        title.seekpoint = (seekpoint_t**)xrealloc( title.seekpoint,
-                                 title.i_seekpoint * sizeof( seekpoint_t* ) );
-        title.seekpoint[title.i_seekpoint-1] = sk;
+            /* A start time of '0' is ok. A missing ChapterTime element is ok, too, because '0' is its default value. */
+            title.i_seekpoint++;
+            title.seekpoint = (seekpoint_t**)xrealloc( title.seekpoint,
+              title.i_seekpoint * sizeof( seekpoint_t* ) );
+            title.seekpoint[title.i_seekpoint-1] = sk;
 
-        if ( (p_chapter && p_chapter->b_user_display ) ||  !p_chapter )
             i_user_chapters++;
+        }
     }
     i_seekpoint_num = i_user_chapters;
 

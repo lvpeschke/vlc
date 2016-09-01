@@ -109,7 +109,7 @@ vlc_module_end ()
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
-static ssize_t Read( access_t *, uint8_t *, size_t );
+static ssize_t Read( access_t *, void *, size_t );
 static int Seek( access_t *, uint64_t );
 static int Control( access_t *, int, va_list );
 static int DirRead( access_t *, input_item_node_t * );
@@ -127,6 +127,7 @@ typedef struct ftp_features_t
 {
     bool b_unicode;
     bool b_authtls;
+    bool b_mlst;
 } ftp_features_t;
 
 enum tls_mode_e
@@ -522,6 +523,9 @@ static void FeaturesCheck( void *opaque, const char *feature )
     else
     if( strcasestr( feature, "AUTH TLS" ) != NULL )
         features->b_authtls = true;
+
+    if( strcasestr( feature, "MLST" ) != NULL )
+        features->b_mlst = true;
 }
 
 static const char *IsASCII( const char *str )
@@ -645,7 +649,6 @@ static int InOpen( vlc_object_t *p_this )
     bool          b_directory = false;
 
     /* Init p_access */
-    access_InitFields( p_access );
     p_sys = p_access->p_sys = (access_sys_t*)calloc( 1, sizeof( access_sys_t ) );
     if( !p_sys )
         return VLC_ENOMEM;
@@ -654,17 +657,17 @@ static int InOpen( vlc_object_t *p_this )
     p_sys->offset = 0;
     p_sys->size = UINT64_MAX;
 
-    if( readTLSMode( p_this, p_sys, p_access->psz_access ) )
+    if( readTLSMode( p_this, p_sys, p_access->psz_name ) )
         goto exit_error;
 
-    if( parseURL( &p_sys->url, p_access->psz_location, p_sys->tlsmode ) )
+    if( parseURL( &p_sys->url, p_access->psz_url, p_sys->tlsmode ) )
         goto exit_error;
 
     if( Connect( p_this, p_sys ) )
         goto exit_error;
 
     /* get size */
-    if( p_sys->url.psz_path == NULL )
+    if( p_sys->url.psz_path == NULL || !*p_sys->url.psz_path )
         b_directory = true;
     else
     if( ftp_SendCommand( p_this, p_sys, "SIZE %s", p_sys->url.psz_path ) < 0 )
@@ -829,7 +832,6 @@ static int Seek( access_t *p_access, uint64_t i_pos )
     if( val )
         return val;
 
-    p_access->info.b_eof = false;
     p_sys->offset = i_pos;
 
     return VLC_SUCCESS;
@@ -845,7 +847,7 @@ static int OutSeek( sout_access_out_t *p_access, off_t i_pos )
 /*****************************************************************************
  * Read:
  *****************************************************************************/
-static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
+static ssize_t Read( access_t *p_access, void *p_buffer, size_t i_len )
 {
     access_sys_t *p_sys = p_access->p_sys;
     int i_read;
@@ -853,22 +855,17 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
     assert( p_sys->data.fd != -1 );
     assert( !p_sys->out );
 
-    if( p_access->info.b_eof )
-        return 0;
-
     if( p_sys->data.p_tls != NULL )
         i_read = vlc_tls_Read( p_sys->data.p_tls, p_buffer, i_len, false );
     else
         i_read = vlc_recv_i11e( p_sys->data.fd, p_buffer, i_len, 0 );
 
-    if( i_read > 0 )
+    if( i_read >= 0 )
         p_sys->offset += i_read;
-    else if( i_read == 0 )
-        p_access->info.b_eof = true;
     else if( errno != EINTR && errno != EAGAIN )
     {
         msg_Err( p_access, "receive error: %s", vlc_strerror_c(errno) );
-        p_access->info.b_eof = true;
+        i_read = 0;
     }
 
     return i_read;
@@ -890,7 +887,8 @@ static int DirRead (access_t *p_access, input_item_node_t *p_current_node)
 
     while (i_ret == VLC_SUCCESS)
     {
-        char *psz_line;
+        char *psz_line, *psz_file;
+        int type = ITEM_TYPE_UNKNOWN;
         if( p_sys->data.p_tls != NULL )
             psz_line = vlc_tls_GetLine( p_sys->data.p_tls );
         else
@@ -899,19 +897,44 @@ static int DirRead (access_t *p_access, input_item_node_t *p_current_node)
         if( psz_line == NULL )
             break;
 
+        if( p_sys->features.b_mlst )
+        {
+            /* MLST Format is key=val;key=val...; FILENAME */
+            if( strstr( psz_line, "type=dir" ) )
+                type = ITEM_TYPE_DIRECTORY;
+            if( strstr( psz_line, "type=file" ) )
+                type = ITEM_TYPE_FILE;
+
+            /* Get the filename or fail */
+            psz_file = strchr( psz_line, ' ' );
+            if( psz_file )
+                psz_file++;
+            else
+            {
+                msg_Warn( p_access, "Empty filename in MLST list" );
+                free( psz_line );
+                continue;
+            }
+        }
+        else
+            psz_file = psz_line;
+
         char *psz_uri;
-        if( asprintf( &psz_uri, "%s://%s:%d%s%s/%s",
+        char *psz_filename = vlc_uri_encode( psz_file );
+        if( psz_filename != NULL &&
+            asprintf( &psz_uri, "%s://%s:%d%s%s/%s",
                       ( p_sys->tlsmode == NONE ) ? "ftp" :
                       ( ( p_sys->tlsmode == IMPLICIT ) ? "ftps" : "ftpes" ),
                       p_sys->url.psz_host, p_sys->url.i_port,
                       p_sys->url.psz_path ? "/" : "",
                       p_sys->url.psz_path ? p_sys->url.psz_path : "",
-                      psz_line ) != -1 )
+                      psz_filename ) != -1 )
         {
-            i_ret = access_fsdir_additem( &fsdir, psz_uri, psz_line,
-                                          ITEM_TYPE_UNKNOWN, ITEM_NET );
+            i_ret = access_fsdir_additem( &fsdir, psz_uri, psz_file,
+                                          type, ITEM_NET );
             free( psz_uri );
         }
+        free( psz_filename );
         free( psz_line );
     }
 
@@ -923,7 +946,7 @@ static int DirControl( access_t *p_access, int i_query, va_list args )
 {
     switch( i_query )
     {
-    case ACCESS_IS_DIRECTORY:
+    case STREAM_IS_DIRECTORY:
         *va_arg( args, bool * ) = true; /* might loop */
         break;
     default:
@@ -968,43 +991,44 @@ static ssize_t Write( sout_access_out_t *p_access, block_t *p_buffer )
  *****************************************************************************/
 static int Control( access_t *p_access, int i_query, va_list args )
 {
+    access_sys_t *sys = p_access->p_sys;
     bool    *pb_bool;
     int64_t *pi_64;
 
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
+        case STREAM_CAN_SEEK:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;
             break;
-        case ACCESS_CAN_FASTSEEK:
+        case STREAM_CAN_FASTSEEK:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = false;
             break;
-        case ACCESS_CAN_PAUSE:
+        case STREAM_CAN_PAUSE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;    /* FIXME */
             break;
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;    /* FIXME */
             break;
-        case ACCESS_GET_SIZE:
-            if( p_access->p_sys->size == UINT64_MAX )
+        case STREAM_GET_SIZE:
+            if( sys->size == UINT64_MAX )
                 return VLC_EGENERIC;
-            *va_arg( args, uint64_t * ) = p_access->p_sys->size;
+            *va_arg( args, uint64_t * ) = sys->size;
             break;
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg( args, int64_t * );
             *pi_64 = INT64_C(1000)
                    * var_InheritInteger( p_access, "network-caching" );
             break;
 
-        case ACCESS_SET_PAUSE_STATE:
+        case STREAM_SET_PAUSE_STATE:
             pb_bool = (bool*)va_arg( args, bool* );
             if ( !pb_bool )
-                 return Seek( p_access, p_access->p_sys->offset );
+                 return Seek( p_access, sys->offset );
             break;
 
         default:
@@ -1101,6 +1125,14 @@ static int ftp_StartStream( vlc_object_t *p_access, access_sys_t *p_sys,
 
     if( b_directory )
     {
+        if( p_sys->features.b_mlst &&
+            ftp_SendCommand( p_access, p_sys, "MLSD" ) >= 0 &&
+            ftp_RecvCommand( p_access, p_sys, NULL, &psz_arg ) <= 2 )
+        {
+            msg_Dbg( p_access, "Using MLST extension to list" );
+        }
+        else
+
         if( ftp_SendCommand( p_access, p_sys, "NLST" ) < 0 ||
             ftp_RecvCommand( p_access, p_sys, NULL, &psz_arg ) > 2 )
         {

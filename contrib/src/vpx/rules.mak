@@ -1,7 +1,12 @@
 # libvpx
 
-VPX_VERSION := 1.4.0
+VPX_VERSION := 1.6.0
 VPX_URL := http://storage.googleapis.com/downloads.webmproject.org/releases/webm/libvpx-$(VPX_VERSION).tar.bz2
+
+PKGS += vpx
+ifeq ($(call need_pkg,"vpx"),)
+PKGS_FOUND += vpx
+endif
 
 $(TARBALLS)/libvpx-$(VPX_VERSION).tar.bz2:
 	$(call download,$(VPX_URL))
@@ -10,8 +15,6 @@ $(TARBALLS)/libvpx-$(VPX_VERSION).tar.bz2:
 
 libvpx: libvpx-$(VPX_VERSION).tar.bz2 .sum-vpx
 	$(UNPACK)
-	$(APPLY) $(SRC)/vpx/libvpx-sysroot.patch
-	$(APPLY) $(SRC)/vpx/libvpx-no-cross.patch
 	$(APPLY) $(SRC)/vpx/libvpx-mac.patch
 	$(APPLY) $(SRC)/vpx/libvpx-ios.patch
 	$(APPLY) $(SRC)/vpx/libvpx-arm.patch
@@ -85,7 +88,7 @@ VPX_CONF := \
 	--disable-dependency-tracking
 
 ifndef BUILD_ENCODERS
-	VPX_CONF += --disable-vp8-encoder --disable-vp9-encoder
+VPX_CONF += --disable-vp8-encoder --disable-vp9-encoder
 endif
 
 ifndef HAVE_WIN32
@@ -110,9 +113,11 @@ endif
 ifdef HAVE_ANDROID
 # vpx configure.sh overrides our sysroot and it looks for it itself, and
 # uses that path to look for the compiler (which we already know)
-VPX_CONF += --sdk-path=$(shell dirname $(shell which $(HOST)-gcc))
-# put sysroot
-VPX_CONF += --libc=$(ANDROID_NDK)/platforms/$(ANDROID_API)/arch-$(PLATFORM_SHORT_ARCH)
+VPX_CONF += --sdk-path=$(shell dirname $(shell which $(HOST)-clang))
+# broken text relocations
+ifeq ($(ARCH),x86_64)
+VPX_CONF += --disable-mmx
+endif
 endif
 
 ifndef WITH_OPTIMIZATION

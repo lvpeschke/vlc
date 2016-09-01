@@ -80,7 +80,7 @@ vlc_module_end ()
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
-static ssize_t Read( access_t *, uint8_t *, size_t );
+static ssize_t Read( access_t *, void *, size_t );
 static int Seek( access_t *, uint64_t );
 static int Control( access_t *, int, va_list );
 #ifndef _WIN32
@@ -225,7 +225,6 @@ static int Open( vlc_object_t *p_this )
     free( psz_decoded_path );
 
     /* Init p_access */
-    access_InitFields( p_access );
     p_sys =
     p_access->p_sys = (access_sys_t*)calloc( 1, sizeof( access_sys_t ) );
     if( !p_sys )
@@ -312,30 +311,23 @@ static int Seek( access_t *p_access, uint64_t i_pos )
         return VLC_EGENERIC;
     }
 
-    p_access->info.b_eof = false;
-
     return VLC_SUCCESS;
 }
 
 /*****************************************************************************
  * Read:
  *****************************************************************************/
-static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
+static ssize_t Read( access_t *p_access, void *p_buffer, size_t i_len )
 {
     access_sys_t *p_sys = p_access->p_sys;
     int i_read;
-
-    if( p_access->info.b_eof ) return 0;
 
     i_read = smbc_read( p_sys->i_smb, p_buffer, i_len );
     if( i_read < 0 )
     {
         msg_Err( p_access, "read failed (%s)", vlc_strerror_c(errno) );
-        p_access->info.b_eof = true;
-        return -1;
+        i_read = 0;
     }
-
-    if( i_read == 0 ) p_access->info.b_eof = true;
 
     return i_read;
 }
@@ -412,7 +404,7 @@ static int DirControl( access_t *p_access, int i_query, va_list args )
 {
     switch( i_query )
     {
-    case ACCESS_IS_DIRECTORY:
+    case STREAM_IS_DIRECTORY:
         *va_arg( args, bool * ) = true; /* might loop */
         break;
     default:
@@ -428,30 +420,32 @@ static int DirControl( access_t *p_access, int i_query, va_list args )
  *****************************************************************************/
 static int Control( access_t *p_access, int i_query, va_list args )
 {
+    access_sys_t *sys = p_access->p_sys;
+
     switch( i_query )
     {
-    case ACCESS_CAN_SEEK:
-    case ACCESS_CAN_PAUSE:
-    case ACCESS_CAN_CONTROL_PACE:
+    case STREAM_CAN_SEEK:
+    case STREAM_CAN_PAUSE:
+    case STREAM_CAN_CONTROL_PACE:
         *va_arg( args, bool* ) = true;
         break;
 
-    case ACCESS_CAN_FASTSEEK:
+    case STREAM_CAN_FASTSEEK:
         *va_arg( args, bool* ) = false;
         break;
 
-    case ACCESS_GET_SIZE:
+    case STREAM_GET_SIZE:
         if( p_access->pf_readdir != NULL )
             return VLC_EGENERIC;
-        *va_arg( args, uint64_t * ) = p_access->p_sys->size;
+        *va_arg( args, uint64_t * ) = sys->size;
         break;
 
-    case ACCESS_GET_PTS_DELAY:
+    case STREAM_GET_PTS_DELAY:
         *va_arg( args, int64_t * ) = INT64_C(1000)
             * var_InheritInteger( p_access, "network-caching" );
         break;
 
-    case ACCESS_SET_PAUSE_STATE:
+    case STREAM_SET_PAUSE_STATE:
         /* Nothing to do */
         break;
 

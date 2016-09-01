@@ -702,33 +702,39 @@ void hevc_rbsp_release_vps( hevc_video_parameter_set_t *p_vps )
 IMPL_hevc_generic_decode( hevc_decode_vps, hevc_video_parameter_set_t,
                           hevc_parse_video_parameter_set_rbsp, hevc_rbsp_release_vps )
 
-static bool hevc_parse_st_ref_pic_set( bs_t *p_bs, unsigned idx,
+static bool hevc_parse_st_ref_pic_set( bs_t *p_bs, unsigned stRpsIdx,
                                        unsigned num_short_term_ref_pic_sets,
                                        hevc_short_term_ref_pic_set_t *p_sets )
 {
-    if( idx && bs_read1( p_bs ) ) /* Interref pic set prediction flag */
+    if( stRpsIdx && bs_read1( p_bs ) ) /* Interref pic set prediction flag */
     {
         nal_ue_t delta_idx_minus_1 = 0;
-        if( idx == num_short_term_ref_pic_sets )
+        if( stRpsIdx == num_short_term_ref_pic_sets )
         {
             delta_idx_minus_1 = bs_read_ue( p_bs );
-            if( delta_idx_minus_1 >= idx )
+            if( delta_idx_minus_1 >= stRpsIdx )
                 return false;
         }
-        if(delta_idx_minus_1 == idx)
+        if(delta_idx_minus_1 == stRpsIdx)
             return false;
 
         nal_u1_t delta_rps_sign = bs_read1( p_bs );
         nal_ue_t abs_delta_rps_minus1 = bs_read_ue( p_bs );
-        unsigned RefRpsIdx = idx - delta_idx_minus_1 - 1;
+        unsigned RefRpsIdx = stRpsIdx - delta_idx_minus_1 - 1;
         int deltaRps = ( 1 - ( delta_rps_sign << 1 ) ) * ( abs_delta_rps_minus1 + 1 );
         VLC_UNUSED(deltaRps);
 
         unsigned numDeltaPocs = p_sets[RefRpsIdx].num_delta_pocs;
+        p_sets[stRpsIdx].num_delta_pocs = 0;
         for( unsigned j=0; j<= numDeltaPocs; j++ )
         {
-            if( !bs_read1( p_bs ) ) /* used_by_curr_pic_flag */
-                (void) bs_read1( p_bs ); /* use_delta_flag */
+            if( ! bs_read1( p_bs ) ) /* used_by_curr_pic_flag */
+            {
+                if( bs_read1( p_bs ) ) /* use_delta_flag */
+                    p_sets[stRpsIdx].num_delta_pocs++;
+            }
+            else
+                p_sets[stRpsIdx].num_delta_pocs++;
         }
     }
     else
@@ -745,7 +751,7 @@ static bool hevc_parse_st_ref_pic_set( bs_t *p_bs, unsigned idx,
             (void) bs_read_ue( p_bs ); /* delta_poc_s1_minus1 */
             (void) bs_read1( p_bs ); /* used_by_current_pic_s1_flag */
         }
-        p_sets[idx].num_delta_pocs = num_positive_pics + num_negative_pics;
+        p_sets[stRpsIdx].num_delta_pocs = num_positive_pics + num_negative_pics;
     }
 
     return true;
@@ -987,6 +993,28 @@ void hevc_rbsp_release_pps( hevc_picture_parameter_set_t *p_pps )
 IMPL_hevc_generic_decode( hevc_decode_pps, hevc_picture_parameter_set_t,
                           hevc_parse_pic_parameter_set_rbsp, hevc_rbsp_release_pps )
 
+uint8_t hevc_get_sps_vps_id( const hevc_sequence_parameter_set_t *p_sps )
+{
+    return p_sps->sps_video_parameter_set_id;
+}
+
+uint8_t hevc_get_pps_sps_id( const hevc_picture_parameter_set_t *p_pps )
+{
+    return p_pps->pps_seq_parameter_set_id;
+}
+
+bool hevc_get_sps_profile_tier_level( const hevc_sequence_parameter_set_t *p_sps,
+                                      uint8_t *pi_profile, uint8_t *pi_level)
+{
+    if(p_sps->profile_tier_level.general.profile_idc)
+    {
+        *pi_profile = p_sps->profile_tier_level.general.profile_idc;
+        *pi_level = p_sps->profile_tier_level.general_level_idc;
+        return true;
+    }
+    return false;
+}
+
 bool hevc_get_picture_size( const hevc_sequence_parameter_set_t *p_sps,
                             unsigned *p_w, unsigned *p_h, unsigned *p_vw, unsigned *p_vh )
 {
@@ -1172,4 +1200,24 @@ bool hevc_get_slice_type( const hevc_slice_segment_header_t *p_sli, enum hevc_sl
         return true;
     }
     return false;
+}
+
+bool hevc_get_profile_level(const es_format_t *p_fmt, uint8_t *pi_profile,
+                            uint8_t *pi_level, uint8_t *pi_nal_length_size)
+{
+    const uint8_t *p = (const uint8_t*)p_fmt->p_extra;
+    if(p_fmt->i_extra < 23 || p[0] != 1)
+        return false;
+
+    /* HEVCDecoderConfigurationRecord */
+    if(pi_profile)
+        *pi_profile = p[1] & 0x1F;
+
+    if(pi_level)
+        *pi_level = p[12];
+
+    if (pi_nal_length_size)
+        *pi_nal_length_size = 1 + (p[21]&0x03);
+
+    return true;
 }

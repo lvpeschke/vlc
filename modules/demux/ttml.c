@@ -159,15 +159,14 @@ static int Control( demux_t* p_demux, int i_query, va_list args )
 
 static int Convert_time( int64_t *timing_value, const char *s )
 {
-    int h1, m1, s1, d1 = 0;
-    //char *sec = "";
+    int h1 = 0;
+    int m1 = 0;
+    int s1 = 0;
+    int d1 = 0;
 
-    if ( sscanf( s, "%d:%d:%d,%d",
-                 &h1, &m1, &s1, &d1 ) == 4 ||
-         sscanf( s, "%d:%d:%d.%d",
-                 &h1, &m1, &s1, &d1 ) == 4 ||
-         sscanf( s, "%d:%d:%d",
-                 &h1, &m1, &s1) == 3 )
+    if ( sscanf( s, "%d.%ds", &s1, &d1) == 2 ||
+         sscanf( s, "%d:%d:%d%*[,.]%d", &h1, &m1, &s1, &d1 ) == 4 ||
+         sscanf( s, "%d:%d:%d", &h1, &m1, &s1) == 3 )
     {
         (*timing_value) = ( (int64_t)h1 * 3600 * 1000 +
                             (int64_t)m1 * 60 * 1000 +
@@ -381,9 +380,9 @@ static void ParseHead( demux_t* p_demux )
     ssize_t i_read;
 
     // Rewind since the XML parser will have consumed the entire file.
-    stream_Seek( p_demux->s, 0 );
+    vlc_stream_Seek( p_demux->s, 0 );
 
-    while ( ( i_read = stream_Read( p_demux->s, (void*)buff, 1024 ) ) > 0 )
+    while ( ( i_read = vlc_stream_Read( p_demux->s, (void*)buff, 1024 ) ) > 0 )
     {
         ssize_t i_offset = -1;
         // Ensure we can use strstr
@@ -467,7 +466,7 @@ static int Open( vlc_object_t* p_this )
         return VLC_ENOMEM;
 
     uint8_t *p_peek;
-    ssize_t i_peek = stream_Peek( p_demux->s, (const uint8_t **) &p_peek, 2048 );
+    ssize_t i_peek = vlc_stream_Peek( p_demux->s, (const uint8_t **) &p_peek, 2048 );
 
     if( unlikely( i_peek <= 0 ) )
     {
@@ -475,7 +474,7 @@ static int Open( vlc_object_t* p_this )
         return VLC_EGENERIC;
     }
 
-    stream_t *p_probestream = stream_MemoryNew( p_demux->s, p_peek, i_peek, true );
+    stream_t *p_probestream = vlc_stream_MemoryNew( p_demux->s, p_peek, i_peek, true );
     if( unlikely( !p_probestream ) )
     {
         Close( p_demux );
@@ -486,31 +485,31 @@ static int Open( vlc_object_t* p_this )
     if ( !p_sys->p_xml )
     {
         Close( p_demux );
-        stream_Delete( p_probestream );
+        vlc_stream_Delete( p_probestream );
         return VLC_EGENERIC;
     }
     p_sys->p_reader = xml_ReaderCreate( p_sys->p_xml, p_probestream );
     if ( !p_sys->p_reader )
     {
         Close( p_demux );
-        stream_Delete( p_probestream );
+        vlc_stream_Delete( p_probestream );
         return VLC_EGENERIC;
     }
 
-    const int i_flags = p_sys->p_reader->i_flags;
-    p_sys->p_reader->i_flags |= OBJECT_FLAGS_QUIET;
+    const int i_flags = p_sys->p_reader->obj.flags;
+    p_sys->p_reader->obj.flags |= OBJECT_FLAGS_QUIET;
     const char* psz_name;
     int i_type = xml_ReaderNextNode( p_sys->p_reader, &psz_name );
-    p_sys->p_reader->i_flags = i_flags;
+    p_sys->p_reader->obj.flags = i_flags;
     if ( i_type != XML_READER_STARTELEM || ( strcmp( psz_name, "tt" ) && strcmp( psz_name, "tt:tt" ) ) )
     {
         Close( p_demux );
-        stream_Delete( p_probestream );
+        vlc_stream_Delete( p_probestream );
         return VLC_EGENERIC;
     }
 
     p_sys->p_reader = xml_ReaderReset( p_sys->p_reader, p_demux->s );
-    stream_Delete( p_probestream );
+    vlc_stream_Delete( p_probestream );
     if ( !p_sys->p_reader )
     {
         Close( p_demux );

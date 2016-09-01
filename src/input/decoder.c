@@ -54,6 +54,16 @@
 
 #include "../video_output/vout_control.h"
 
+/*
+ * Possibles values set in p_owner->reload atomic
+ */
+enum reload
+{
+    RELOAD_NO_REQUEST,
+    RELOAD_DECODER,     /* Reload the decoder module */
+    RELOAD_DECODER_AOUT /* Stop the aout and reload the decoder module */
+};
+
 struct decoder_owner_sys_t
 {
     input_thread_t  *p_input;
@@ -80,6 +90,7 @@ struct decoder_owner_sys_t
     /* */
     bool           b_fmt_description;
     vlc_meta_t     *p_description;
+    atomic_int     reload;
 
     /* fifo */
     block_fifo_t *p_fifo;
@@ -188,6 +199,47 @@ static void UnloadDecoder( decoder_t *p_dec )
     es_format_Clean( &p_dec->fmt_in );
     es_format_Clean( &p_dec->fmt_out );
     p_dec->b_error = false;
+}
+
+static int ReloadDecoder( decoder_t *p_dec, bool b_packetizer,
+                          const es_format_t *restrict p_fmt, enum reload reload )
+{
+    /* Copy p_fmt since it can be destroyed by UnloadDecoder */
+    es_format_t fmt_in;
+    es_format_Init( &fmt_in, UNKNOWN_ES, 0 );
+    if( es_format_Copy( &fmt_in, p_fmt ) != VLC_SUCCESS )
+    {
+        p_dec->b_error = true;
+        return VLC_EGENERIC;
+    }
+
+    /* Restart the decoder module */
+    UnloadDecoder( p_dec );
+
+    if( reload == RELOAD_DECODER_AOUT )
+    {
+        decoder_owner_sys_t *p_owner = p_dec->p_owner;
+        assert( p_owner->fmt.i_cat == AUDIO_ES );
+        audio_output_t *p_aout = p_owner->p_aout;
+
+        vlc_mutex_lock( &p_owner->lock );
+        p_owner->p_aout = NULL;
+        vlc_mutex_unlock( &p_owner->lock );
+        if( p_aout )
+        {
+            aout_DecDelete( p_aout );
+            input_resource_PutAout( p_owner->p_resource, p_aout );
+        }
+    }
+
+    if( LoadDecoder( p_dec, b_packetizer, &fmt_in ) )
+    {
+        p_dec->b_error = true;
+        es_format_Clean( &fmt_in );
+        return VLC_EGENERIC;
+    }
+    es_format_Clean( &fmt_in );
+    return VLC_SUCCESS;
 }
 
 static void DecoderUpdateFormatLocked( decoder_t *p_dec )
@@ -302,7 +354,6 @@ static int aout_update_format( decoder_t *p_dec )
         if( p_aout == NULL )
         {
             msg_Err( p_dec, "failed to create audio output" );
-            p_dec->b_error = true;
             return -1;
         }
 
@@ -328,7 +379,8 @@ static int vout_update_format( decoder_t *p_dec )
      || p_dec->fmt_out.i_codec != p_owner->fmt.video.i_chroma
      || (int64_t)p_dec->fmt_out.video.i_sar_num * p_owner->fmt.video.i_sar_den !=
         (int64_t)p_dec->fmt_out.video.i_sar_den * p_owner->fmt.video.i_sar_num ||
-        p_dec->fmt_out.video.orientation != p_owner->fmt.video.orientation )
+        p_dec->fmt_out.video.orientation != p_owner->fmt.video.orientation ||
+        p_dec->fmt_out.video.multiview_mode != p_owner->fmt.video.multiview_mode )
     {
         vout_thread_t *p_vout;
 
@@ -563,6 +615,14 @@ subpicture_t *decoder_NewSubpicture( decoder_t *p_decoder,
     if( !p_subpicture )
         msg_Warn( p_decoder, "can't get output subpicture" );
     return p_subpicture;
+}
+
+void decoder_RequestReload( decoder_t * p_dec )
+{
+    decoder_owner_sys_t *p_owner = p_dec->p_owner;
+    /* Don't override reload if it's RELOAD_DECODER_AOUT */
+    int expected = RELOAD_NO_REQUEST;
+    atomic_compare_exchange_strong( &p_owner->reload, &expected, RELOAD_DECODER );
 }
 
 /* decoder_GetInputAttachments:
@@ -1006,11 +1066,10 @@ static void DecoderProcessVideo( decoder_t *p_dec, block_t *p_block )
 
                 /* Drain the decoder module */
                 DecoderDecodeVideo( p_dec, NULL );
-                /* Restart the decoder module */
-                UnloadDecoder( p_dec );
-                if( LoadDecoder( p_dec, false, &p_packetizer->fmt_out ) )
+
+                if( ReloadDecoder( p_dec, false, &p_packetizer->fmt_out,
+                                   RELOAD_DECODER ) != VLC_SUCCESS )
                 {
-                    p_dec->b_error = true;
                     block_ChainRelease( p_packetized_block );
                     return;
                 }
@@ -1025,6 +1084,11 @@ static void DecoderProcessVideo( decoder_t *p_dec, block_t *p_block )
                 p_packetized_block->p_next = NULL;
 
                 DecoderDecodeVideo( p_dec, p_packetized_block );
+                if( p_dec->b_error )
+                {
+                    block_ChainRelease( p_next );
+                    return;
+                }
 
                 p_packetized_block = p_next;
             }
@@ -1099,7 +1163,19 @@ static int DecoderPlayAudio( decoder_t *p_dec, block_t *p_audio,
      && i_rate <= INPUT_RATE_DEFAULT*AOUT_MAX_INPUT_RATE
      && !DecoderTimedWait( p_dec, p_audio->i_pts - AOUT_MAX_PREPARE_TIME ) )
     {
-        aout_DecPlay( p_aout, p_audio, i_rate );
+        int status = aout_DecPlay( p_aout, p_audio, i_rate );
+        if( status == AOUT_DEC_CHANGED )
+        {
+            /* Only reload the decoder */
+            decoder_RequestReload( p_dec );
+        }
+        else if( status == AOUT_DEC_FAILED )
+        {
+            /* If we reload because the aout failed, we should release it. That
+             * way, a next call to aout_update_format() won't re-use the
+             * previous (failing) aout but will try to create a new one. */
+            atomic_store( &p_owner->reload, RELOAD_DECODER_AOUT );
+        }
     }
     else
     {
@@ -1184,11 +1260,10 @@ static void DecoderProcessAudio( decoder_t *p_dec, block_t *p_block )
 
                 /* Drain the decoder module */
                 DecoderDecodeAudio( p_dec, NULL );
-                /* Restart the decoder module */
-                UnloadDecoder( p_dec );
-                if( LoadDecoder( p_dec, false, &p_packetizer->fmt_out ) )
+
+                if( ReloadDecoder( p_dec, false, &p_packetizer->fmt_out,
+                                   RELOAD_DECODER ) != VLC_SUCCESS )
                 {
-                    p_dec->b_error = true;
                     block_ChainRelease( p_packetized_block );
                     return;
                 }
@@ -1200,6 +1275,11 @@ static void DecoderProcessAudio( decoder_t *p_dec, block_t *p_block )
                 p_packetized_block->p_next = NULL;
 
                 DecoderDecodeAudio( p_dec, p_packetized_block );
+                if( p_dec->b_error )
+                {
+                    block_ChainRelease( p_next );
+                    return;
+                }
 
                 p_packetized_block = p_next;
             }
@@ -1309,27 +1389,33 @@ static void DecoderProcessSpu( decoder_t *p_dec, block_t *p_block )
  *
  * \param p_dec the decoder object
  * \param p_block the block to decode
- * \return VLC_SUCCESS or an error code
  */
 static void DecoderProcess( decoder_t *p_dec, block_t *p_block )
 {
     decoder_owner_sys_t *p_owner = p_dec->p_owner;
 
     if( p_dec->b_error )
-    {
-        if( p_block )
-            block_Release( p_block );
-        return;
-    }
+        goto error;
 
-    if( p_block && p_block->i_buffer <= 0 )
+    /* Here, the atomic doesn't prevent to miss a reload request.
+     * DecoderProcess*() can still be called after the decoder module or the
+     * audio output requested a reload. This will only result in a drop of an
+     * input block or an output buffer. */
+    enum reload reload;
+    if( ( reload = atomic_exchange( &p_owner->reload, RELOAD_NO_REQUEST ) ) )
     {
-        block_Release( p_block );
-        return;
+        msg_Warn( p_dec, "Reloading the decoder module%s",
+                  reload == RELOAD_DECODER_AOUT ? " and the audio output" : "" );
+
+        if( ReloadDecoder( p_dec, false, &p_dec->fmt_in, reload ) != VLC_SUCCESS )
+            goto error;
     }
 
     if( p_block )
     {
+        if( p_block->i_buffer <= 0 )
+            goto error;
+
         vlc_mutex_lock( &p_owner->lock );
         DecoderUpdatePreroll( &p_owner->i_preroll_end, p_block );
         vlc_mutex_unlock( &p_owner->lock );
@@ -1339,28 +1425,24 @@ static void DecoderProcess( decoder_t *p_dec, block_t *p_block )
     if( p_owner->p_sout != NULL )
     {
         DecoderProcessSout( p_dec, p_block );
+        return;
     }
-    else
 #endif
+
+    switch( p_dec->fmt_out.i_cat )
     {
-        if( p_dec->fmt_out.i_cat == AUDIO_ES )
-        {
-            DecoderProcessAudio( p_dec, p_block );
-        }
-        else if( p_dec->fmt_out.i_cat == VIDEO_ES )
-        {
-            DecoderProcessVideo( p_dec, p_block );
-        }
-        else if( p_dec->fmt_out.i_cat == SPU_ES )
-        {
-            DecoderProcessSpu( p_dec, p_block );
-        }
-        else
-        {
+        case VIDEO_ES: DecoderProcessVideo( p_dec, p_block ); return;
+        case AUDIO_ES: DecoderProcessAudio( p_dec, p_block ); return;
+        case   SPU_ES: DecoderProcessSpu( p_dec, p_block ); return;
+
+        default:
             msg_Err( p_dec, "unknown ES format" );
             p_dec->b_error = true;
-        }
     }
+
+error:
+    if( p_block )
+        block_Release( p_block );
 }
 
 static void DecoderProcessFlush( decoder_t *p_dec )
@@ -1577,6 +1659,7 @@ static decoder_t * CreateDecoder( vlc_object_t *p_parent,
     p_owner->flushing = false;
     p_owner->b_draining = false;
     atomic_init( &p_owner->drained, false );
+    atomic_init( &p_owner->reload, RELOAD_NO_REQUEST );
     p_owner->b_idle = false;
 
     es_format_Init( &p_owner->fmt, UNKNOWN_ES, 0 );

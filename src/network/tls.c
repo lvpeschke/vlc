@@ -35,6 +35,9 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef HAVE_SYS_UIO_H
+# include <sys/uio.h>
+#endif
 
 #include <vlc_common.h>
 #include "libvlc.h"
@@ -135,7 +138,7 @@ static vlc_tls_t *vlc_tls_SessionCreate(vlc_tls_creds_t *crd,
     if (unlikely(session == NULL))
         return NULL;
 
-    session->obj = crd->p_parent;
+    session->obj = crd->obj.parent;
     session->p = NULL;
 
     int canc = vlc_savecancel();

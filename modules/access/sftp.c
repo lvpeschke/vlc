@@ -76,7 +76,7 @@ vlc_module_end ()
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
-static ssize_t  Read( access_t *, uint8_t *, size_t );
+static ssize_t  Read( access_t *, void *, size_t );
 static int      Seek( access_t *, uint64_t );
 static int      Control( access_t *, int, va_list );
 
@@ -147,7 +147,6 @@ static int Open( vlc_object_t* p_this )
     if( !p_access->psz_location )
         return VLC_EGENERIC;
 
-    access_InitFields( p_access );
     p_sys = p_access->p_sys = (access_sys_t*)calloc( 1, sizeof( access_sys_t ) );
     if( !p_sys ) return VLC_ENOMEM;
 
@@ -157,13 +156,13 @@ static int Open( vlc_object_t* p_this )
     vlc_credential_init( &credential, &credential_url );
 
     /* Parse the URL */
-    vlc_UrlParse( &url, p_access->psz_location );
+    vlc_UrlParse( &url, p_access->psz_url );
     vlc_uri_decode( url.psz_path );
 
     /* Check for some parameters */
     if( EMPTY_STR( url.psz_host ) )
     {
-        msg_Err( p_access, "You might give a non empty host" );
+        msg_Err( p_access, "Unable to extract host from %s", p_access->psz_url );
         goto error;
     }
 
@@ -214,10 +213,29 @@ static int Open( vlc_object_t* p_this )
 
     const char *fingerprint = libssh2_session_hostkey( p_sys->ssh_session, &i_len, &i_type );
     struct libssh2_knownhost *host;
+    int knownhost_fingerprint_algo;
+
+    switch( i_type )
+    {
+        case LIBSSH2_HOSTKEY_TYPE_RSA:
+            knownhost_fingerprint_algo = LIBSSH2_KNOWNHOST_KEY_SSHRSA;
+            break;
+
+        case LIBSSH2_HOSTKEY_TYPE_DSS:
+            knownhost_fingerprint_algo = LIBSSH2_KNOWNHOST_KEY_SSHDSS;
+            break;
+
+        default:
+            msg_Err( p_access, "Host uses unrecognized session-key algorithm" );
+            goto error;
+
+    }
+
     int check = libssh2_knownhost_check( ssh_knownhosts, url.psz_host,
                                          fingerprint, i_len,
                                          LIBSSH2_KNOWNHOST_TYPE_PLAIN |
-                                         LIBSSH2_KNOWNHOST_KEYENC_RAW,
+                                         LIBSSH2_KNOWNHOST_KEYENC_RAW |
+                                         knownhost_fingerprint_algo,
                                          &host );
 
     libssh2_knownhost_free( ssh_knownhosts );
@@ -384,22 +402,16 @@ static void Close( vlc_object_t* p_this )
 }
 
 
-static ssize_t Read( access_t *p_access, uint8_t *buf, size_t len )
+static ssize_t Read( access_t *p_access, void *buf, size_t len )
 {
     access_sys_t *p_sys = p_access->p_sys;
 
-    if( p_access->info.b_eof )
-        return 0;
-
-    ssize_t val = libssh2_sftp_read(  p_sys->file, (char *)buf, len );
+    ssize_t val = libssh2_sftp_read(  p_sys->file, buf, len );
     if( val < 0 )
     {
-        p_access->info.b_eof = true;
         msg_Err( p_access, "read failed" );
         return 0;
     }
-    else if( val == 0 )
-        p_access->info.b_eof = true;
 
     return val;
 }
@@ -407,49 +419,50 @@ static ssize_t Read( access_t *p_access, uint8_t *buf, size_t len )
 
 static int Seek( access_t* p_access, uint64_t i_pos )
 {
-    p_access->info.b_eof = false;
+    access_sys_t *sys = p_access->p_sys;
 
-    libssh2_sftp_seek( p_access->p_sys->file, i_pos );
+    libssh2_sftp_seek( sys->file, i_pos );
     return VLC_SUCCESS;
 }
 
 
 static int Control( access_t* p_access, int i_query, va_list args )
 {
+    access_sys_t *sys = p_access->p_sys;
     bool*       pb_bool;
     int64_t*    pi_64;
 
     switch( i_query )
     {
-    case ACCESS_CAN_SEEK:
+    case STREAM_CAN_SEEK:
         pb_bool = (bool*)va_arg( args, bool* );
         *pb_bool = true;
         break;
 
-    case ACCESS_CAN_FASTSEEK:
+    case STREAM_CAN_FASTSEEK:
         pb_bool = (bool*)va_arg( args, bool* );
         *pb_bool = false;
         break;
 
-    case ACCESS_CAN_PAUSE:
-    case ACCESS_CAN_CONTROL_PACE:
+    case STREAM_CAN_PAUSE:
+    case STREAM_CAN_CONTROL_PACE:
         pb_bool = (bool*)va_arg( args, bool* );
         *pb_bool = true;
         break;
 
-    case ACCESS_GET_SIZE:
+    case STREAM_GET_SIZE:
         if( p_access->pf_readdir != NULL )
             return VLC_EGENERIC;
-        *va_arg( args, uint64_t * ) = p_access->p_sys->filesize;
+        *va_arg( args, uint64_t * ) = sys->filesize;
         break;
 
-    case ACCESS_GET_PTS_DELAY:
+    case STREAM_GET_PTS_DELAY:
         pi_64 = (int64_t*)va_arg( args, int64_t* );
         *pi_64 = INT64_C(1000)
                * var_InheritInteger( p_access, "network-caching" );
         break;
 
-    case ACCESS_SET_PAUSE_STATE:
+    case STREAM_SET_PAUSE_STATE:
         break;
 
     default:
@@ -537,7 +550,7 @@ static int DirControl( access_t *p_access, int i_query, va_list args )
 {
     switch( i_query )
     {
-    case ACCESS_IS_DIRECTORY:
+    case STREAM_IS_DIRECTORY:
         *va_arg( args, bool * ) = true; /* might loop */
         break;
     default:

@@ -207,6 +207,10 @@ const char * aout_FormatPrintChannels( const audio_sample_format_t * p_format )
           | AOUT_CHAN_REARCENTER | AOUT_CHAN_MIDDLELEFT
           | AOUT_CHAN_MIDDLERIGHT | AOUT_CHAN_LFE:
         return "3F2M1R/LFE";
+    case AOUT_CHAN_LEFT | AOUT_CHAN_RIGHT | AOUT_CHAN_CENTER
+          | AOUT_CHAN_REARLEFT | AOUT_CHAN_REARRIGHT | AOUT_CHAN_REARCENTER
+          | AOUT_CHAN_MIDDLELEFT | AOUT_CHAN_MIDDLERIGHT | AOUT_CHAN_LFE:
+        return "3F2M3R/LFE";
     }
 
     return "ERROR";
@@ -553,8 +557,8 @@ bool aout_ChangeFilterString( vlc_object_t *p_obj, vlc_object_t *p_aout,
     }
     else
     {
-        psz_list = var_CreateGetString( p_obj->p_libvlc, psz_variable );
-        var_Destroy( p_obj->p_libvlc, psz_variable );
+        psz_list = var_CreateGetString( p_obj->obj.libvlc, psz_variable );
+        var_Destroy( p_obj->obj.libvlc, psz_variable );
     }
 
     /* Split the string into an array of filters */
@@ -619,6 +623,14 @@ bool aout_ChangeFilterString( vlc_object_t *p_obj, vlc_object_t *p_aout,
         i_length += 1 + strlen( ppsz_filter[i] );
 
     char *psz_new = malloc( i_length + 1 );
+
+    if( unlikely( !psz_new ) )
+    {
+        free( ppsz_filter );
+        free( psz_list );
+        return false;
+    }
+
     *psz_new = '\0';
     for( int i = 0; i < i_count; i++ )
     {

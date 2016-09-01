@@ -165,11 +165,17 @@ void hevc_rbsp_release_sps( hevc_sequence_parameter_set_t * );
 void hevc_rbsp_release_pps( hevc_picture_parameter_set_t * );
 void hevc_rbsp_release_slice_header( hevc_slice_segment_header_t * );
 
+/* set specific */
+uint8_t hevc_get_sps_vps_id( const hevc_sequence_parameter_set_t * );
+uint8_t hevc_get_pps_sps_id( const hevc_picture_parameter_set_t * );
+
 /* Converts HEVCDecoderConfigurationRecord to Annex B format */
 uint8_t * hevc_hvcC_to_AnnexB_NAL( const uint8_t *p_buf, size_t i_buf,
                                    size_t *pi_res, uint8_t *pi_nal_length_size );
 
 bool hevc_get_xps_id(const uint8_t *p_buf, size_t i_buf, uint8_t *pi_id);
+bool hevc_get_sps_profile_tier_level( const hevc_sequence_parameter_set_t *,
+                                      uint8_t *pi_profile, uint8_t *pi_level );
 bool hevc_get_picture_size( const hevc_sequence_parameter_set_t *, unsigned *p_w, unsigned *p_h,
                             unsigned *p_vw, unsigned *p_vh );
 bool hevc_get_frame_rate( const hevc_sequence_parameter_set_t *,
@@ -181,5 +187,9 @@ bool hevc_get_colorimetry( const hevc_sequence_parameter_set_t *p_sps,
                            video_color_space_t *p_colorspace,
                            bool *p_full_range );
 bool hevc_get_slice_type( const hevc_slice_segment_header_t *, enum hevc_slice_type_e * );
+
+/* Get level and Profile from DecoderConfigurationRecord */
+bool hevc_get_profile_level(const es_format_t *p_fmt, uint8_t *pi_profile,
+                            uint8_t *pi_level, uint8_t *pi_nal_length_size);
 
 #endif /* HEVC_NAL_H */

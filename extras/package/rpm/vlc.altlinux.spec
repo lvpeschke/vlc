@@ -1009,9 +1009,9 @@ strfile %buildroot%_gamesdatadir/fortune/vlc %buildroot%_gamesdatadir/fortune/vl
 %dir %_vlc_pluginsdir/audio_filter
 %_vlc_pluginsdir/audio_filter/libbandlimited_resampler_plugin.so*
 %_vlc_pluginsdir/audio_filter/libdolby_surround_decoder_plugin.so*
-%_vlc_pluginsdir/audio_filter/libdtstospdif_plugin.so*
 %_vlc_pluginsdir/audio_filter/libheadphone_channel_mixer_plugin.so*
 %_vlc_pluginsdir/audio_filter/liblinear_resampler_plugin.so*
+%_vlc_pluginsdir/audio_filter/libtospdif_plugin.so*
 %_vlc_pluginsdir/audio_filter/libtrivial_channel_mixer_plugin.so*
 %_vlc_pluginsdir/audio_filter/libtrivial_resampler_plugin.so*
 %_vlc_pluginsdir/audio_filter/libugly_resampler_plugin.so*
@@ -1033,7 +1033,6 @@ strfile %buildroot%_gamesdatadir/fortune/vlc %buildroot%_gamesdatadir/fortune/vl
 %_vlc_pluginsdir/audio_output/libaout_file_plugin.so*
 
 %dir %_vlc_pluginsdir/codec
-%_vlc_pluginsdir/codec/liba52_plugin.so*
 %_vlc_pluginsdir/codec/libadpcm_plugin.so*
 %_vlc_pluginsdir/codec/libaraw_plugin.so*
 %_vlc_pluginsdir/codec/librawvideo_plugin.so*
@@ -1135,7 +1134,7 @@ strfile %buildroot%_gamesdatadir/fortune/vlc %buildroot%_gamesdatadir/fortune/vl
 #%_vlc_pluginsdir/mux/libmux_ts_plugin.so*
 
 %dir %_vlc_pluginsdir/packetizer
-#_vlc_pluginsdir/packetizer/libpacketizer_a52_plugin.so*
+%_vlc_pluginsdir/packetizer/libpacketizer_a52_plugin.so*
 %_vlc_pluginsdir/packetizer/libpacketizer_copy_plugin.so*
 %_vlc_pluginsdir/packetizer/libpacketizer_mpeg4audio_plugin.so*
 %_vlc_pluginsdir/packetizer/libpacketizer_mpeg4video_plugin.so*
@@ -1267,6 +1266,11 @@ strfile %buildroot%_gamesdatadir/fortune/vlc %buildroot%_gamesdatadir/fortune/vl
 %files plugin-live555
 %_vlc_pluginsdir/demux/liblive555_plugin.so*
 
+%if_enabled dca
+%files plugin-dca
+%_vlc_pluginsdir/codec/libdca_plugin.so*
+%endif
+
 %ifnarch x86_64
 %files plugin-loader
 %_vlc_pluginsdir/codec/libdmo_plugin.so*
@@ -1311,8 +1315,7 @@ strfile %buildroot%_gamesdatadir/fortune/vlc %buildroot%_gamesdatadir/fortune/vl
 %_vlc_pluginsdir/codec/libflac_plugin.so*
 
 %files plugin-a52
-%_vlc_pluginsdir/audio_filter/liba52tofloat32_plugin.so*
-%_vlc_pluginsdir/audio_filter/liba52tospdif_plugin.so*
+%_vlc_pluginsdir/codec/libliba52_plugin.so*
 
 %files plugin-h264
 %_vlc_pluginsdir/codec/libx264_plugin.so*
@@ -1409,11 +1412,6 @@ strfile %buildroot%_gamesdatadir/fortune/vlc %buildroot%_gamesdatadir/fortune/vl
 
 %files plugin-dvdread
 %_vlc_pluginsdir/access/libdvdread_plugin.so*
-
-%if_enabled dca
-%files plugin-dca
-%_vlc_pluginsdir/audio_filter/libdtstofloat32_plugin.so*
-%endif
 
 %if_enabled gnomevfs
 %files plugin-gnomevfs

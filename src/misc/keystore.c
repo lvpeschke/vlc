@@ -151,7 +151,7 @@ libvlc_InternalKeystoreClean(libvlc_int_t *p_libvlc)
 static vlc_keystore *
 get_memory_keystore(vlc_object_t *p_obj)
 {
-    return libvlc_priv(p_obj->p_libvlc)->p_memory_keystore;
+    return libvlc_priv(p_obj->obj.libvlc)->p_memory_keystore;
 }
 
 static vlc_keystore_entry *
@@ -309,8 +309,11 @@ credential_find_keystore(vlc_credential *p_credential, vlc_keystore *p_keystore)
      * p_credential->psz_username (default username) can be a pointer to an
      * entry */
     if (p_credential->i_entries_count > 0)
+    {
         vlc_keystore_release_entries(p_credential->p_entries,
                                      p_credential->i_entries_count);
+        p_credential->psz_username = NULL;
+    }
     p_credential->p_entries = p_entries;
     p_credential->i_entries_count = i_entries_count;
 

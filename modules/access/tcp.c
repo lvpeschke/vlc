@@ -62,8 +62,7 @@ struct access_sys_t
     int        fd;
 };
 
-
-static ssize_t Read( access_t *, uint8_t *, size_t );
+static ssize_t Read( access_t *, void *, size_t );
 static int Control( access_t *, int, va_list );
 
 /*****************************************************************************
@@ -96,7 +95,6 @@ static int Open( vlc_object_t *p_this )
     *psz_parser++ = '\0';
 
     /* Init p_access */
-    access_InitFields( p_access );
     ACCESS_SET_CALLBACKS( Read, NULL, Control, NULL );
     p_sys = p_access->p_sys = calloc( 1, sizeof( access_sys_t ) );
     if( !p_sys )
@@ -132,23 +130,19 @@ static void Close( vlc_object_t *p_this )
 /*****************************************************************************
  * Read: read on a file descriptor
  *****************************************************************************/
-static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
+static ssize_t Read( access_t *p_access, void *p_buffer, size_t i_len )
 {
     access_sys_t *p_sys = p_access->p_sys;
     int i_read;
 
-    if( p_access->info.b_eof )
-        return 0;
-
     i_read = vlc_recv_i11e( p_sys->fd, p_buffer, i_len, 0 );
-    if( i_read > 0 )
-        ;
-    else if( i_read == 0 )
-        p_access->info.b_eof = true;
-    else if( errno != EINTR && errno != EAGAIN )
+    if( i_read < 0 )
     {
-        msg_Err( p_access, "receive error: %s", vlc_strerror_c(errno) );
-        p_access->info.b_eof = true;
+        if( errno != EINTR && errno != EAGAIN )
+        {
+            msg_Err( p_access, "receive error: %s", vlc_strerror_c(errno) );
+            i_read = 0;
+        }
     }
 
     return i_read;
@@ -164,27 +158,27 @@ static int Control( access_t *p_access, int i_query, va_list args )
 
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_FASTSEEK:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_FASTSEEK:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = false;
             break;
-        case ACCESS_CAN_PAUSE:
+        case STREAM_CAN_PAUSE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;    /* FIXME */
             break;
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;    /* FIXME */
             break;
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg( args, int64_t * );
             *pi_64 = INT64_C(1000)
                    * var_InheritInteger( p_access, "network-caching" );
             break;
 
-        case ACCESS_SET_PAUSE_STATE:
+        case STREAM_SET_PAUSE_STATE:
             /* Nothing to do */
             break;
 

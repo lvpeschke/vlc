@@ -90,7 +90,7 @@ void matroska_segment_c::ParseSeekHead( KaxSeekHead *seekhead )
 
     i_seekhead_count++;
 
-    stream_Control( sys.demuxer.s, STREAM_CAN_SEEK, &b_seekable );
+    vlc_stream_Control( sys.demuxer.s, STREAM_CAN_SEEK, &b_seekable );
     if( !b_seekable )
         return;
 
@@ -207,9 +207,6 @@ void matroska_segment_c::ParseTrackEntry( KaxTrackEntry *m )
     /* Init the track */
     mkv_track_t track;
 
-    track.fmt.psz_language       = strdup("English");
-    track.fmt.psz_description    = NULL;
-
     track.b_default              = true;
     track.b_enabled              = true;
     track.b_forced               = false;
@@ -218,7 +215,7 @@ void matroska_segment_c::ParseTrackEntry( KaxTrackEntry *m )
     track.i_extra_data           = 0;
     track.p_extra_data           = NULL;
 
-    track.psz_codec              = NULL;
+    track.codec                  = "";
     track.b_dts_only             = false;
     track.b_pts_only             = false;
 
@@ -230,6 +227,10 @@ void matroska_segment_c::ParseTrackEntry( KaxTrackEntry *m )
 
     std::memset(    &track.fmt, 0, sizeof( track.fmt ) );
     es_format_Init( &track.fmt, UNKNOWN_ES, 0 );
+
+    track.fmt.psz_language       = strdup("English");
+    track.fmt.psz_description    = NULL;
+
     track.f_fps = 0;
     track.p_es = NULL;
 
@@ -383,7 +384,7 @@ void matroska_segment_c::ParseTrackEntry( KaxTrackEntry *m )
         }
         E_CASE( KaxCodecID, codecid )
         {
-            vars.tk->psz_codec = strdup( std::string( codecid ).c_str() );
+            vars.tk->codec = std::string( codecid );
             debug( vars, "Track CodecId=%s", std::string( codecid ).c_str() ) ;
         }
         E_CASE( KaxCodecPrivate, cpriv )
@@ -588,6 +589,19 @@ void matroska_segment_c::ParseTrackEntry( KaxTrackEntry *m )
             vars.tk->f_fps = __MAX( static_cast<float>( vfps ), 1 );
             debug( vars, "fps=%f", vars.tk->f_fps );
         }
+        E_CASE( KaxVideoColourSpace, colourspace )
+        {
+            if ( colourspace.ValidateSize() )
+            {
+                char clrspc[5];
+
+                vars.tk->fmt.i_codec = GetFOURCC( colourspace.GetBuffer() );
+
+                vlc_fourcc_to_char( vars.tk->fmt.i_codec, clrspc );
+                clrspc[4]  = '\0';
+                debug( vars, "Colour Space=%s", clrspc );
+            }
+        }
         E_CASE( KaxTrackAudio, tka ) {
             vars.tk->fmt.audio.i_channels = 1;
             vars.tk->fmt.audio.i_rate = 8000;
@@ -659,6 +673,7 @@ void matroska_segment_c::ParseTrackEntry( KaxTrackEntry *m )
     else
     {
         msg_Err( &sys.demuxer, "Track Entry %u not supported", track.i_number );
+        es_format_Clean( &track.fmt );
         free(track.p_extra_data);
     }
 }
@@ -1230,7 +1245,7 @@ void matroska_segment_c::ParseCluster( KaxCluster *cluster, bool b_update_start_
 
 int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
 {
-    if( p_tk->psz_codec == NULL )
+    if( p_tk->codec.empty() )
     {
         msg_Err( &sys.demuxer, "Empty codec id" );
         p_tk->fmt.i_codec = VLC_FOURCC( 'u', 'n', 'd', 'f' );
@@ -1274,6 +1289,12 @@ int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
 
                     vars.p_fmt->p_extra = xmalloc( vars.p_fmt->i_extra );
                     memcpy( vars.p_fmt->p_extra, &p_bih[1], vars.p_fmt->i_extra );
+                }
+                else if( vars.p_fmt->i_codec == VLC_FOURCC('W','V','C','1') )
+                {
+                    vars.p_fmt->video.i_width = 0;
+                    vars.p_fmt->video.i_height = 0;
+                    vars.p_fmt->b_packetized = false;
                 }
             }
             vars.p_tk->b_dts_only = true;
@@ -1326,6 +1347,13 @@ int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
 
             fill_extra_data( vars.p_tk, 0 );
         }
+        S_CASE("V_AV1") {
+            vars.p_fmt->i_codec = VLC_CODEC_AV1;
+            vars.p_fmt->b_packetized = false;
+            vars.p_tk->b_pts_only = true;
+
+            fill_extra_data( vars.p_tk, 0 );
+        }
         S_CASE("V_MPEG4/MS/V3") {
             vars.p_fmt->i_codec = VLC_CODEC_DIV3;
         }
@@ -1342,35 +1370,48 @@ int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
             fill_extra_data( vars.p_tk, 0 );
         }
         S_CASE("V_QUICKTIME") {
-            MP4_Box_t *p_box = (MP4_Box_t*)xmalloc( sizeof( MP4_Box_t ) );
-            stream_t *p_mp4_stream = stream_MemoryNew( VLC_OBJECT(vars.p_demuxer),
-                                                       vars.p_tk->p_extra_data,
-                                                       vars.p_tk->i_extra_data,
-                                                       true );
-            if( MP4_PeekBoxHeader( p_mp4_stream, p_box ) &&
-                MP4_ReadBox_sample_vide( p_mp4_stream, p_box ) )
+            if( vars.p_tk->i_extra_data > 4 )
             {
-                vars.p_fmt->i_codec = p_box->i_type;
-                uint32_t i_width = p_box->data.p_sample_vide->i_width;
-                uint32_t i_height = p_box->data.p_sample_vide->i_height;
-                if( i_width && i_height )
+                MP4_Box_t *p_box = MP4_BoxNew(ATOM_root);
+                if( p_box )
                 {
-                    vars.p_tk->fmt.video.i_width = i_width;
-                    vars.p_tk->fmt.video.i_height = i_height;
+                    stream_t *p_mp4_stream = vlc_stream_MemoryNew( VLC_OBJECT(vars.p_demuxer),
+                                                                   vars.p_tk->p_extra_data,
+                                                                   vars.p_tk->i_extra_data,
+                                                                   true );
+                    if( p_mp4_stream )
+                    {
+                        p_box->i_type = GetFOURCC( vars.p_tk->p_extra_data );
+                        p_box->i_size = p_box->i_shortsize = vars.p_tk->i_extra_data;
+                        if( MP4_ReadBox_sample_vide( p_mp4_stream, p_box ) )
+                        {
+                            const MP4_Box_data_sample_vide_t *p_sample = p_box->data.p_sample_vide;
+                            vars.p_fmt->i_codec = p_box->i_type;
+                            if( p_sample->i_width && p_sample->i_height )
+                            {
+                                vars.p_tk->fmt.video.i_width = p_sample->i_width;
+                                vars.p_tk->fmt.video.i_height = p_sample->i_height;
+                            }
+                            vars.p_fmt->p_extra = malloc( p_sample->i_qt_image_description );
+                            if( vars.p_fmt->p_extra )
+                            {
+                                vars.p_fmt->i_extra = p_sample->i_qt_image_description;
+                                memcpy( vars.p_fmt->p_extra,
+                                        p_sample->p_qt_image_description, vars.p_fmt->i_extra );
+                            }
+                        }
+                        vlc_stream_Delete( p_mp4_stream );
+                    }
+                    MP4_BoxFree( p_box );
                 }
-                vars.p_fmt->i_extra = p_box->data.p_sample_vide->i_qt_image_description;
-                vars.p_fmt->p_extra = xmalloc( vars.p_fmt->i_extra );
-                memcpy( vars.p_fmt->p_extra, p_box->data.p_sample_vide->p_qt_image_description, vars.p_fmt->i_extra );
-                MP4_FreeBox_sample_vide( p_box );
             }
-            else
-            {
-                free( p_box );
-            }
-            stream_Delete( p_mp4_stream );
+            else throw std::runtime_error ("invalid extradata when handling V_QUICKTIME/*");
         }
         S_CASE("V_MJPEG") {
             vars.p_fmt->i_codec = VLC_CODEC_MJPG;
+        }
+        S_CASE("V_UNCOMPRESSED") {
+            msg_Dbg( vars.p_demuxer, "uncompressed format detected");
         }
         S_CASE("A_MS/ACM") {
             mkv_track_t * p_tk = vars.p_tk;
@@ -1454,9 +1495,16 @@ int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
             }
 
             vars.p_fmt->i_codec = VLC_CODEC_A52;
+            vars.p_fmt->b_packetized = false;
         }
-        S_CASE("A_EAC3") { vars.p_fmt->i_codec = VLC_CODEC_EAC3; }
-        S_CASE("A_DTS")  { vars.p_fmt->i_codec = VLC_CODEC_DTS; }
+        S_CASE("A_EAC3") {
+            vars.p_fmt->i_codec = VLC_CODEC_EAC3;
+            vars.p_fmt->b_packetized = false;
+        }
+        S_CASE("A_DTS")  {
+            vars.p_fmt->i_codec = VLC_CODEC_DTS;
+            vars.p_fmt->b_packetized = false;
+        }
         S_CASE("A_MLP")  { vars.p_fmt->i_codec = VLC_CODEC_MLP; }
         S_CASE("A_TRUEHD") { /* FIXME when more samples arrive */
             vars.p_fmt->i_codec = VLC_CODEC_TRUEHD;
@@ -1674,13 +1722,11 @@ int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
             fill_extra_data( vars.p_tk, 0 );
         }
         S_CASE_GLOB("A_QUICKTIME/*") {
+            if (vars.p_tk->i_extra_data < 4)
+                throw std::runtime_error ("invalid extradata when handling A_QUICKTIME/*");
+
             vars.p_fmt->i_cat = AUDIO_ES;
-
-            if (vars.p_tk->i_extra_data < 8)
-                throw std::runtime_error ("vars.p_tk->i_extra_data < 8 when handling A_QUICKTIME/*");
-
-            uint8_t const * p = vars.p_tk->p_extra_data;
-            vars.p_fmt->i_codec = VLC_FOURCC(p[4],p[5],p[6],p[7]);
+            vars.p_fmt->i_codec = GetFOURCC(vars.p_tk->p_extra_data);
 
             fill_extra_data( vars.p_tk, 0 );
         }
@@ -1773,14 +1819,14 @@ int32_t matroska_segment_c::TrackInit( mkv_track_t * p_tk )
     };
 
     try {
-        TrackCodecHandlers::Dispatcher().send( p_tk->psz_codec,
+        TrackCodecHandlers::Dispatcher().send( p_tk->codec.c_str(),
           TrackCodecHandlers::Payload( captures )
         );
     }
     catch (std::exception const& e)
     {
         msg_Err( &sys.demuxer, "Error when trying to initiate track (codec: %s): %s",
-          p_tk->psz_codec, e.what () );
+          p_tk->codec.c_str(), e.what () );
     }
 
     return 0;

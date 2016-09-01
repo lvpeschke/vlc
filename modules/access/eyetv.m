@@ -81,7 +81,7 @@ struct access_sys_t
     int eyetvSock;
 };
 
-static block_t *BlockRead(access_t *);
+static block_t *BlockRead(access_t *, bool *);
 static int Control(access_t *, int, va_list);
 
 static void selectChannel(vlc_object_t *p_this, int theChannelNum)
@@ -151,7 +151,6 @@ static int Open(vlc_object_t *p_this)
     int publicSock;
 
     /* Init p_access */
-    access_InitFields(p_access);
     ACCESS_SET_CALLBACKS(NULL, BlockRead, Control, NULL);
     p_sys = p_access->p_sys = calloc(1, sizeof(access_sys_t));
     if (!p_sys)
@@ -250,14 +249,13 @@ static void Close(vlc_object_t *p_this)
 /*****************************************************************************
 * BlockRead: forwarding data from EyeTV plugin which was received above
 *****************************************************************************/
-static block_t *BlockRead(access_t *p_access)
+static block_t *BlockRead(access_t *p_access, bool *restrict eof)
 {
     access_sys_t *p_sys = p_access->p_sys;
     block_t      *p_block;
     ssize_t len;
 
-    if (p_access->info.b_eof)
-        return NULL;
+    (void) eof;
 
     /* Read data */
     p_block = block_Alloc(MTU);
@@ -282,20 +280,20 @@ static int Control(access_t *p_access, int i_query, va_list args)
     access_sys_t  *p_sys = (access_sys_t *) p_access->p_sys;
 
     switch(i_query) {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_FASTSEEK:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_FASTSEEK:
             pb_bool = (bool*)va_arg(args, bool*);
             *pb_bool = false;
             break;
-        case ACCESS_CAN_PAUSE:
+        case STREAM_CAN_PAUSE:
             pb_bool = (bool*)va_arg(args, bool*);
             *pb_bool = false;
             break;
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg(args, bool*);
             *pb_bool = false;
             break;
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg(args, int64_t *);
             *pi_64 =
                 INT64_C(1000) * var_InheritInteger(p_access, "live-caching");

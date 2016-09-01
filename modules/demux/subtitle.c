@@ -244,7 +244,7 @@ static int Open ( vlc_object_t *p_this )
     int  (*pf_read)( demux_t *, subtitle_t*, int );
     int            i, i_max;
 
-    if( !p_demux->b_force )
+    if( !p_demux->obj.force )
     {
         msg_Dbg( p_demux, "subtitle demux discarded" );
         return VLC_EGENERIC;
@@ -303,14 +303,14 @@ static int Open ( vlc_object_t *p_this )
     free( psz_type );
 
 #ifndef NDEBUG
-    const uint64_t i_start_pos = stream_Tell( p_demux->s );
+    const uint64_t i_start_pos = vlc_stream_Tell( p_demux->s );
 #endif
     uint64_t i_read_offset = 0;
 
     /* Detect Unicode while skipping the UTF-8 Byte Order Mark */
     bool unicode = false;
     const uint8_t *p_data;
-    if( stream_Peek( p_demux->s, &p_data, 3 ) >= 3
+    if( vlc_stream_Peek( p_demux->s, &p_data, 3 ) >= 3
      && !memcmp( p_data, "\xEF\xBB\xBF", 3 ) )
     {
         unicode = true;
@@ -489,7 +489,7 @@ static int Open ( vlc_object_t *p_this )
     {
 #ifndef NDEBUG
         /* Ensure it will work with non seekable streams */
-        assert( i_start_pos == stream_Tell( p_demux->s ) );
+        assert( i_start_pos == vlc_stream_Tell( p_demux->s ) );
 #endif
         msg_Warn( p_demux, "failed to recognize subtitle type" );
         free( p_sys );
@@ -510,7 +510,7 @@ static int Open ( vlc_object_t *p_this )
     msg_Dbg( p_demux, "loading all subtitles..." );
 
     if( unicode ) /* skip BOM */
-        stream_Seek( p_demux->s, 3 );
+        vlc_stream_Seek( p_demux->s, 3 );
 
     /* Load the whole file */
     TextLoad( &p_sys->txt, p_demux->s );
@@ -717,7 +717,7 @@ static int Demux( demux_t *p_demux )
     if( p_sys->i_subtitle >= p_sys->i_subtitles )
         return 0;
 
-    i_maxdate = p_sys->i_next_demux_date - var_GetInteger( p_demux->p_parent, "spu-delay" );;
+    i_maxdate = p_sys->i_next_demux_date - var_GetInteger( p_demux->obj.parent, "spu-delay" );;
     if( i_maxdate <= 0 && p_sys->i_subtitle < p_sys->i_subtitles )
     {
         /* Should not happen */
@@ -796,7 +796,7 @@ static int TextLoad( text_t *txt, stream_t *s )
     /* load the complete file */
     for( ;; )
     {
-        char *psz = stream_ReadLine( s );
+        char *psz = vlc_stream_ReadLine( s );
 
         if( psz == NULL )
             break;

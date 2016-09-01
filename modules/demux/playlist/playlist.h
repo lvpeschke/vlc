@@ -36,10 +36,8 @@ int Import_M3U ( vlc_object_t * );
 void Close_M3U ( vlc_object_t * );
 
 int Import_RAM ( vlc_object_t * );
-void Close_RAM ( vlc_object_t * );
 
 int Import_PLS ( vlc_object_t * );
-void Close_PLS ( vlc_object_t * );
 
 int Import_B4S ( vlc_object_t * );
 
@@ -85,7 +83,7 @@ bool CheckContentType( stream_t * p_stream, const char * psz_ctype );
 #define CHECK_FILE() \
 do { \
     bool b_loop; \
-    if( stream_Control( ((demux_t *)p_this)->s, STREAM_IS_DIRECTORY, \
+    if( vlc_stream_Control( ((demux_t *)p_this)->s, STREAM_IS_DIRECTORY, \
                         &b_loop ) == VLC_SUCCESS ) \
         return VLC_EGENERIC; \
 } while(0)
@@ -109,7 +107,7 @@ do { \
     STANDARD_DEMUX_INIT_MSG( msg );
 
 #define CHECK_PEEK( zepeek, size ) do { \
-    if( stream_Peek( p_demux->s , &zepeek, size ) < size ){ \
+    if( vlc_stream_Peek( p_demux->s , &zepeek, size ) < size ){ \
         msg_Dbg( p_demux, "not enough data" ); return VLC_EGENERIC; } } while(0)
 
 #define POKE( peek, stuff, size ) (strncasecmp( (const char *)peek, stuff, size )==0)

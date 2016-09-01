@@ -50,10 +50,10 @@ struct sout_stream_sys_t
     {
         assert(p_intf != NULL);
     }
-    
+
     ~sout_stream_sys_t()
     {
-        sout_StreamChainDelete(p_out, p_out);
+        sout_StreamChainDelete(p_out, NULL);
         delete p_intf;
     }
 
@@ -82,7 +82,7 @@ private:
 
 static const vlc_fourcc_t DEFAULT_TRANSCODE_AUDIO = VLC_CODEC_MP3;
 static const vlc_fourcc_t DEFAULT_TRANSCODE_VIDEO = VLC_CODEC_H264;
-static const char DEFAULT_MUXER[] = "avformat{mux=matroska}";
+static const char DEFAULT_MUXER[] = "avformat{mux=matroska,options={live=1}}}";
 
 
 /*****************************************************************************
@@ -189,7 +189,7 @@ static void Del(sout_stream_t *p_stream, sout_stream_id_sys_t *id)
     {
         p_sys->p_intf->requestPlayerStop();
 
-        sout_StreamChainDelete( p_sys->p_out, p_sys->p_out );
+        sout_StreamChainDelete( p_sys->p_out, NULL );
         p_sys->p_out = NULL;
         p_sys->sout = "";
     }
@@ -210,7 +210,6 @@ bool sout_stream_sys_t::canDecodeAudio( const es_format_t *p_es ) const
         p_es->i_codec == VLC_FOURCC('h', 'a', 'a', 'c') ||
         p_es->i_codec == VLC_FOURCC('l', 'a', 'a', 'c') ||
         p_es->i_codec == VLC_FOURCC('s', 'a', 'a', 'c') ||
-        p_es->i_codec == VLC_CODEC_MPGA ||
         p_es->i_codec == VLC_CODEC_MP3 ||
         p_es->i_codec == VLC_CODEC_A52 ||
         p_es->i_codec == VLC_CODEC_EAC3)
@@ -303,7 +302,7 @@ int sout_stream_sys_t::UpdateOutput( sout_stream_t *p_stream )
         {
             if ( unlikely( p_out != NULL ) )
             {
-                sout_StreamChainDelete( p_out, p_out );
+                sout_StreamChainDelete( p_out, NULL );
                 sout = "";
             }
 
@@ -322,13 +321,24 @@ int sout_stream_sys_t::UpdateOutput( sout_stream_t *p_stream )
             p_sys_id->p_sub_id = sout_StreamIdAdd( p_out, &p_sys_id->fmt );
             if ( p_sys_id->p_sub_id == NULL )
             {
-                msg_Err( p_stream, "can't handle a stream" );
+                msg_Err( p_stream, "can't handle %4.4s stream", (char *)&p_sys_id->fmt.i_codec );
                 streams.erase( it, it );
             }
         }
 
-        /* tell the chromecast to load the content */
-        p_intf->setHasInput( true, mime );
+        if ( !streams.empty() )
+        {
+            /* tell the chromecast to load the content */
+            p_intf->setHasInput( true, mime );
+        }
+        else
+        {
+            p_intf->requestPlayerStop();
+
+            sout_StreamChainDelete( p_out, NULL );
+            p_out = NULL;
+            sout = "";
+        }
     }
 
     return VLC_SUCCESS;
@@ -375,7 +385,7 @@ static void Flush( sout_stream_t *p_stream, sout_stream_id_sys_t *id )
         return;
 
     /* a seek on the Chromecast flushes its buffers */
-    p_sys->p_intf->requestPlayerSeek();
+    p_sys->p_intf->requestPlayerSeek( VLC_TS_INVALID );
 
     sout_StreamFlush( p_sys->p_out, id );
 }
@@ -458,7 +468,7 @@ static int Open(vlc_object_t *p_this)
         msg_Dbg(p_stream, "could not create sout chain:%s", ss.str().c_str());
         goto error;
     }
-    sout_StreamChainDelete( p_sout, p_sout );
+    sout_StreamChainDelete( p_sout, NULL );
 
     b_has_video = var_GetBool(p_stream, SOUT_CFG_PREFIX "video");
 

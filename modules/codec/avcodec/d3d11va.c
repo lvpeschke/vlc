@@ -105,6 +105,7 @@ DEFINE_GUID(DXVA2_NoEncrypt,                        0x1b81bed0, 0xa0c7, 0x11d3, 
 struct vlc_va_sys_t
 {
     directx_sys_t                dx_sys;
+    vlc_fourcc_t                 i_chroma;
 
 #if !defined(NDEBUG) && defined(HAVE_DXGIDEBUG_H)
     HINSTANCE                    dxgidebug_dll;
@@ -115,7 +116,7 @@ struct vlc_va_sys_t
     DXGI_FORMAT                  render;
 
     ID3D11DeviceContext          *d3dctx;
-#if VLC_WINSTORE_APP && LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
+#if LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
     HANDLE                       context_mutex;
 #endif
 
@@ -167,7 +168,7 @@ static void Setup(vlc_va_t *va, vlc_fourcc_t *chroma)
 {
     vlc_va_sys_t *sys = va->sys;
 
-    *chroma = sys->filter == NULL ? VLC_CODEC_D3D11_OPAQUE : VLC_CODEC_YV12;
+    *chroma = sys->filter == NULL ? sys->i_chroma : VLC_CODEC_YV12;
 }
 
 void SetupAVCodecContext(vlc_va_t *va)
@@ -181,11 +182,7 @@ void SetupAVCodecContext(vlc_va_t *va)
     sys->hw.surface_count = dx_sys->surface_count;
     sys->hw.surface = (ID3D11VideoDecoderOutputView**) dx_sys->hw_surface;
 #if LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
-#if VLC_WINSTORE_APP
     sys->hw.context_mutex = sys->context_mutex;
-#else
-    sys->hw.context_mutex = INVALID_HANDLE_VALUE;
-#endif
 #endif
 
     if (IsEqualGUID(&dx_sys->input, &DXVA_Intel_H264_NoFGT_ClearVideo))
@@ -209,7 +206,7 @@ static picture_t *video_new_buffer(filter_t *p_filter)
 }
 
 static filter_t *CreateFilter( vlc_object_t *p_this, const es_format_t *p_fmt_in,
-                               vlc_fourcc_t fmt_out )
+                               vlc_fourcc_t src_chroma )
 {
     filter_t *p_filter;
 
@@ -217,13 +214,24 @@ static filter_t *CreateFilter( vlc_object_t *p_this, const es_format_t *p_fmt_in
     if (unlikely(p_filter == NULL))
         return NULL;
 
+    vlc_fourcc_t fmt_out;
+    switch (src_chroma)
+    {
+    case VLC_CODEC_D3D11_OPAQUE_10B:
+        fmt_out = VLC_CODEC_P010;
+        break;
+    case VLC_CODEC_D3D11_OPAQUE:
+        fmt_out = VLC_CODEC_YV12;
+        break;
+    }
+
     p_filter->owner.video.buffer_new = (picture_t *(*)(filter_t *))video_new_buffer;
 
     es_format_InitFromVideo( &p_filter->fmt_in,  &p_fmt_in->video );
     es_format_InitFromVideo( &p_filter->fmt_out, &p_fmt_in->video );
-    p_filter->fmt_in.i_codec  = p_filter->fmt_in.video.i_chroma  = VLC_CODEC_D3D11_OPAQUE;
+    p_filter->fmt_in.i_codec  = p_filter->fmt_in.video.i_chroma  = src_chroma;
     p_filter->fmt_out.i_codec = p_filter->fmt_out.video.i_chroma = fmt_out;
-    p_filter->p_module = module_need( p_filter, "video filter2", NULL, false );
+    p_filter->p_module = module_need( p_filter, "video filter", NULL, false );
 
     if( !p_filter->p_module )
     {
@@ -242,7 +250,10 @@ static int Extract(vlc_va_t *va, picture_t *output, uint8_t *data)
     vlc_va_surface_t *surface = output->context;
     int ret = VLC_SUCCESS;
 
-    if (output->format.i_chroma == VLC_CODEC_D3D11_OPAQUE)
+    switch (output->format.i_chroma)
+    {
+    case VLC_CODEC_D3D11_OPAQUE:
+    case VLC_CODEC_D3D11_OPAQUE_10B:
     {
         picture_sys_t *p_sys_out = output->p_sys;
         picture_sys_t *p_sys_in = surface->p_pic->p_sys;
@@ -250,8 +261,8 @@ static int Extract(vlc_va_t *va, picture_t *output, uint8_t *data)
         assert(p_sys_out->texture != NULL);
         assert(p_sys_in->decoder == src);
 
-#if VLC_WINSTORE_APP && LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
-        if( sys->context_mutex > 0 ) {
+#if LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
+        if( sys->context_mutex != INVALID_HANDLE_VALUE ) {
             WaitForSingleObjectEx( sys->context_mutex, INFINITE, FALSE );
         }
 #endif
@@ -300,27 +311,37 @@ static int Extract(vlc_va_t *va, picture_t *output, uint8_t *data)
             D3D11_VIDEO_DECODER_OUTPUT_VIEW_DESC viewDesc;
             ID3D11VideoDecoderOutputView_GetDesc( src, &viewDesc );
 
+
+            D3D11_TEXTURE2D_DESC dstDesc;
+            ID3D11Texture2D_GetDesc( (ID3D11Texture2D*) p_sys_out->texture, &dstDesc);
+
             /* copy decoder slice to surface */
+            D3D11_BOX copyBox = {
+                .right = dstDesc.Width, .bottom = dstDesc.Height, .back = 1,
+            };
             ID3D11DeviceContext_CopySubresourceRegion(sys->d3dctx, (ID3D11Resource*) p_sys_out->texture,
                                                       0, 0, 0, 0,
                                                       (ID3D11Resource*) p_sys_in->texture,
                                                       viewDesc.Texture2D.ArraySlice,
-                                                      NULL);
+                                                      &copyBox);
         }
     }
-    else if (output->format.i_chroma == VLC_CODEC_YV12) {
+        break;
+    case VLC_CODEC_YV12:
         va->sys->filter->owner.sys = output;
         picture_Hold( surface->p_pic );
         va->sys->filter->pf_video_filter( va->sys->filter, surface->p_pic );
-    } else {
+        break;
+    default:
         msg_Err(va, "Unsupported output picture format %08X", output->format.i_chroma );
         ret = VLC_EGENERIC;
+        break;
     }
 
 
 done:
-#if VLC_WINSTORE_APP && LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
-    if( sys->context_mutex > 0 ) {
+#if LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
+    if( sys->context_mutex  != INVALID_HANDLE_VALUE ) {
         ReleaseMutex( sys->context_mutex );
     }
 #endif
@@ -374,6 +395,18 @@ static void Close(vlc_va_t *va, AVCodecContext *ctx)
     free(sys);
 }
 
+vlc_fourcc_t d3d11va_fourcc(enum PixelFormat swfmt)
+{
+    switch (swfmt)
+    {
+        case AV_PIX_FMT_YUV420P10LE:
+            return VLC_CODEC_D3D11_OPAQUE_10B;
+        default:
+            return VLC_CODEC_D3D11_OPAQUE;
+    }
+}
+
+
 static int Open(vlc_va_t *va, AVCodecContext *ctx, enum PixelFormat pix_fmt,
                 const es_format_t *fmt, picture_sys_t *p_sys)
 {
@@ -419,14 +452,13 @@ static int Open(vlc_va_t *va, AVCodecContext *ctx, enum PixelFormat pix_fmt,
            msg_Err(va, "Could not Query ID3D11VideoDevice Interface from the picture. (hr=0x%lX)", hr);
         } else {
             ID3D11DeviceContext_GetDevice( p_sys->context, (ID3D11Device**) &dx_sys->d3ddev );
-#if VLC_WINSTORE_APP && LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
+#if LIBAVCODEC_VERSION_CHECK(57, 2, 0, 3, 100)
             HANDLE context_lock = INVALID_HANDLE_VALUE;
             UINT dataSize = sizeof(context_lock);
             hr = ID3D11Device_GetPrivateData((ID3D11Device*)dx_sys->d3ddev, &GUID_CONTEXT_MUTEX, &dataSize, &context_lock);
-            if (SUCCEEDED(hr))
-                sys->context_mutex = context_lock;
-            else
+            if (FAILED(hr))
                 msg_Warn(va, "No mutex found to lock the decoder");
+            sys->context_mutex = context_lock;
 #endif
 
             sys->d3dctx = p_sys->context;
@@ -439,6 +471,8 @@ static int Open(vlc_va_t *va, AVCodecContext *ctx, enum PixelFormat pix_fmt,
         }
     }
 
+    sys->i_chroma = d3d11va_fourcc(ctx->sw_pix_fmt);
+
 #if VLC_WINSTORE_APP
     err = directx_va_Open(va, &sys->dx_sys, ctx, fmt, false);
 #else
@@ -449,7 +483,7 @@ static int Open(vlc_va_t *va, AVCodecContext *ctx, enum PixelFormat pix_fmt,
 
     if (p_sys == NULL)
     {
-        sys->filter = CreateFilter( VLC_OBJECT(va), fmt, VLC_CODEC_YV12);
+        sys->filter = CreateFilter( VLC_OBJECT(va), fmt, sys->i_chroma);
         if (sys->filter == NULL)
             goto error;
     }
@@ -881,6 +915,27 @@ static int DxSetupOutput(vlc_va_t *va, const GUID *input, const video_format_t *
 #endif
         }
 
+        D3D11_VIDEO_DECODER_DESC decoderDesc;
+        ZeroMemory(&decoderDesc, sizeof(decoderDesc));
+        decoderDesc.Guid = *input;
+        decoderDesc.SampleWidth = fmt->i_width;
+        decoderDesc.SampleHeight = fmt->i_height;
+        decoderDesc.OutputFormat = processorInput[idx];
+
+        UINT cfg_count = 0;
+        hr = ID3D11VideoDevice_GetVideoDecoderConfigCount( (ID3D11VideoDevice*) dx_sys->d3ddec, &decoderDesc, &cfg_count );
+        if (FAILED(hr))
+        {
+            msg_Err( va, "Failed to get configuration for decoder %s. (hr=0x%lX)", psz_decoder_name, hr );
+            continue;
+        }
+        if (cfg_count == 0) {
+            msg_Err( va, "No decoder configuration possible for %s %dx%d",
+                     DxgiFormatToStr(decoderDesc.OutputFormat),
+                     decoderDesc.SampleWidth, decoderDesc.SampleHeight );
+            continue;
+        }
+
         msg_Dbg(va, "Using output format %s for decoder %s", DxgiFormatToStr(processorInput[idx]), psz_decoder_name);
         va->sys->render = processorInput[idx];
         free(psz_decoder_name);
@@ -1047,7 +1102,7 @@ static picture_t *DxAllocPicture(vlc_va_t *va, const video_format_t *fmt, unsign
 {
     vlc_va_sys_t *sys = va->sys;
     video_format_t src_fmt = *fmt;
-    src_fmt.i_chroma = VLC_CODEC_D3D11_OPAQUE;
+    src_fmt.i_chroma = sys->i_chroma;
     picture_sys_t *pic_sys = calloc(1, sizeof(*pic_sys));
     if (unlikely(pic_sys == NULL))
         return NULL;

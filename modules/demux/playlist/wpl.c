@@ -140,6 +140,8 @@ static int Demux( demux_t* p_demux )
     input_item_t* p_input = GetCurrentItem( p_demux );
     input_item_node_t* p_node = input_item_node_Create( p_input );
     p_sys->psz_prefix = FindPrefix( p_demux );
+    if( unlikely(p_sys->psz_prefix == NULL) )
+        return VLC_DEMUXER_EOF;
 
     do
     {
@@ -179,14 +181,14 @@ int Import_WPL( vlc_object_t* p_this )
 
     demux_sys_t* p_sys = p_demux->p_sys;
     uint8_t *p_peek;
-    ssize_t i_peek = stream_Peek( p_demux->s, (const uint8_t **) &p_peek, 2048 );
+    ssize_t i_peek = vlc_stream_Peek( p_demux->s, (const uint8_t **) &p_peek, 2048 );
     if( unlikely( i_peek <= 0 ) )
     {
         Close_WPL( p_this );
         return VLC_EGENERIC;
     }
 
-    stream_t *p_probestream = stream_MemoryNew( p_demux->s, p_peek, i_peek, true );
+    stream_t *p_probestream = vlc_stream_MemoryNew( p_demux->s, p_peek, i_peek, true );
     if( unlikely( !p_probestream ) )
     {
         Close_WPL( p_this );
@@ -198,25 +200,25 @@ int Import_WPL( vlc_object_t* p_this )
     {
         msg_Err( p_demux, "Failed to create an XML reader" );
         Close_WPL( p_this );
-        stream_Delete( p_probestream );
+        vlc_stream_Delete( p_probestream );
         return VLC_EGENERIC;
     }
 
-    const int i_flags = p_sys->p_reader->i_flags;
-    p_sys->p_reader->i_flags |= OBJECT_FLAGS_QUIET;
+    const int i_flags = p_sys->p_reader->obj.flags;
+    p_sys->p_reader->obj.flags |= OBJECT_FLAGS_QUIET;
     const char* psz_name;
     int type = xml_ReaderNextNode( p_sys->p_reader, &psz_name );
-    p_sys->p_reader->i_flags = i_flags;
+    p_sys->p_reader->obj.flags = i_flags;
     if ( type != XML_READER_STARTELEM || strcasecmp( psz_name, "smil" ) )
     {
         msg_Err( p_demux, "Invalid WPL playlist. Root element should have been <smil>" );
         Close_WPL( p_this );
-        stream_Delete( p_probestream );
+        vlc_stream_Delete( p_probestream );
         return VLC_EGENERIC;
     }
 
     p_sys->p_reader = xml_ReaderReset( p_sys->p_reader, p_demux->s );
-    stream_Delete( p_probestream );
+    vlc_stream_Delete( p_probestream );
 
     msg_Dbg( p_demux, "Found valid WPL playlist" );
 

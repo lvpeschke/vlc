@@ -103,14 +103,13 @@ if HAVE_PULSE
 access_LTLIBRARIES += libpulsesrc_plugin.la
 endif
 
-libqtsound_plugin_la_SOURCES = access/qtsound.m
-libqtsound_plugin_la_LDFLAGS = -Wl,-framework,QTKit -Wl,-framework,CoreAudio
-if HAVE_QTKIT
-access_LTLIBRARIES += libqtsound_plugin.la
-endif
+libaccess_qtsound_plugin_la_SOURCES = access/qtsound.m
+libaccess_qtsound_plugin_la_LDFLAGS = -Wl,-framework,QTKit -Wl,-framework,CoreAudio
+access_LTLIBRARIES += $(LTLIBaccess_qtsound)
+EXTRA_LTLIBRARIES += libaccess_qtsound_plugin.la
 
 libaccess_wasapi_plugin_la_SOURCES = access/wasapi.c
-libaccess_wasapi_plugin_la_LIBADD = -lole32 -lksuser
+libaccess_wasapi_plugin_la_LIBADD = $(LIBCOM) -lksuser
 if HAVE_WASAPI
 if !HAVE_WINSTORE
 access_LTLIBRARIES += libaccess_wasapi_plugin.la
@@ -121,8 +120,8 @@ endif
 ### Video capture ###
 
 libavcapture_plugin_la_SOURCES = access/avcapture.m
-libavcapture_plugin_la_LDFLAGS = \
-	-Wl,-framework,AVFoundation -Wl,-framework,CoreMedia
+libavcapture_plugin_la_OBJCFLAGS = $(AM_OBJCFLAGS) -fobjc-arc
+libavcapture_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(accessdir)' -Wl,-framework,Foundation -Wl,-framework,AVFoundation -Wl,-framework,CoreMedia,  -Wl,-framework,CoreVideo
 if HAVE_AVFOUNDATION
 access_LTLIBRARIES += libavcapture_plugin.la
 endif
@@ -180,14 +179,14 @@ libv4l2_plugin_la_SOURCES = \
 	access/v4l2/v4l2.h
 libv4l2_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(srcdir)/access/v4l2
 libv4l2_plugin_la_CFLAGS = $(AM_CFLAGS) $(ZVBI_CFLAGS)
-libv4l2_plugin_la_LIBADD = $(LIBDL) $(LIBM) $(ZVBI_LIBS)
+libv4l2_plugin_la_LIBADD = $(LIBDL) $(LIBM) $(ZVBI_LIBS) $(LIBPTHREAD)
 if HAVE_V4L2
 access_LTLIBRARIES += libv4l2_plugin.la
 endif
 
 libdshow_plugin_la_SOURCES = access/dshow/vlc_dshow.h access/dshow/dshow.cpp access/dshow/access.h \
 	access/dshow/filter.cpp access/dshow/filter.h access/dshow/crossbar.cpp
-libdshow_plugin_la_LIBADD = -lole32 -loleaut32 -luuid -lstrmiids -lksuser
+libdshow_plugin_la_LIBADD = $(LIBCOM) -loleaut32 -luuid -lstrmiids -lksuser
 if HAVE_WIN32_DESKTOP
 access_LTLIBRARIES += libdshow_plugin.la
 endif
@@ -295,10 +294,6 @@ liblibbluray_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(accessdir)'
 access_LTLIBRARIES += $(LTLIBlibbluray)
 EXTRA_LTLIBRARIES += liblibbluray_plugin.la
 
-libaccess_bd_plugin_la_SOURCES = access/bd/bd.c access/bd/mpls.c access/bd/mpls.h access/bd/clpi.c access/bd/clpi.h
-access_LTLIBRARIES += libaccess_bd_plugin.la
-
-
 ### Digital TV ###
 
 libdtv_plugin_la_SOURCES = \
@@ -320,7 +315,7 @@ if HAVE_WIN32_DESKTOP
 # Use an import library for C++ to retain C linker on other platforms.
 libbda_la_SOURCES = access/dtv/bdadefs.h access/dtv/bdagraph.cpp access/dtv/bdagraph.hpp
 libbda_la_LDFLAGS = -static
-libbda_la_LIBADD = -lstrmiids -lole32 -loleaut32 -luuid
+libbda_la_LIBADD = -lstrmiids $(LIBCOM) -loleaut32 -luuid
 noinst_LTLIBRARIES += libbda.la
 
 libdtv_plugin_la_DEPENDENCIES = libbda.la
@@ -443,6 +438,9 @@ access_LTLIBRARIES += libavio_plugin.la
 endif
 endif
 
+libsatip_plugin_la_SOURCES = access/satip.c
+libsatip_plugin_la_LIBADD = $(SOCKET_LIBS) $(LIBPTHREAD)
+access_LTLIBRARIES += libsatip_plugin.la
 
 ### Misc ###
 

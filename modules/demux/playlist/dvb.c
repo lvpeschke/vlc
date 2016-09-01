@@ -1,7 +1,7 @@
 /*****************************************************************************
  * dvb.c: LinuxTV channels list
  *****************************************************************************
- * Copyright (C) 2005-20009 VLC authors and VideoLAN
+ * Copyright (C) 2005-2012 VLC authors and VideoLAN
  * $Id$
  *
  * Authors: Gildas Bazin <gbazin@videolan.org>
@@ -47,12 +47,12 @@ int Import_DVB(vlc_object_t *p_this)
     demux_t *demux = (demux_t *)p_this;
 
     CHECK_FILE();
-    if (!demux_IsPathExtension(demux, ".conf" ) && !demux->b_force )
+    if (!demux_IsPathExtension(demux, ".conf" ) && !demux->obj.force )
         return VLC_EGENERIC;
 
     /* Check if this really is a channels file */
     const uint8_t *peek;
-    int len = stream_Peek(demux->s, &peek, 1023);
+    int len = vlc_stream_Peek(demux->s, &peek, 1023);
     if (len <= 0)
         return VLC_EGENERIC;
 
@@ -84,7 +84,7 @@ static int Demux(demux_t *demux)
     input_item_node_t *subitems = input_item_node_Create(input);
     char *line;
 
-    while ((line = stream_ReadLine(demux->s)) != NULL)
+    while ((line = vlc_stream_ReadLine(demux->s)) != NULL)
     {
         input_item_t *item = ParseLine(line);
         free(line);
@@ -135,7 +135,7 @@ static const char *ParseModulation(const char *str)
          char dvb[9];
          char vlc[7];
      } tab[] = {
-         { "APSK_16", "16APSK" }, { "APSK_32", "32APSK" },
+         { "8VSB", "8VSB" }, { "APSK_16", "16APSK" }, { "APSK_32", "32APSK" },
          { "DQPSK", "DQPSK" }, { "PSK_8", "8PSK" }, { "QPSK", "QPSK" },
          { "QAM_128", "128QAM" }, { "QAM_16", "16QAM" },
          { "QAM_256", "256QAM" }, { "QAM_32", "32QAM" },

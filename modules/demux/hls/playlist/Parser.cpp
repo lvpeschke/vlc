@@ -73,51 +73,28 @@ static void releaseTagsList(std::list<Tag *> &list)
     list.clear();
 }
 
-void M3U8Parser::setFormatFromCodecs(Representation *rep, const std::string codecsstring)
-{
-    std::list<std::string> codecs;
-    std::list<std::string> tokens = Helper::tokenize(codecsstring, ',');
-    std::list<std::string>::const_iterator it;
-    for(it=tokens.begin(); it!=tokens.end(); ++it)
-    {
-        /* Truncate init data */
-        std::size_t pos = (*it).find_first_of('.', 0);
-        if(pos != std::string::npos)
-            codecs.push_back((*it).substr(0, pos));
-        else
-            codecs.push_back(*it);
-    }
-
-    if(!codecs.empty())
-    {
-        if(codecs.size() == 1)
-        {
-            std::string codec = codecs.front();
-            transform(codec.begin(), codec.end(), codec.begin(), (int (*)(int))std::tolower);
-            if(codec == "mp4a")
-                rep->streamFormat = StreamFormat(StreamFormat::PACKEDAAC);
-        }
-        else
-        {
-            rep->streamFormat = StreamFormat(StreamFormat::MPEG2TS);
-        }
-    }
-}
-
 void M3U8Parser::setFormatFromExtension(Representation *rep, const std::string &filename)
 {
     std::size_t pos = filename.find_last_of('.');
     if(pos != std::string::npos)
     {
-        std::string extension = filename.substr(pos + 1);
+        std::string extension = Helper::getFileExtension(filename);
         transform(extension.begin(), extension.end(), extension.begin(), (int (*)(int))std::tolower);
         if(extension == "aac")
         {
             rep->streamFormat = StreamFormat(StreamFormat::PACKEDAAC);
         }
-        else if(extension == "ts" || extension == "mp2t" || extension == "mpeg")
+        else if(extension == "ts" || extension == "mp2t" || extension == "mpeg" || extension == "m2ts")
         {
             rep->streamFormat = StreamFormat(StreamFormat::MPEG2TS);
+        }
+        else if(extension == "mp4" || extension == "m4s" || extension == "mov" || extension == "m4v")
+        {
+            rep->streamFormat = StreamFormat(StreamFormat::MP4);
+        }
+        else
+        {
+            rep->streamFormat = StreamFormat(StreamFormat::UNSUPPORTED);
         }
     }
 }
@@ -126,7 +103,6 @@ Representation * M3U8Parser::createRepresentation(BaseAdaptationSet *adaptSet, c
 {
     const Attribute *uriAttr = tag->getAttributeByName("URI");
     const Attribute *bwAttr = tag->getAttributeByName("BANDWIDTH");
-    const Attribute *codecsAttr = tag->getAttributeByName("CODECS");
     const Attribute *resAttr = tag->getAttributeByName("RESOLUTION");
 
     Representation *rep = new (std::nothrow) Representation(adaptSet);
@@ -155,9 +131,6 @@ Representation * M3U8Parser::createRepresentation(BaseAdaptationSet *adaptSet, c
 
         if(bwAttr)
             rep->setBandwidth(bwAttr->decimal());
-
-        if(codecsAttr)
-            setFormatFromCodecs(rep, codecsAttr->quotedString());
 
         if(resAttr)
         {
@@ -190,18 +163,18 @@ bool M3U8Parser::appendSegmentsFromPlaylistURI(vlc_object_t *p_obj, Representati
     block_t *p_block = Retrieve::HTTP(p_obj, rep->getPlaylistUrl().toString());
     if(p_block)
     {
-        stream_t *substream = stream_MemoryNew(p_obj, p_block->p_buffer, p_block->i_buffer, true);
+        stream_t *substream = vlc_stream_MemoryNew(p_obj, p_block->p_buffer, p_block->i_buffer, true);
         if(substream)
         {
             std::list<Tag *> tagslist = parseEntries(substream);
-            stream_Delete(substream);
+            vlc_stream_Delete(substream);
 
             parseSegments(p_obj, rep, tagslist);
 
             releaseTagsList(tagslist);
-            return true;
         }
         block_Release(p_block);
+        return true;
     }
     return false;
 }
@@ -210,7 +183,7 @@ void M3U8Parser::parseSegments(vlc_object_t *p_obj, Representation *rep, const s
 {
     SegmentList *segmentList = new (std::nothrow) SegmentList(rep);
 
-    rep->timescale.Set(100);
+    rep->setTimescale(100);
     rep->b_loaded = true;
 
     mtime_t totalduration = 0;
@@ -265,8 +238,8 @@ void M3U8Parser::parseSegments(vlc_object_t *p_obj, Representation *rep, const s
                     if(ctx_extinf->getAttributeByName("DURATION"))
                     {
                         const mtime_t nzDuration = CLOCK_FREQ * ctx_extinf->getAttributeByName("DURATION")->floatingPoint();
-                        segment->duration.Set(ctx_extinf->getAttributeByName("DURATION")->floatingPoint() * rep->timescale.Get());
-                        segment->startTime.Set(nzStartTime * rep->timescale.Get() / CLOCK_FREQ);
+                        segment->duration.Set(ctx_extinf->getAttributeByName("DURATION")->floatingPoint() * (uint64_t) rep->getTimescale());
+                        segment->startTime.Set(rep->getTimescale().ToScaled(nzStartTime));
                         nzStartTime += nzDuration;
                         totalduration += nzDuration;
 
@@ -284,10 +257,10 @@ void M3U8Parser::parseSegments(vlc_object_t *p_obj, Representation *rep, const s
                 if(ctx_byterange)
                 {
                     std::pair<std::size_t,std::size_t> range = ctx_byterange->getValue().getByteRange();
-                    if(range.first == 0)
+                    if(range.first == 0) /* first == size, second = offset */
                         range.first = prevbyterangeoffset;
                     prevbyterangeoffset = range.first + range.second;
-                    segment->setByteRange(range.first, prevbyterangeoffset);
+                    segment->setByteRange(range.first, prevbyterangeoffset - 1);
                     ctx_byterange = NULL;
                 }
 
@@ -363,6 +336,29 @@ void M3U8Parser::parseSegments(vlc_object_t *p_obj, Representation *rep, const s
             }
             break;
 
+            case AttributesTag::EXTXMAP:
+            {
+                const AttributesTag *keytag = static_cast<const AttributesTag *>(tag);
+                const Attribute *uriAttr;
+                if(keytag && (uriAttr = keytag->getAttributeByName("URI")) &&
+                   !segmentList->initialisationSegment.Get()) /* FIXME: handle discontinuities */
+                {
+                    InitSegment *initSegment = new (std::nothrow) InitSegment(rep);
+                    if(initSegment)
+                    {
+                        initSegment->setSourceUrl(uriAttr->quotedString());
+                        const Attribute *byterangeAttr = keytag->getAttributeByName("BYTERANGE");
+                        if(byterangeAttr)
+                        {
+                            const std::pair<std::size_t,std::size_t> range = byterangeAttr->unescapeQuotes().getByteRange();
+                            initSegment->setByteRange(range.first, range.first + range.second - 1);
+                        }
+                        segmentList->initialisationSegment.Set(initSegment);
+                    }
+                }
+            }
+            break;
+
             case Tag::EXTXDISCONTINUITY:
                 discontinuity  = true;
                 break;
@@ -386,7 +382,7 @@ void M3U8Parser::parseSegments(vlc_object_t *p_obj, Representation *rep, const s
 }
 M3U8 * M3U8Parser::parse(vlc_object_t *p_object, stream_t *p_stream, const std::string &playlisturl)
 {
-    char *psz_line = stream_ReadLine(p_stream);
+    char *psz_line = vlc_stream_ReadLine(p_stream);
     if(!psz_line || strcmp(psz_line, "#EXTM3U"))
     {
         free(psz_line);
@@ -521,7 +517,7 @@ std::list<Tag *> M3U8Parser::parseEntries(stream_t *stream)
     Tag *lastTag = NULL;
     char *psz_line;
 
-    while((psz_line = stream_ReadLine(stream)))
+    while((psz_line = vlc_stream_ReadLine(stream)))
     {
         if(*psz_line == '#')
         {

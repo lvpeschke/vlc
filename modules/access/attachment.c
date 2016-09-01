@@ -54,7 +54,7 @@ vlc_module_end()
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
-static ssize_t Read(access_t *, uint8_t *, size_t);
+static ssize_t Read(access_t *, void *, size_t);
 static int     Seek(access_t *, uint64_t);
 static int     Control(access_t *, int, va_list);
 
@@ -91,7 +91,6 @@ static int Open(vlc_object_t *object)
     sys->offset = 0;
 
     /* */
-    access_InitFields(access);
     access->pf_read    = Read;
     access->pf_block   = NULL;
     access->pf_control = Control;
@@ -111,13 +110,12 @@ static void Close(vlc_object_t *object)
 }
 
 /* */
-static ssize_t Read(access_t *access, uint8_t *buffer, size_t size)
+static ssize_t Read(access_t *access, void *buffer, size_t size)
 {
     access_sys_t *sys = access->p_sys;
     input_attachment_t *a = sys->attachment;
 
-    access->info.b_eof = sys->offset >= (uint64_t)a->i_data;
-    if (access->info.b_eof)
+    if (sys->offset >= (uint64_t)a->i_data)
         return 0;
 
     const size_t copy = __MIN(size, a->i_data - sys->offset);
@@ -136,7 +134,6 @@ static int Seek(access_t *access, uint64_t position)
         position = a->i_data;
 
     sys->offset = position;
-    access->info.b_eof = false;
     return VLC_SUCCESS;
 }
 
@@ -147,19 +144,19 @@ static int Control(access_t *access, int query, va_list args)
 
     switch (query)
     {
-    case ACCESS_CAN_SEEK:
-    case ACCESS_CAN_FASTSEEK:
-    case ACCESS_CAN_PAUSE:
-    case ACCESS_CAN_CONTROL_PACE:
+    case STREAM_CAN_SEEK:
+    case STREAM_CAN_FASTSEEK:
+    case STREAM_CAN_PAUSE:
+    case STREAM_CAN_CONTROL_PACE:
         *va_arg(args, bool *) = true;
         break;
-    case ACCESS_GET_SIZE:
+    case STREAM_GET_SIZE:
         *va_arg(args, uint64_t *) = sys->attachment->i_data;
         break;
-    case ACCESS_GET_PTS_DELAY:
+    case STREAM_GET_PTS_DELAY:
         *va_arg(args, int64_t *) = DEFAULT_PTS_DELAY;
         break;
-    case ACCESS_SET_PAUSE_STATE:
+    case STREAM_SET_PAUSE_STATE:
         return VLC_SUCCESS;
 
     default:

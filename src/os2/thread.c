@@ -77,7 +77,7 @@ static ULONG vlc_DosWaitEventSemEx( HEV hev, ULONG ulTimeout )
     int       n;
     ULONG     rc;
 
-    struct vlc_thread *th = vlc_threadvar_get( thread_key );
+    struct vlc_thread *th = vlc_thread_self ();
     if( th == NULL || !th->killable )
     {
         /* Main thread - cannot be cancelled anyway
@@ -256,25 +256,6 @@ void vlc_mutex_unlock (vlc_mutex_t *p_mutex)
 }
 
 /*** Condition variables ***/
-#undef CLOCK_REALTIME
-#undef CLOCK_MONOTONIC
-enum
-{
-    CLOCK_REALTIME=0, /* must be zero for VLC_STATIC_COND */
-    CLOCK_MONOTONIC,
-};
-
-static void vlc_cond_init_common (vlc_cond_t *p_condvar, unsigned clock)
-{
-    if (DosCreateEventSem (NULL, &p_condvar->hev, 0, FALSE) ||
-        DosCreateEventSem (NULL, &p_condvar->hevAck, 0, FALSE))
-        abort();
-
-    p_condvar->waiters = 0;
-    p_condvar->signaled = 0;
-    p_condvar->clock = clock;
-}
-
 typedef struct vlc_static_cond_t vlc_static_cond_t;
 
 struct vlc_static_cond_t
@@ -291,7 +272,7 @@ static void vlc_static_cond_init (vlc_cond_t *p_condvar)
 
     if (p_condvar->hev == NULLHANDLE)
     {
-        vlc_cond_init_common (p_condvar, p_condvar->clock);
+        vlc_cond_init (p_condvar);
 
         vlc_static_cond_t *new_static_condvar;
 
@@ -325,12 +306,17 @@ static void vlc_static_cond_destroy_all (void)
 
 void vlc_cond_init (vlc_cond_t *p_condvar)
 {
-    vlc_cond_init_common (p_condvar, CLOCK_MONOTONIC);
+    if (DosCreateEventSem (NULL, &p_condvar->hev, 0, FALSE) ||
+        DosCreateEventSem (NULL, &p_condvar->hevAck, 0, FALSE))
+        abort();
+
+    p_condvar->waiters = 0;
+    p_condvar->signaled = 0;
 }
 
 void vlc_cond_init_daytime (vlc_cond_t *p_condvar)
 {
-    vlc_cond_init_common (p_condvar, CLOCK_REALTIME);
+    vlc_cond_init (p_condvar);
 }
 
 void vlc_cond_destroy (vlc_cond_t *p_condvar)
@@ -371,6 +357,8 @@ static int vlc_cond_wait_common (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex,
     ULONG ulPost;
     ULONG rc;
 
+    assert(p_condvar->hev != NULLHANDLE);
+
     do
     {
         vlc_testcancel();
@@ -408,28 +396,29 @@ void vlc_cond_wait (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex)
 int vlc_cond_timedwait (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex,
                         mtime_t deadline)
 {
-    ULONG   ulTimeout;
+    ULONG ulTimeout;
 
-    if (p_condvar->hev == NULLHANDLE)
-        vlc_static_cond_init (p_condvar);
+    mtime_t total = mdate();
+    total = (deadline - total) / 1000;
+    if( total < 0 )
+        total = 0;
 
+    ulTimeout = ( total > 0x7fffffff ) ? 0x7fffffff : total;
+
+    return vlc_cond_wait_common (p_condvar, p_mutex, ulTimeout);
+}
+
+int vlc_cond_timedwait_daytime (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex,
+                                time_t deadline)
+{
+    ULONG ulTimeout;
     mtime_t total;
-    switch (p_condvar->clock)
-    {
-        case CLOCK_REALTIME:
-        {
-            struct timeval tv;
-            gettimeofday (&tv, NULL);
+    struct timeval tv;
 
-            total = CLOCK_FREQ * tv.tv_sec +
-                    CLOCK_FREQ * tv.tv_usec / 1000000L;
-            break;
-        }
-        default:
-            assert (p_condvar->clock == CLOCK_MONOTONIC);
-            total = mdate();
-            break;
-    }
+    gettimeofday (&tv, NULL);
+
+    total = CLOCK_FREQ * tv.tv_sec +
+            CLOCK_FREQ * tv.tv_usec / 1000000L;
     total = (deadline - total) / 1000;
     if( total < 0 )
         total = 0;
@@ -649,6 +638,16 @@ int vlc_set_priority (vlc_thread_t th, int priority)
     return VLC_SUCCESS;
 }
 
+vlc_thread_t vlc_thread_self (void)
+{
+    return vlc_threadvar_get (thread_key);
+}
+
+unsigned long vlc_thread_id (void)
+{
+    return _gettid();
+}
+
 /*** Thread cancellation ***/
 
 /* APC procedure for thread cancellation */
@@ -670,7 +669,7 @@ int vlc_savecancel (void)
 {
     int state;
 
-    struct vlc_thread *th = vlc_threadvar_get (thread_key);
+    struct vlc_thread *th = vlc_thread_self ();
     if (th == NULL)
         return false; /* Main thread - cannot be cancelled anyway */
 
@@ -681,7 +680,7 @@ int vlc_savecancel (void)
 
 void vlc_restorecancel (int state)
 {
-    struct vlc_thread *th = vlc_threadvar_get (thread_key);
+    struct vlc_thread *th = vlc_thread_self ();
     assert (state == false || state == true);
 
     if (th == NULL)
@@ -693,7 +692,7 @@ void vlc_restorecancel (int state)
 
 void vlc_testcancel (void)
 {
-    struct vlc_thread *th = vlc_threadvar_get (thread_key);
+    struct vlc_thread *th = vlc_thread_self ();
     if (th == NULL)
         return; /* Main thread - cannot be cancelled anyway */
 
@@ -720,7 +719,7 @@ void vlc_control_cancel (int cmd, ...)
      * need to lock anything. */
     va_list ap;
 
-    struct vlc_thread *th = vlc_threadvar_get (thread_key);
+    struct vlc_thread *th = vlc_thread_self ();
     if (th == NULL)
         return; /* Main thread - cannot be cancelled anyway */
 
@@ -749,7 +748,7 @@ void vlc_control_cancel (int cmd, ...)
 static int vlc_select( int nfds, fd_set *rdset, fd_set *wrset, fd_set *exset,
                        struct timeval *timeout )
 {
-    struct vlc_thread *th = vlc_threadvar_get( thread_key );
+    struct vlc_thread *th = vlc_thread_self( );
 
     int rc;
 

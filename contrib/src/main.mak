@@ -32,6 +32,9 @@ CONTRIB_VIDEOLAN := http://downloads.videolan.org/pub/contrib
 
 PREFIX ?= $(TOPDST)/$(HOST)
 PREFIX := $(abspath $(PREFIX))
+BUILDPREFIX ?= $(TOPDST)
+BUILDPREFIX := $(abspath $(BUILDPREFIX))
+BUILDBINDIR ?= $(BUILDPREFIX)/bin
 ifneq ($(HOST),$(BUILD))
 HAVE_CROSS_COMPILE = 1
 endif
@@ -97,8 +100,8 @@ endif
 endif
 
 ifdef HAVE_ANDROID
-CC :=  $(HOST)-gcc --sysroot=$(ANDROID_NDK)/platforms/$(ANDROID_API)/arch-$(PLATFORM_SHORT_ARCH)
-CXX := $(HOST)-g++ --sysroot=$(ANDROID_NDK)/platforms/$(ANDROID_API)/arch-$(PLATFORM_SHORT_ARCH)
+CC :=  clang
+CXX := clang++
 endif
 
 ifdef HAVE_MACOSX
@@ -233,18 +236,21 @@ SVN ?= $(error subversion client (svn) not found!)
 ifeq ($(shell curl --version >/dev/null 2>&1 || echo FAIL),)
 download = curl -f -L -- "$(1)" > "$@"
 else ifeq ($(shell wget --version >/dev/null 2>&1 || echo FAIL),)
-download = rm -f $@.tmp && \
+download = (rm -f $@.tmp && \
 	wget --passive -c -p -O $@.tmp "$(1)" && \
 	touch $@.tmp && \
-	mv $@.tmp $@
+	mv $@.tmp $@ )
 else ifeq ($(which fetch >/dev/null 2>&1 || echo FAIL),)
-download = rm -f $@.tmp && \
+download = (rm -f $@.tmp && \
 	fetch -p -o $@.tmp "$(1)" && \
 	touch $@.tmp && \
-	mv $@.tmp $@
+	mv $@.tmp $@)
 else
 download = $(error Neither curl nor wget found!)
 endif
+
+download_pkg = $(call download,$(CONTRIB_VIDEOLAN)/$(2)/$(lastword $(subst /, ,$(@)))) || \
+	( $(call download,$(1)) && echo "Please upload this package $(lastword $(subst /, ,$(@))) to our FTP" )
 
 ifeq ($(shell which xzcat >/dev/null 2>&1 || echo FAIL),)
 XZCAT = xzcat
@@ -390,6 +396,7 @@ mostlyclean:
 	-$(RM) $(foreach p,$(PKGS_ALL),.$(p) .sum-$(p) .dep-$(p))
 	-$(RM) toolchain.cmake
 	-$(RM) -R "$(PREFIX)"
+	-$(RM) -R "$(BUILDBINDIR)"
 	-$(RM) -R */
 
 clean: mostlyclean

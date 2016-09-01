@@ -122,11 +122,11 @@ struct dialog_i11e_context
 static inline vlc_dialog_provider *
 get_dialog_provider(vlc_object_t *p_obj, bool b_check_interact)
 {
-    if (b_check_interact && p_obj->i_flags & OBJECT_FLAGS_NOINTERACT)
+    if (b_check_interact && p_obj->obj.flags & OBJECT_FLAGS_NOINTERACT)
         return NULL;
 
     vlc_dialog_provider *p_provider =
-        libvlc_priv(p_obj->p_libvlc)->p_dialog_provider;
+        libvlc_priv(p_obj->obj.libvlc)->p_dialog_provider;
     assert(p_provider != NULL);
     return p_provider;
 }
@@ -237,7 +237,6 @@ dialog_clear_all_locked(vlc_dialog_provider *p_provider)
             vlc_array_item_at_index(&p_provider->dialog_array, i);
         dialog_cancel_locked(p_provider, p_id);
     }
-    vlc_array_clear(&p_provider->dialog_array);
 }
 
 void

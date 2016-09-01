@@ -124,6 +124,35 @@ static inline void unlock_input(libvlc_media_player_t *mp)
     vlc_mutex_unlock(&mp->input.lock);
 }
 
+static void input_item_preparsed_changed( const vlc_event_t *p_event,
+                                          void * user_data )
+{
+    libvlc_media_t *p_md = user_data;
+    if( p_event->u.input_item_preparsed_changed.new_status & ITEM_PREPARSED )
+    {
+        /* Send the event */
+        libvlc_event_t event;
+        event.type = libvlc_MediaParsedChanged;
+        event.u.media_parsed_changed.new_status = libvlc_media_parsed_status_done;
+        libvlc_event_send( p_md->p_event_manager, &event );
+    }
+}
+
+static void media_attach_preparsed_event( libvlc_media_t *p_md )
+{
+    vlc_event_attach( &p_md->p_input_item->event_manager,
+                      vlc_InputItemPreparsedChanged,
+                      input_item_preparsed_changed, p_md );
+}
+
+static void media_detach_preparsed_event( libvlc_media_t *p_md )
+{
+    vlc_event_detach( &p_md->p_input_item->event_manager,
+                      vlc_InputItemPreparsedChanged,
+                      input_item_preparsed_changed,
+                      p_md );
+}
+
 /*
  * Release the associated input thread.
  *
@@ -138,6 +167,8 @@ static void release_input_thread( libvlc_media_player_t *p_mi )
     if( !p_input_thread )
         return;
     p_mi->input.p_thread = NULL;
+
+    media_detach_preparsed_event( p_mi->p_md );
 
     var_DelCallback( p_input_thread, "can-seek",
                      input_seekable_changed, p_mi );
@@ -646,6 +677,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
     var_Create (mp, "volume", VLC_VAR_FLOAT);
     var_Create (mp, "corks", VLC_VAR_INTEGER);
     var_Create (mp, "audio-filter", VLC_VAR_STRING);
+    var_Create (mp, "role", VLC_VAR_STRING | VLC_VAR_DOINHERIT);
     var_Create (mp, "amem-data", VLC_VAR_ADDRESS);
     var_Create (mp, "amem-setup", VLC_VAR_ADDRESS);
     var_Create (mp, "amem-cleanup", VLC_VAR_ADDRESS);
@@ -707,7 +739,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
      * FIXME: It's unclear why we want to put this in public API, and why we
      * want to expose it in such a limiting and ugly way.
      */
-    var_AddCallback(mp->p_libvlc, "snapshot-file", snapshot_was_taken, mp);
+    var_AddCallback(mp->obj.libvlc, "snapshot-file", snapshot_was_taken, mp);
 
     libvlc_retain(instance);
     return mp;
@@ -741,7 +773,7 @@ static void libvlc_media_player_destroy( libvlc_media_player_t *p_mi )
     assert( p_mi );
 
     /* Detach Callback from the main libvlc object */
-    var_DelCallback( p_mi->p_libvlc,
+    var_DelCallback( p_mi->obj.libvlc,
                      "snapshot-file", snapshot_was_taken, p_mi );
 
     /* Detach callback from the media player / input manager object */
@@ -914,12 +946,15 @@ int libvlc_media_player_play( libvlc_media_player_t *p_mi )
         return -1;
     }
 
+    media_attach_preparsed_event( p_mi->p_md );
+
     p_input_thread = input_Create( p_mi, p_mi->p_md->p_input_item, NULL,
                                    p_mi->input.p_resource );
     unlock(p_mi);
     if( !p_input_thread )
     {
         unlock_input(p_mi);
+        media_detach_preparsed_event( p_mi->p_md );
         libvlc_printerr( "Not enough memory" );
         return -1;
     }
@@ -939,6 +974,7 @@ int libvlc_media_player_play( libvlc_media_player_t *p_mi )
         var_DelCallback( p_input_thread, "program-scrambled", input_scrambled_changed, p_mi );
         var_DelCallback( p_input_thread, "can-seek", input_seekable_changed, p_mi );
         input_Close( p_input_thread );
+        media_detach_preparsed_event( p_mi->p_md );
         libvlc_printerr( "Input initialization failure" );
         return -1;
     }
@@ -1618,7 +1654,7 @@ float libvlc_media_player_get_fps( libvlc_media_player_t *p_mi )
     if( media == NULL )
         return 0.f;
 
-    input_item_t *item = p_mi->p_md->p_input_item;
+    input_item_t *item = media->p_input_item;
     float fps = 0.f;
 
     vlc_mutex_lock( &item->lock );
@@ -1631,6 +1667,7 @@ float libvlc_media_player_get_fps( libvlc_media_player_t *p_mi )
                   / (float)fmt->video.i_frame_rate_base;
     }
     vlc_mutex_unlock( &item->lock );
+    libvlc_media_release( media );
 
     return fps;
 }
@@ -1856,6 +1893,31 @@ void libvlc_media_player_set_video_title_display( libvlc_media_player_t *p_mi, l
     }
 }
 
+int libvlc_media_player_add_slave( libvlc_media_player_t *p_mi,
+                                   libvlc_media_slave_type_t i_type,
+                                   const char *psz_uri, bool b_select )
+{
+    input_thread_t *p_input_thread = libvlc_get_input_thread ( p_mi );
+
+    if( p_input_thread == NULL )
+    {
+        libvlc_media_t *p_media = libvlc_media_player_get_media( p_mi );
+        if( p_media == NULL )
+            return -1;
+
+        int i_ret = libvlc_media_slaves_add( p_media, i_type, 4, psz_uri );
+        libvlc_media_release( p_media );
+        return i_ret;
+    }
+    else
+    {
+        int i_ret = input_AddSlave( p_input_thread, i_type, psz_uri, b_select );
+        vlc_object_release( p_input_thread );
+
+        return i_ret == VLC_SUCCESS ? 0 : -1;
+    }
+}
+
 /**
  * Maximum size of a formatted equalizer amplification band frequency value.
  *
@@ -1900,4 +1962,43 @@ int libvlc_media_player_set_equalizer( libvlc_media_player_t *p_mi, libvlc_equal
     }
 
     return 0;
+}
+
+static const char roles[][16] =
+{
+    [libvlc_role_Music] =         "music",
+    [libvlc_role_Video] =         "video",
+    [libvlc_role_Communication] = "communication",
+    [libvlc_role_Game] =          "game",
+    [liblvc_role_Notification] =  "notification",
+    [libvlc_role_Animation] =     "animation",
+    [libvlc_role_Production] =    "production",
+    [libvlc_role_Accessibility] = "accessibility",
+    [libvlc_role_Test] =          "test",
+};
+
+int libvlc_media_player_set_role(libvlc_media_player_t *mp, unsigned role)
+{
+    if (role >= ARRAY_SIZE(roles)
+     || var_SetString(mp, "role", roles[role]) != VLC_SUCCESS)
+        return -1;
+    return 0;
+}
+
+int libvlc_media_player_get_role(libvlc_media_player_t *mp)
+{
+    int ret = -1;
+    char *str = var_GetString(mp, "role");
+    if (str == NULL)
+        return 0;
+
+    for (size_t i = 0; i < ARRAY_SIZE(roles); i++)
+        if (!strcmp(roles[i], str))
+        {
+            ret = i;
+            break;
+        }
+
+    free(str);
+    return ret;
 }

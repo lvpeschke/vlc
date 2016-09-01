@@ -264,6 +264,7 @@ static const staticentry_t p_list_video[] = {
         E("x3eV", "DreX H.264"),
         E("GAVC", "GeoVision MPEG-4 AVC"),
         E("Q264", "QNAP H.264/MPEG-4 AVC"),
+        E("q264", "QNAP H.264/MPEG-4 AVC"),
         A("UMSV"),
         A("SMV2"),
         A("tshd"),
@@ -505,6 +506,8 @@ static const staticentry_t p_list_video[] = {
     B(VLC_CODEC_VP9, "Google/On2's VP9 Video"),
         A("VP90"),
 
+    B(VLC_CODEC_AV1, "AOMedia's AV1 Video"),
+        A("av10"),
 
     /* Xiph.org theora */
     B(VLC_CODEC_THEORA, "Xiph.org's Theora Video"),
@@ -663,6 +666,7 @@ static const staticentry_t p_list_video[] = {
     /* */
     B(VLC_CODEC_DNXHD, "DNxHD"),
         A("AVdn"),
+        E("AVdh", "DNxHR"),
     B(VLC_CODEC_8BPS, "8BPS"),
         A("8BPS"),
     B(VLC_CODEC_MIMIC, "Mimic"),
@@ -858,6 +862,19 @@ static const staticentry_t p_list_video[] = {
         A("I4AL"),
     B(VLC_CODEC_I444_10B, "Planar 4:4:4 YUV 10-bit BE"),
         A("I4AB"),
+
+    B(VLC_CODEC_I420_12L, "Planar 4:2:0 YUV 12-bit LE"),
+        A("I0CL"),
+    B(VLC_CODEC_I420_12B, "Planar 4:2:0 YUV 12-bit BE"),
+        A("I0CB"),
+    B(VLC_CODEC_I422_12L, "Planar 4:2:2 YUV 12-bit LE"),
+        A("I2CL"),
+    B(VLC_CODEC_I422_12B, "Planar 4:2:2 YUV 12-bit BE"),
+        A("I2CB"),
+    B(VLC_CODEC_I444_12L, "Planar 4:4:4 YUV 12-bit LE"),
+        A("I4CL"),
+    B(VLC_CODEC_I444_12B, "Planar 4:4:4 YUV 12-bit BE"),
+        A("I4CB"),
 
     B(VLC_CODEC_I444_16L, "Planar 4:4:4 YUV 16-bit LE"),
         A("I4FL"),
@@ -1078,6 +1095,8 @@ static const staticentry_t p_list_video[] = {
     B(VLC_CODEC_DFA, "Chronomaster DFA"),
 
     B(VLC_CODEC_HNM4_VIDEO, "Cryo Interactive Entertainment HNM4"),
+
+    B(VLC_CODEC_CINEFORM, "CineForm" ),
 };
 
 static const staticentry_t p_list_audio[] = {

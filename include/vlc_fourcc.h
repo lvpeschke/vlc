@@ -117,6 +117,7 @@
 #define VLC_CODEC_VP7             VLC_FOURCC('V','P','7','0')
 #define VLC_CODEC_VP8             VLC_FOURCC('V','P','8','0')
 #define VLC_CODEC_VP9             VLC_FOURCC('V','P','9','0')
+#define VLC_CODEC_AV1             VLC_FOURCC('a','v','1','0')
 #define VLC_CODEC_JPEG2000        VLC_FOURCC('J','P','2','K')
 #define VLC_CODEC_LAGARITH        VLC_FOURCC('L','A','G','S')
 #define VLC_CODEC_FLASHSV2        VLC_FOURCC('F','S','V','2')
@@ -178,6 +179,7 @@
 #define VLC_CODEC_HQ_HQA          VLC_FOURCC('C','U','V','C')
 #define VLC_CODEC_HAP             VLC_FOURCC('H','A','P','1')
 #define VLC_CODEC_DXV             VLC_FOURCC('D','X','D','3')
+#define VLC_CODEC_CINEFORM        VLC_FOURCC('C','F','H','D')
 
 /***********
  * Chromas
@@ -199,9 +201,12 @@
 /* Planar YUV 4:2:0 Y:U:V  9-bit stored on 16 bits */
 #define VLC_CODEC_I420_9L         VLC_FOURCC('I','0','9','L')
 #define VLC_CODEC_I420_9B         VLC_FOURCC('I','0','9','B')
-/* Planar YUV 4:2:0 Y:U:V 10-bit stored on 16 bits */
+/* Planar YUV 4:2:0 Y:U:V 10-bit stored on 16 bits LSB */
 #define VLC_CODEC_I420_10L        VLC_FOURCC('I','0','A','L')
 #define VLC_CODEC_I420_10B        VLC_FOURCC('I','0','A','B')
+/* Planar YUV 4:2:0 Y:U:V 12-bit stored on 16 bits */
+#define VLC_CODEC_I420_12L        VLC_FOURCC('I','0','C','L')
+#define VLC_CODEC_I420_12B        VLC_FOURCC('I','0','C','B')
 
 /* Planar YUV 4:2:2 Y:U:V 8-bit */
 #define VLC_CODEC_I422            VLC_FOURCC('I','4','2','2')
@@ -211,6 +216,9 @@
 /* Planar YUV 4:2:2 Y:U:V 10-bit stored on 16 bits */
 #define VLC_CODEC_I422_10L        VLC_FOURCC('I','2','A','L')
 #define VLC_CODEC_I422_10B        VLC_FOURCC('I','2','A','B')
+/* Planar YUV 4:2:2 Y:U:V 12-bit stored on 16 bits */
+#define VLC_CODEC_I422_12L        VLC_FOURCC('I','2','C','L')
+#define VLC_CODEC_I422_12B        VLC_FOURCC('I','2','C','B')
 
 /* Planar YUV 4:4:0 Y:U:V */
 #define VLC_CODEC_I440            VLC_FOURCC('I','4','4','0')
@@ -222,6 +230,9 @@
 /* Planar YUV 4:4:4 Y:U:V 10-bit stored on 16 bits */
 #define VLC_CODEC_I444_10L        VLC_FOURCC('I','4','A','L')
 #define VLC_CODEC_I444_10B        VLC_FOURCC('I','4','A','B')
+/* Planar YUV 4:4:4 Y:U:V 12-bit stored on 16 bits */
+#define VLC_CODEC_I444_12L        VLC_FOURCC('I','4','C','L')
+#define VLC_CODEC_I444_12B        VLC_FOURCC('I','4','C','B')
 /* Planar YUV 4:4:4 Y:U:V 16-bit */
 #define VLC_CODEC_I444_16L        VLC_FOURCC('I','4','F','L')
 #define VLC_CODEC_I444_16B        VLC_FOURCC('I','4','F','B')
@@ -262,6 +273,8 @@
 #define VLC_CODEC_NV24            VLC_FOURCC('N','V','2','4')
 /* 2 planes Y/VU 4:4:4 */
 #define VLC_CODEC_NV42            VLC_FOURCC('N','V','4','2')
+/* 2 planes Y/UV 4:2:0 10-bit */
+#define VLC_CODEC_P010            VLC_FOURCC('P','0','1','0')
 
 /* Packed YUV */
 
@@ -334,10 +347,12 @@
 #define VLC_CODEC_MMAL_OPAQUE     VLC_FOURCC('M','M','A','L')
 
 /* DXVA2 opaque video surface for use with D3D9 */
-#define VLC_CODEC_D3D9_OPAQUE     VLC_FOURCC('D','X','A','9')
+#define VLC_CODEC_D3D9_OPAQUE     VLC_FOURCC('D','X','A','9') /* 4:2:0  8 bpc */
+#define VLC_CODEC_D3D9_OPAQUE_10B VLC_FOURCC('D','X','A','0') /* 4:2:0 10 bpc */
 
 /* D3D11VA opaque video surface for use with D3D11 */
-#define VLC_CODEC_D3D11_OPAQUE    VLC_FOURCC('D','X','1','1')
+#define VLC_CODEC_D3D11_OPAQUE          VLC_FOURCC('D','X','1','1') /* 4:2:0  8 bpc */
+#define VLC_CODEC_D3D11_OPAQUE_10B      VLC_FOURCC('D','X','1','0') /* 4:2:0 10 bpc */
 
 /* CVPixelBuffer opaque buffer type */
 #define VLC_CODEC_CVPX_OPAQUE     VLC_FOURCC('C','V','P','X')

@@ -53,7 +53,6 @@ enum libvlc_event_e {
     libvlc_MediaFreed,
     libvlc_MediaStateChanged,
     libvlc_MediaSubItemTreeAdded,
-    libvlc_MediaParsedStatus,
 
     libvlc_MediaPlayerMediaChanged=0x100,
     libvlc_MediaPlayerNothingSpecial,
@@ -101,7 +100,15 @@ enum libvlc_event_e {
     libvlc_MediaListPlayerNextItemSet,
     libvlc_MediaListPlayerStopped,
 
+    /**
+     * \deprecated Useless event, it will be triggered only when calling
+     * libvlc_media_discoverer_start()
+     */
     libvlc_MediaDiscovererStarted=0x500,
+    /**
+     * \deprecated Useless event, it will be triggered only when calling
+     * libvlc_media_discoverer_stop()
+     */
     libvlc_MediaDiscovererEnded,
 
     libvlc_VlmMediaAdded=0x600,
@@ -141,7 +148,7 @@ typedef struct libvlc_event_t
         } media_duration_changed;
         struct
         {
-            int new_status;
+            int new_status; /**< see @ref libvlc_media_parsed_status_t */
         } media_parsed_changed;
         struct
         {
@@ -149,16 +156,12 @@ typedef struct libvlc_event_t
         } media_freed;
         struct
         {
-            libvlc_state_t new_state;
+            int new_state; /**< see @ref libvlc_state_t */
         } media_state_changed;
         struct
         {
             libvlc_media_t * item;
         } media_subitemtree_added;
-        struct
-        {
-            int new_status;
-        } media_parsed_status;
 
         /* media instance */
         struct

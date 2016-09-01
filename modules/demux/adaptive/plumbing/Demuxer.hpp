@@ -36,13 +36,16 @@ namespace adaptive
             virtual int demux(mtime_t) = 0;
             virtual void drain() = 0;
             virtual bool create() = 0;
-            virtual bool restart(CommandsQueue &) = 0;
+            virtual bool restart(CommandsQueue *) = 0;
             bool alwaysStartsFromZero() const;
-            bool reinitsOnSeek() const;
+            bool needsRestartOnSeek() const;
+            bool needsRestartOnSwitch() const;
+            void setCanDetectSwitches(bool);
 
         protected:
             bool b_startsfromzero;
             bool b_reinitsonseek;
+            bool b_candetectswitches;
     };
 
     class Demuxer : public AbstractDemuxer
@@ -53,7 +56,7 @@ namespace adaptive
             virtual int demux(mtime_t); /* impl */
             virtual void drain(); /* impl */
             virtual bool create(); /* impl */
-            virtual bool restart(CommandsQueue &); /* impl */
+            virtual bool restart(CommandsQueue *); /* impl */
 
         protected:
             AbstractSourceStream *sourcestream;

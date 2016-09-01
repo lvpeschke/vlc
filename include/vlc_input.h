@@ -131,7 +131,7 @@ static inline void vlc_input_title_Delete( input_title_t *t )
 static inline input_title_t *vlc_input_title_Duplicate( const input_title_t *t )
 {
     input_title_t *dup = vlc_input_title_New( );
-    int i;
+    if( dup == NULL) return NULL;
 
     if( t->psz_name ) dup->psz_name = strdup( t->psz_name );
     dup->i_flags     = t->i_flags;
@@ -141,7 +141,7 @@ static inline input_title_t *vlc_input_title_Duplicate( const input_title_t *t )
         dup->seekpoint = (seekpoint_t**)malloc( t->i_seekpoint * sizeof(seekpoint_t*) );
         if( likely(dup->seekpoint) )
         {
-            for( i = 0; i < t->i_seekpoint; i++ )
+            for( int i = 0; i < t->i_seekpoint; i++ )
                 dup->seekpoint[i] = vlc_seekpoint_Duplicate( t->seekpoint[i] );
             dup->i_seekpoint = t->i_seekpoint;
         }
@@ -272,7 +272,7 @@ struct input_thread_t
  * The read-write variables are:
  *  - state (\see input_state_e)
  *  - rate
- *  - position, position-offset
+ *  - position
  *  - time, time-offset
  *  - title, next-title, prev-title
  *  - chapter, next-chapter, next-chapter-prev
@@ -475,7 +475,7 @@ enum input_query_e
     INPUT_GET_ATTACHMENT,  /* arg1=input_attachment_t**, arg2=char*  res=can fail */
 
     /* On the fly input slave */
-    INPUT_ADD_SLAVE,       /* arg1= const char * */
+    INPUT_ADD_SLAVE,       /* arg1= enum slave_type, arg2= const char *, arg3= bool */
     INPUT_ADD_SUBTITLE,    /* arg1= const char *, arg2=bool b_check_extension */
 
     /* On the fly record while playing */
@@ -602,6 +602,12 @@ static inline int input_AddSubtitleOSD( input_thread_t *p_input, const char *psz
     return i_result;
 }
 #define input_AddSubtitle(a, b, c) input_AddSubtitleOSD(a, b, c, false)
+
+static inline int input_AddSlave( input_thread_t *p_input, enum slave_type type,
+                                  const char *psz_uri, bool b_forced )
+{
+    return input_Control( p_input, INPUT_ADD_SLAVE, type, psz_uri, b_forced );
+}
 
 
 /**

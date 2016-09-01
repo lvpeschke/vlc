@@ -352,7 +352,7 @@ char *vlc_b64_encode_binary( const uint8_t *src, size_t i_src )
         uint32_t v;
 
         /* 1/3 -> 1/4 */
-        v = *src++ << 24;
+        v = ((unsigned)*src++) << 24;
         *dst++ = b64[v >> 26];
         v = v << 6;
 
@@ -526,7 +526,7 @@ static int write_meta(FILE *stream, input_item_t *item, vlc_meta_type_t type)
 
 char *vlc_strfinput(input_thread_t *input, const char *s)
 {
-    char *str;
+    char *str = NULL;
     size_t len;
 #ifdef HAVE_OPEN_MEMSTREAM
     FILE *stream = open_memstream(&str, &len);
@@ -812,15 +812,16 @@ char *vlc_strfinput(input_thread_t *input, const char *s)
     return (fclose(stream) == 0) ? str : NULL;
 #else
     len = ftell(stream);
-    if (len != (size_t)-1)
+    if (len != (size_t)-1 && len != SIZE_MAX)
     {
         rewind(stream);
-        str = xmalloc(len + 1);
-        fread(str, len, 1, stream);
-        str[len] = '\0';
+        str = malloc(len + 1);
+        if(str)
+        {
+            fread(str, len, 1, stream);
+            str[len] = '\0';
+        }
     }
-    else
-        str = NULL;
     fclose(stream);
     return str;
 #endif

@@ -23,6 +23,8 @@
 
 #include <vlc_md5.h>
 #include <vlc_stream.h>
+#include <vlc_rand.h>
+#include <vlc_fs.h>
 
 #include <inttypes.h>
 #include <limits.h>
@@ -31,8 +33,7 @@
 #include <unistd.h>
 
 #ifndef TEST_NET
-#define FILE_PATH SRCDIR"/samples/image.jpg"
-#define FILE_MD5 "8cb4173266779095a5eb3f1ba2a42a21"
+#define RAND_FILE_SIZE (25 * 1024 * 1024)
 #else
 #define HTTP_URL "http://streams.videolan.org/streams/ogm/MJPEG.ogm"
 #define HTTP_MD5 "4eaf9e8837759b670694398a33f02bc0"
@@ -144,38 +145,38 @@ stream_getsize( struct reader *p_reader )
 {
     uint64_t i_size;
 
-    assert( stream_GetSize( p_reader->u.s, &i_size ) == 0 );
+    assert( vlc_stream_GetSize( p_reader->u.s, &i_size ) == 0 );
     return i_size;
 }
 
 static ssize_t
 stream_read( struct reader *p_reader, void *p_buf, size_t i_len )
 {
-    return stream_Read( p_reader->u.s, p_buf, i_len );
+    return vlc_stream_Read( p_reader->u.s, p_buf, i_len );
 }
 
 static ssize_t
 stream_peek( struct reader *p_reader, const uint8_t **pp_buf, size_t i_len )
 {
-    return stream_Peek( p_reader->u.s, pp_buf, i_len );
+    return vlc_stream_Peek( p_reader->u.s, pp_buf, i_len );
 }
 
 static uint64_t
 stream_tell( struct reader *p_reader )
 {
-    return stream_Tell( p_reader->u.s );
+    return vlc_stream_Tell( p_reader->u.s );
 }
 
 static int
 stream_seek( struct reader *p_reader, uint64_t i_offset )
 {
-    return stream_Seek( p_reader->u.s, i_offset );
+    return vlc_stream_Seek( p_reader->u.s, i_offset );
 }
 
 static void
 stream_close( struct reader *p_reader )
 {
-    stream_Delete( p_reader->u.s );
+    vlc_stream_Delete( p_reader->u.s );
     libvlc_release( p_reader->p_data );
     free( p_reader );
 }
@@ -201,7 +202,7 @@ stream_open( const char *psz_url )
     p_vlc = libvlc_new( sizeof(argv) / sizeof(argv[0]), argv );
     assert( p_vlc != NULL );
 
-    p_reader->u.s = stream_UrlNew( p_vlc->p_libvlc_int, psz_url );
+    p_reader->u.s = vlc_stream_NewMRL( p_vlc->p_libvlc_int, psz_url );
     if( !p_reader->u.s )
     {
         libvlc_release( p_vlc );
@@ -233,8 +234,8 @@ read_at( struct reader **pp_readers, unsigned int i_readers,
         const uint8_t *p_peek = NULL;
         struct reader *p_reader = pp_readers[i];
 
-        log( "%s: %s %zu @ %"PRIu64"\n", p_reader->psz_name,
-              p_buf ? "read" : "peek", i_read, i_offset );
+        log( "%s: %s %zu @ %"PRIu64" (size: %" PRIu64 ")\n", p_reader->psz_name,
+              p_buf ? "read" : "peek", i_read, i_offset, i_size );
         assert( p_reader->pf_seek( p_reader, i_offset ) != -1 );
 
         i_last_pos = p_reader->pf_tell( p_reader );
@@ -298,35 +299,38 @@ test( struct reader **pp_readers, unsigned int i_readers, const char *psz_md5 )
 
     /* Compare size between each readers */
     i_size = pp_readers[0]->pf_getsize( pp_readers[0] );
+    assert( i_size > 0 );
+
     log( "stream size: %"PRIu64"\n", i_size );
     for( unsigned int i = 1; i < i_readers; ++i )
         assert( pp_readers[i]->pf_getsize( pp_readers[i] ) == i_size );
 
     /* Read the whole file and compare between each readers */
-    InitMD5( &md5 );
+    if( psz_md5 != NULL )
+        InitMD5( &md5 );
     while( ( i_ret = READ_AT( i_offset, 4096 ) ) > 0 )
     {
         i_offset += i_ret;
-        AddMD5( &md5, p_buf, i_ret );
+        if( psz_md5 != NULL )
+            AddMD5( &md5, p_buf, i_ret );
     }
-    EndMD5( &md5 );
-    psz_read_md5 = psz_md5_hash( &md5 );
-    assert( psz_read_md5 );
-    assert( strcmp( psz_read_md5, psz_md5 ) == 0 );
-    free( psz_read_md5 );
+    if( psz_md5 != NULL )
+    {
+        EndMD5( &md5 );
+        psz_read_md5 = psz_md5_hash( &md5 );
+        assert( psz_read_md5 );
+        assert( strcmp( psz_read_md5, psz_md5 ) == 0 );
+        free( psz_read_md5 );
+    }
 
     /* Test cache skip */
     i_offset = 9 * i_size / 10;
-    while( ( i_ret = READ_AT( i_offset, 4096 ) ) > 0 )
+    while( i_offset < i_size && ( i_ret = READ_AT( i_offset, 4096 ) ) > 0 )
         i_offset += i_ret + 1;
 
     /* Test seek and peek */
     READ_AT( 0, 42 );
     READ_AT( i_size - 5, 43 );
-    READ_AT( i_size, 43 );
-    READ_AT( i_size + 1, 43 );
-    READ_AT( i_size * 2, 43 );
-    READ_AT( 99999999LL, 44 );
     READ_AT( 1, 45 );
     READ_AT( 2, 45 );
     READ_AT( i_size / 2, 45 );
@@ -335,11 +339,28 @@ test( struct reader **pp_readers, unsigned int i_readers, const char *psz_md5 )
 
     PEEK_AT( 0, 46 );
     PEEK_AT( i_size - 23, 46 );
-    PEEK_AT( i_size, 46 );
     PEEK_AT( i_size / 2, 46 );
-    PEEK_AT( i_size * 2, 46 );
     PEEK_AT( 0, 46 );
 }
+
+#ifndef TEST_NET
+static void
+fill_rand( int i_fd, size_t i_size )
+{
+    uint8_t p_buf[4096];
+    size_t i_written = 0;
+    while( i_written < i_size )
+    {
+        size_t i_tocopy = __MIN( i_size - i_written, 4096 );
+
+        vlc_rand_bytes(p_buf, i_tocopy);
+        ssize_t i_ret = write( i_fd, p_buf, i_tocopy );
+        assert( i_ret > 0 );
+        i_written += i_ret;
+    }
+    assert( i_written == i_size );
+}
+#endif
 
 int
 main( void )
@@ -349,21 +370,25 @@ main( void )
     test_init();
 
 #ifndef TEST_NET
-    char psz_file[PATH_MAX];
+    char psz_tmp_path[] = "/tmp/libvlc_XXXXXX";
     char *psz_url;
+    int i_tmp_fd;
 
-    log( "Test local file with libc, and stream\n" );
-    assert( realpath( FILE_PATH, psz_file ) == psz_file );
-    assert( asprintf( &psz_url, "file://%s", psz_file ) != -1 );
+    log( "Test random file with libc, and stream\n" );
+    i_tmp_fd = vlc_mkstemp( psz_tmp_path );
+    fill_rand( i_tmp_fd, RAND_FILE_SIZE );
+    assert( i_tmp_fd != -1 );
+    assert( asprintf( &psz_url, "file://%s", psz_tmp_path ) != -1 );
 
-    assert( ( pp_readers[0] = libc_open( psz_file ) ) );
+    assert( ( pp_readers[0] = libc_open( psz_tmp_path ) ) );
     assert( ( pp_readers[1] = stream_open( psz_url ) ) );
 
-    test( pp_readers, 2, FILE_MD5 );
+    test( pp_readers, 2, NULL );
     for( unsigned int i = 0; i < 2; ++i )
         pp_readers[i]->pf_close( pp_readers[i] );
     free( psz_url );
 
+    close( i_tmp_fd );
 #else
 
     log( "Test http url with stream\n" );

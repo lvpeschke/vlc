@@ -4,16 +4,21 @@ EXTRA_DIST =
 
 appdatadir = $(datadir)/applications
 if !HAVE_WIN32
+if !HAVE_DARWIN
 appdata_DATA = vlc.desktop
+endif
 endif
 EXTRA_DIST += vlc.desktop.in vlc.desktop.mimetypes
 CLEANFILES += $(appdata_DATA)
 
 vlc.desktop: vlc.desktop.in $(top_builddir)/config.status
 	$(AM_V_GEN)sed -e 's,\@bindir\@,$(bindir),g' < "$<" > tmp-$@
-	$(AM_V_GEN)mimetypes="$$(sed 's/\s*#.*$$//g' vlc.desktop.mimetypes | egrep -v '^$$' | tr "\n" ';')"; sed -i "s,\@MIMETYPES\@,$$mimetypes,g" tmp-$@
+	$(AM_V_GEN)mimetypes="$$(sed 's/\s*#.*$$//g' $(srcdir)/vlc.desktop.mimetypes | egrep -v '^$$' | tr "\n" ';')"; sed -i "s,\@MIMETYPES\@,$$mimetypes,g" tmp-$@
 	$(AM_V_at)$(DESKTOP_FILE_VALIDATE) tmp-$@
 	$(AM_V_at)mv -f tmp-$@ $@
+
+vlc.appdata.xml: vlc.appdata.xml.in $(top_builddir)/config.status
+	cd $(top_builddir) && $(SHELL) ./config.status --file=$(subdir)/$@
 
 iconsdatadir = $(datadir)/icons/hicolor
 icons16dir = $(iconsdatadir)/16x16/apps
@@ -139,7 +144,6 @@ nobase_vlclib_DATA = \
 	lua/playlist/lelombrik.luac \
 	lua/playlist/liveleak.luac \
 	lua/playlist/metacafe.luac \
-	lua/playlist/metachannels.luac \
 	lua/playlist/mpora.luac \
 	lua/playlist/pinkbike.luac \
 	lua/playlist/pluzz.luac \
@@ -154,7 +158,6 @@ nobase_vlclib_DATA = \
 	lua/sd/icecast.luac \
 	lua/sd/icast.luac \
 	lua/sd/jamendo.luac \
-	lua/sd/metachannels.luac \
 	$(NULL)
 
 nobase_doc_DATA = \
@@ -234,7 +237,6 @@ EXTRA_DIST += \
 	lua/playlist/lelombrik.lua \
 	lua/playlist/liveleak.lua \
 	lua/playlist/metacafe.lua \
-	lua/playlist/metachannels.lua \
 	lua/playlist/mpora.lua \
 	lua/playlist/pinkbike.lua \
 	lua/playlist/pluzz.lua \
@@ -249,8 +251,7 @@ EXTRA_DIST += \
 	lua/sd/fmc.lua \
 	lua/sd/icecast.lua \
 	lua/sd/icast.lua \
-	lua/sd/jamendo.lua \
-	lua/sd/metachannels.lua
+	lua/sd/jamendo.lua
 
 DIST_http_lua = \
 	lua/http/view.html \

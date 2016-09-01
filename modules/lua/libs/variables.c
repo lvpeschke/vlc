@@ -98,7 +98,7 @@ static int vlclua_tovalue( lua_State *L, int i_type, vlc_value_t *val )
             val->b_bool = luaL_checkboolean( L, -1 );
             break;
         case VLC_VAR_INTEGER:
-            val->i_int = (int)luaL_checkinteger( L, -1 );
+            val->i_int = luaL_checkinteger( L, -1 );
             break;
         case VLC_VAR_STRING:
             val->psz_string = (char*)luaL_checkstring( L, -1 ); /* XXX: Beware, this only stays valid as long as (L,-1) stays in the stack */
@@ -227,14 +227,14 @@ static int vlclua_libvlc_command( lua_State *L )
     const char *psz_cmd = luaL_checkstring( L, 1 );
     val_arg.psz_string = (char*)luaL_optstring( L, 2, "" );
 
-    int i_type = var_Type( p_this->p_libvlc, psz_cmd );
+    int i_type = var_Type( p_this->obj.libvlc, psz_cmd );
     if( ! (i_type & VLC_VAR_ISCOMMAND) )
     {
         return luaL_error( L, "libvlc's \"%s\" is not a command",
                            psz_cmd );
     }
 
-    int i_ret = var_Set( p_this->p_libvlc, psz_cmd, val_arg );
+    int i_ret = var_Set( p_this->obj.libvlc, psz_cmd, val_arg );
     lua_pop( L, 2 );
 
     return vlclua_push_ret( L, i_ret );

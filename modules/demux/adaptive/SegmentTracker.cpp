@@ -80,13 +80,18 @@ void SegmentTracker::setAdaptationLogic(AbstractAdaptationLogic *logic_)
     registerListener(logic);
 }
 
-StreamFormat SegmentTracker::initialFormat() const
+StreamFormat SegmentTracker::getCurrentFormat() const
 {
     BaseRepresentation *rep = curRepresentation;
     if(!rep)
         rep = logic->getNextRepresentation(adaptationSet, NULL);
     if(rep)
+    {
+        /* Ensure ephemere content is updated/loaded */
+        if(rep->needsUpdate())
+            (void) rep->runLocalUpdates(0, curNumber, false);
         return rep->getStreamFormat();
+    }
     return StreamFormat();
 }
 
@@ -182,6 +187,26 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionM
         if(!rep->consistentSegmentNumber())
             curRepresentation->pruneBySegmentNumber(curNumber);
         curRepresentation->scheduleNextUpdate(next);
+    }
+
+    if(rep->getStreamFormat() != format)
+    {
+        /* Initial format ? */
+        if(format == StreamFormat(StreamFormat::UNSUPPORTED))
+        {
+            format = rep->getStreamFormat();
+        }
+        else
+        {
+            format = rep->getStreamFormat();
+            notify(SegmentTrackerEvent(&format)); /* Notify new demux format */
+            return NULL; /* Force current demux to end */
+        }
+    }
+
+    if(format == StreamFormat(StreamFormat::UNSUPPORTED))
+    {
+        return NULL; /* Can't return chunk because no demux will be created */
     }
 
     if(!init_sent)
@@ -285,10 +310,13 @@ void SegmentTracker::setPositionByNumber(uint64_t segnumber, bool restarted)
 
 mtime_t SegmentTracker::getPlaybackTime() const
 {
-    if(curRepresentation)
-        return curRepresentation->getPlaybackTimeBySegmentNumber(next);
-    else
-        return 0;
+    mtime_t time, duration;
+    if(curRepresentation &&
+       curRepresentation->getPlaybackTimeDurationBySegmentNumber(next, &time, &duration))
+    {
+        return time;
+    }
+    return 0;
 }
 
 mtime_t SegmentTracker::getMinAheadTime() const

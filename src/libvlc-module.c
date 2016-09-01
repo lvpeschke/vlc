@@ -124,10 +124,23 @@ static const char *const ppsz_snap_formats[] =
     "The default behavior is to automatically select the best method " \
     "available.")
 
+#define ROLE_TEXT N_("Media role")
+#define ROLE_LONGTEXT N_("Media (player) role for operating system policy.")
+
 #define AUDIO_TEXT N_("Enable audio")
 #define AUDIO_LONGTEXT N_( \
     "You can completely disable the audio output. The audio " \
     "decoding stage will not take place, thus saving some processing power.")
+static const char *ppsz_roles[] = {
+     "video", "music", "communication", "game",
+     "notification", "animation", "production",
+     "accessibility", "test",
+};
+static const char *ppsz_roles_text[] = {
+    N_("Video"), N_("Music"), N_("Communication"), N_("Game"),
+    N_("Notification"),  N_("Animation"), N_("Production"),
+    N_("Accessibility"), N_("Test"),
+};
 
 #define GAIN_TEXT N_("Audio gain")
 #define GAIN_LONGTEXT N_( \
@@ -156,10 +169,9 @@ static const char *const ppsz_snap_formats[] =
     "Sets the audio output channels mode that will be used by default " \
     "if your hardware and the audio stream are compatible.")
 
-#define SPDIF_TEXT N_("Use S/PDIF when available")
+#define SPDIF_TEXT N_("Force S/PDIF support")
 #define SPDIF_LONGTEXT N_( \
-    "S/PDIF can be used by default when " \
-    "your hardware supports it as well as the audio stream being played.")
+    "This option should be used when the audio output can't negotiate S/PDIF support.")
 
 #define FORCE_DOLBY_TEXT N_("Force detection of Dolby Surround")
 #define FORCE_DOLBY_LONGTEXT N_( \
@@ -980,6 +992,10 @@ static const char *const ppsz_prefres[] = {
 #define STREAM_FILTER_LONGTEXT N_( \
     "Stream filters are used to modify the stream that is being read. " )
 
+#define DEMUX_FILTER_TEXT N_("Demux filter module")
+#define DEMUX_FILTER_LONGTEXT N_( \
+    "Demux filters are used to modify/control the stream that is being read. " )
+
 #define DEMUX_TEXT N_("Demux module")
 #define DEMUX_LONGTEXT N_( \
     "Demultiplexers are used to separate the \"elementary\" streams " \
@@ -1089,6 +1105,10 @@ static const char *const ppsz_prefres[] = {
 #define PREPARSE_LONGTEXT N_( \
     "Automatically preparse files added to the playlist " \
     "(to retrieve some metadata)." )
+
+#define PREPARSE_TIMEOUT_TEXT N_( "Preparsing timeout" )
+#define PREPARSE_TIMEOUT_LONGTEXT N_( \
+    "Maximum time allowed to preparse a file" )
 
 #define METADATA_NETWORK_TEXT N_( "Allow metadata network access" )
 
@@ -1438,7 +1458,7 @@ vlc_module_begin ()
     add_bool( "volume-save", true, VOLUME_SAVE_TEXT, VOLUME_SAVE_TEXT, true )
     add_obsolete_integer( "aout-rate" ) /* since 2.0.0 */
     add_obsolete_bool( "hq-resampling" ) /* since 1.1.8 */
-    add_bool( "spdif", 0, SPDIF_TEXT, SPDIF_LONGTEXT, false )
+    add_bool( "spdif", false, SPDIF_TEXT, SPDIF_LONGTEXT, true )
     add_integer( "force-dolby-surround", 0, FORCE_DOLBY_TEXT,
                  FORCE_DOLBY_LONGTEXT, false )
         change_integer_list( pi_force_dolby_values, ppsz_force_dolby_descriptions )
@@ -1466,6 +1486,9 @@ vlc_module_begin ()
     add_module( "aout", "audio output", NULL, AOUT_TEXT, AOUT_LONGTEXT,
                 true )
         change_short('A')
+    add_string( "role", "video", ROLE_TEXT, ROLE_LONGTEXT, true )
+        change_string_list( ppsz_roles, ppsz_roles_text )
+
     set_subcategory( SUBCAT_AUDIO_AFILTER )
     add_module_list( "audio-filter", "audio filter", NULL,
                      AUDIO_FILTER_TEXT, AUDIO_FILTER_LONGTEXT, false )
@@ -1868,6 +1891,7 @@ vlc_module_begin ()
     add_module_list( "stream-filter", "stream_filter", NULL,
                      STREAM_FILTER_TEXT, STREAM_FILTER_LONGTEXT, false )
 
+    add_string( "demux-filter", NULL, DEMUX_FILTER_TEXT, DEMUX_FILTER_LONGTEXT, true )
 
 /* Stream output options */
     set_category( CAT_SOUT )
@@ -2015,6 +2039,9 @@ vlc_module_begin ()
 
     add_bool( "auto-preparse", true, PREPARSE_TEXT,
               PREPARSE_LONGTEXT, false )
+
+    add_integer( "preparse-timeout", 5000, PREPARSE_TIMEOUT_TEXT,
+                 PREPARSE_TIMEOUT_LONGTEXT, false )
 
     add_obsolete_integer( "album-art" )
     add_bool( "metadata-network-access", false, METADATA_NETWORK_TEXT,

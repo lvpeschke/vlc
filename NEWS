@@ -44,12 +44,14 @@ Access:
  * Named pipes and device nodes are no longer included in directory listings
    by default. Use --list-special-files to include them back.
  * Support for timeout in UDP input --udp-timeout=<seconds>
+ * New SAT>IP access module, to receive DVB-S via IP networks
 
 Decoder:
  * OMX GPU-zerocopy support for decoding and display on Android using OpenMax IL
  * Support 4:4:4 and 4:2:2 chroma samplings with VDPAU hw acceleration
  * Support for ARIB STD-B24 subtitles
  * Support for Daala video
+ * Support for AV1 video
  * Important improvements for the MMAL decoder and output for rPI and rPI2
  * Support HEVC hardware decoding using OMX and MediaCodec
  * Use MediaCodec via NDK native API after Android Lollipop
@@ -94,12 +96,16 @@ Demuxers:
  * Improved smooth streaming compatibility
  * Support SCTE-18 / EAS inside TS
  * Support for RTP Reception Hint Track In MP4 with H.264, GSM and Speex payloads.
+ * Support for XiphQt(MP4) vorbis and Flac
 
 Stream filter:
  * Added ARIB STD-B25 TS streams decoder
  * Added stream prebuffering plugin
  * Removed HTTP Live streaming stream filter
  * Added zlib (a.k.a. deflate) decompression filter
+ 
+Demux filter:
+ * Added a demuxer filter chain to filter or intercept control commands and demuxing
 
 Audio output:
  * Complete rewrite of the AudioTrack Android module. This is now the default.
@@ -109,6 +115,7 @@ Audio output:
 
 Audio filters and output:
  * Add SoX Resampler library audio filter module (converter and resampler)
+ * a52tospdif and dtstospdif audio converters are merged into tospdif
 
 Video ouput:
  * Linux/BSD default video output is now OpenGL, instead of Xvideo
@@ -121,6 +128,7 @@ Video ouput:
  * Added Direct3D11 video mode supporting both Windows desktop and WinRT modes,
    supporting subpicture blending and hardware acceleration
  * EFL Evas video output with Tizen TBM Surface support
+ * New OpenGL provider for Windows
 
 Text renderer:
  * CTL support through Harfbuzz in the Freetype module
@@ -157,6 +165,7 @@ Mac OS X Interface
  * new AppleScript API giving access to audio desynchronization
  * Support for building with disabled sparkle update mechanism
  * New configure flag to disable automatic updates
+ * Expanded AppleScript API for menu detection and navigation
 
 iOS:
  * Dropped support for iOS 6.x
@@ -195,6 +204,9 @@ libVLC:
  * Add libvlc_media_slaves_add, libvlc_media_slaves_clear
    libvlc_media_slaves_get, libvlc_media_slaves_release to add and get slaves
    from a libvlc_media
+ * Add libvlc_media_player_(get|set)_role to set the media role
+ * Add libvlc_media_player_add_slave to replace libvlc_video_set_subtitle_file,
+   working with MRL and supporting also audio slaves
 
 Logging
  * Support for the SystemD Journal
@@ -220,13 +232,14 @@ Removed modules
  * httplive (use adaptive instead)
  * smooth (use adaptive instead)
  * Gnome-VFS access module (i.e. Gnome 2.x)
- * QuartText text renderer module (use Freetype instead)
+ * QuartzText text renderer module (use Freetype instead)
  * Win32 GDI text renderer module (use Freetype instead)
  * Growl notification (replaced by osx_notifications)
  * VCDX "extended" Video CD access module (use the normal VCD module)
  * Mac OS X Dialog Provider (use VLCKit instead)
  * iOS Dialog Provider (use MobileVLCKit / TVVLCKit instead)
  * QuickTime decoder module (use native codecs)
+ * BD access module (use libbluray)
 
 
 Changes between 2.2.0 and 2.2.1:

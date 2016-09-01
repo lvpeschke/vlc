@@ -514,7 +514,7 @@ ssize_t vlc_writev_i11e(int fd, const struct iovec *iov, int count)
  */
 ssize_t vlc_read_i11e(int fd, void *buf, size_t count)
 {
-    struct iovec iov = { buf, count };
+    struct iovec iov = { .iov_base = buf, .iov_len = count };
     return vlc_readv_i11e(fd, &iov, 1);
 }
 
@@ -527,8 +527,8 @@ ssize_t vlc_read_i11e(int fd, void *buf, size_t count)
  */
 ssize_t vlc_write_i11e(int fd, const void *buf, size_t count)
 {
-    struct iovec iov = { (void *)buf, count };
-    return writev(fd, &iov, 1);
+    struct iovec iov = { .iov_base = (void*)buf, .iov_len = count };
+    return vlc_writev_i11e(fd, &iov, 1);
 }
 
 ssize_t vlc_recvmsg_i11e(int fd, struct msghdr *msg, int flags)
@@ -612,7 +612,7 @@ static void CALLBACK vlc_poll_i11e_wake_self(ULONG_PTR data)
 
 static void vlc_poll_i11e_wake(void *opaque)
 {
-#if !VLC_WINSTORE_APP
+#if !VLC_WINSTORE_APP || _WIN32_WINNT >= 0x0A00
     HANDLE th = opaque;
     QueueUserAPC(vlc_poll_i11e_wake_self, th, 0);
 #else

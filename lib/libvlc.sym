@@ -148,6 +148,7 @@ libvlc_media_new_from_input_item
 libvlc_media_parse
 libvlc_media_parse_async
 libvlc_media_parse_with_options
+libvlc_media_player_add_slave
 libvlc_media_player_can_pause
 libvlc_media_player_program_scrambled
 libvlc_media_player_next_frame
@@ -165,6 +166,7 @@ libvlc_media_player_get_media
 libvlc_media_player_get_nsobject
 libvlc_media_player_get_position
 libvlc_media_player_get_rate
+libvlc_media_player_get_role
 libvlc_media_player_get_state
 libvlc_media_player_get_time
 libvlc_media_player_get_title
@@ -192,6 +194,7 @@ libvlc_media_player_set_media
 libvlc_media_player_set_nsobject
 libvlc_media_player_set_position
 libvlc_media_player_set_rate
+libvlc_media_player_set_role
 libvlc_media_player_set_time
 libvlc_media_player_set_title
 libvlc_media_player_set_xwindow

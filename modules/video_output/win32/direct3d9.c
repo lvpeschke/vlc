@@ -153,6 +153,18 @@ static void Direct3D9RenderScene(vout_display_t *vd, d3d_region_t *, int, d3d_re
 /* */
 static int DesktopCallback(vlc_object_t *, char const *, vlc_value_t, vlc_value_t, void *);
 
+static bool is_d3d9_opaque(vlc_fourcc_t chroma)
+{
+    switch (chroma)
+    {
+    case VLC_CODEC_D3D9_OPAQUE:
+    case VLC_CODEC_D3D9_OPAQUE_10B:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /**
  * It creates a Direct3D vout display.
  */
@@ -163,7 +175,7 @@ static int Open(vlc_object_t *object)
 
     OSVERSIONINFO winVer;
     winVer.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-    if(GetVersionEx(&winVer) && winVer.dwMajorVersion < 6 && !object->b_force)
+    if(GetVersionEx(&winVer) && winVer.dwMajorVersion < 6 && !object->obj.force)
         return VLC_EGENERIC;
 
     /* Allocate structure */
@@ -202,10 +214,10 @@ static int Open(vlc_object_t *object)
 
     /* */
     vout_display_info_t info = vd->info;
-    info.is_slow = fmt.i_chroma != VLC_CODEC_D3D9_OPAQUE;
+    info.is_slow = !is_d3d9_opaque(fmt.i_chroma);
     info.has_double_click = true;
     info.has_hide_mouse = false;
-    info.has_pictures_invalid = fmt.i_chroma != VLC_CODEC_D3D9_OPAQUE;
+    info.has_pictures_invalid = !is_d3d9_opaque(fmt.i_chroma);
     info.has_event_thread = true;
     if (var_InheritBool(vd, "direct3d9-hw-blending") &&
         sys->d3dregion_format != D3DFMT_UNKNOWN &&
@@ -291,6 +303,8 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
     pictures = calloc(count, sizeof(*pictures));
     if (!pictures)
         goto error;
+
+    D3DFORMAT format = vd->fmt.i_chroma == VLC_CODEC_D3D9_OPAQUE_10B ? MAKEFOURCC('P','0','1','0') : MAKEFOURCC('N','V','1','2');
     for (picture_count = 0; picture_count < count; ++picture_count)
     {
         picture_sys_t *picsys = malloc(sizeof(*picsys));
@@ -300,7 +314,7 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
         HRESULT hr = IDirect3DDevice9_CreateOffscreenPlainSurface(vd->sys->d3ddev,
                                                           vd->fmt.i_width,
                                                           vd->fmt.i_height,
-                                                          MAKEFOURCC('N','V','1','2'),
+                                                          format,
                                                           D3DPOOL_DEFAULT,
                                                           &picsys->surface,
                                                           NULL);
@@ -352,7 +366,7 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
      *  The clean way would be to release the picture (and ensure that
      * the vout doesn't keep a reference). But because of the vout
      * wrapper, we can't */
-    if ( picture->format.i_chroma != VLC_CODEC_D3D9_OPAQUE )
+    if ( !is_d3d9_opaque(picture->format.i_chroma) )
         Direct3D9UnlockSurface(picture);
 
     /* check if device is still available */
@@ -418,7 +432,7 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
     }
 
     /* XXX See Prepare() */
-    if ( picture->format.i_chroma != VLC_CODEC_D3D9_OPAQUE )
+    if ( !is_d3d9_opaque(picture->format.i_chroma) )
         Direct3D9LockSurface(picture);
     picture_Release(picture);
     if (subpicture)
@@ -645,6 +659,16 @@ static int Direct3D9Create(vout_display_t *vd)
         !(sys->d3dcaps.TextureFilterCaps & (D3DPTFILTERCAPS_MAGFLINEAR)) ||
         !(sys->d3dcaps.TextureFilterCaps & (D3DPTFILTERCAPS_MINFLINEAR))) {
         msg_Err(vd, "Device does not support stretching from textures.");
+        return VLC_EGENERIC;
+    }
+
+    if ( vd->fmt.i_width > sys->d3dcaps.MaxTextureWidth ||
+         vd->fmt.i_height > sys->d3dcaps.MaxTextureHeight )
+    {
+        msg_Err(vd, "Textures too large %ux%u max possible: %ux%u",
+                vd->fmt.i_width, vd->fmt.i_height,
+                (unsigned) sys->d3dcaps.MaxTextureWidth,
+                (unsigned) sys->d3dcaps.MaxTextureHeight);
         return VLC_EGENERIC;
     }
 
@@ -955,6 +979,7 @@ static const d3d_format_t d3d_formats[] = {
     { "YV12",       MAKEFOURCC('Y','V','1','2'),    VLC_CODEC_J420,  0,0,0 },
     { "NV12",       MAKEFOURCC('N','V','1','2'),    VLC_CODEC_NV12,  0,0,0 },
     { "DXA9",       MAKEFOURCC('N','V','1','2'),    VLC_CODEC_D3D9_OPAQUE,  0,0,0 },
+    { "DXA9_10",    MAKEFOURCC('P','0','1','0'),    VLC_CODEC_D3D9_OPAQUE_10B,  0,0,0 },
     { "UYVY",       D3DFMT_UYVY,    VLC_CODEC_UYVY,  0,0,0 },
     { "YUY2",       D3DFMT_YUY2,    VLC_CODEC_YUYV,  0,0,0 },
     { "X8R8G8B8",   D3DFMT_X8R8G8B8,VLC_CODEC_RGB32, 0xff0000, 0x00ff00, 0x0000ff },
@@ -976,7 +1001,7 @@ static const d3d_format_t *Direct3DFindFormat(vout_display_t *vd, vlc_fourcc_t c
         const vlc_fourcc_t *list;
         const vlc_fourcc_t dxva_chroma[] = {chroma, 0};
 
-        if (pass == 0 && chroma == VLC_CODEC_D3D9_OPAQUE)
+        if (pass == 0 && is_d3d9_opaque(chroma))
             list = dxva_chroma;
         else if (pass == 0 && sys->allow_hw_yuv && vlc_fourcc_IsYUV(chroma))
             list = vlc_fourcc_GetYUVFallback(chroma);
@@ -1064,7 +1089,7 @@ static int Direct3D9CreatePool(vout_display_t *vd, video_format_t *fmt)
     fmt->i_gmask  = d3dfmt->gmask;
     fmt->i_bmask  = d3dfmt->bmask;
 
-    if ( fmt->i_chroma == VLC_CODEC_D3D9_OPAQUE )
+    if ( is_d3d9_opaque(fmt->i_chroma) )
         /* a DXA9 pool will be created when needed */
         return VLC_SUCCESS;
 
@@ -1181,7 +1206,7 @@ static int Direct3D9CreateScene(vout_display_t *vd, const video_format_t *fmt)
 
 #ifndef NDEBUG
     msg_Dbg(vd, "Direct3D created texture: %ix%i",
-                fmt->i_width, fmt->i_height);
+                fmt->i_visible_width, fmt->i_visible_height);
 #endif
 
     /*
@@ -1510,16 +1535,16 @@ static void orientationVertexOrder(video_orientation_t orientation, int vertex_o
 }
 
 static void Direct3D9SetupVertices(CUSTOMVERTEX *vertices,
-                                  const RECT dst,
+                                  const RECT *dst,
                                   int alpha,
                                   video_orientation_t orientation)
 {
     /* Vertices of the dst rectangle in the unrotated (clockwise) order. */
     const int vertices_coords[4][2] = {
-        { dst.left,  dst.top    },
-        { dst.right, dst.top    },
-        { dst.right, dst.bottom },
-        { dst.left,  dst.bottom },
+        { dst->left,  dst->top    },
+        { dst->right, dst->top    },
+        { dst->right, dst->bottom },
+        { dst->left,  dst->bottom },
     };
 
     /* Compute index remapping necessary to implement the rotation. */
@@ -1580,7 +1605,7 @@ static int Direct3D9ImportPicture(vout_display_t *vd,
 
     /* Copy picture surface into texture surface
      * color space conversion happen here */
-    hr = IDirect3DDevice9_StretchRect(sys->d3ddev, source, &vd->sys->rect_src_clipped, destination, NULL, D3DTEXF_LINEAR);
+    hr = IDirect3DDevice9_StretchRect(sys->d3ddev, source, &vd->sys->rect_src_clipped, destination, NULL, D3DTEXF_NONE );
     IDirect3DSurface9_Release(destination);
     if (FAILED(hr)) {
         msg_Dbg(vd, "Failed IDirect3DDevice9_StretchRect: source 0x%p 0x%0lx",
@@ -1590,7 +1615,7 @@ static int Direct3D9ImportPicture(vout_display_t *vd,
 
     /* */
     region->texture = sys->d3dtex;
-    Direct3D9SetupVertices(region->vertex, vd->sys->rect_dest_clipped, 255, vd->fmt.orientation);
+    Direct3D9SetupVertices(region->vertex, &vd->sys->rect_dest_clipped, 255, vd->fmt.orientation);
     return VLC_SUCCESS;
 }
 
@@ -1708,7 +1733,7 @@ static void Direct3D9ImportSubpicture(vout_display_t *vd,
         dst.top    = video.top  + scale_h * r->i_y,
         dst.bottom = dst.top  + scale_h * r->fmt.i_visible_height,
         Direct3D9SetupVertices(d3dr->vertex,
-                              dst, subpicture->i_alpha * r->i_alpha / 255, ORIENT_NORMAL);
+                              &dst, subpicture->i_alpha * r->i_alpha / 255, ORIENT_NORMAL);
     }
 }
 

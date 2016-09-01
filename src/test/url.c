@@ -113,6 +113,26 @@ static void test_url_parse(const char* in, const char* protocol, const char* use
 #undef CHECK
 }
 
+static void test_url_resolve(const char *base, const char *reference,
+                             const char *expected)
+{
+    fprintf(stderr, "(%s) \"%s\" -> \"%s\" ?\n", base, reference, expected);
+
+    char *result = vlc_uri_resolve(base, reference);
+    assert(result != NULL);
+    if (strcmp(result, expected))
+    {
+        fprintf(stderr, " ERROR: got \"%s\"\n", result);
+        abort();
+    }
+    free(result);
+}
+
+static void test_rfc3986(const char *reference, const char *expected)
+{
+    test_url_resolve("http://a/b/c/d;p?q", reference, expected);
+}
+
 int main (void)
 {
     int val;
@@ -145,11 +165,20 @@ int main (void)
     test_b64 ("foobar", "Zm9vYmFy");
 
     /* Path test */
+#ifndef _WIN32
     test_path ("/", "file:///");
     test_path ("/home/john/", "file:///home/john/");
     test_path ("/home/john//too///many//slashes",
                "file:///home/john//too///many//slashes");
     test_path ("/home/john/music.ogg", "file:///home/john/music.ogg");
+#else
+    test_path ("C:\\", "file:///C:/");
+    test_path ("C:\\Users\\john\\", "file:///C:/Users/john/");
+    test_path ("C:\\Users\\john\\music.ogg",
+               "file:///C:/Users/john/music.ogg");
+    test_path ("\\\\server\\share\\dir\\file.ext",
+               "file://server/share/dir/file.ext");
+#endif
 
     /*int fd = open (".", O_RDONLY);
     assert (fd != -1);*/
@@ -161,9 +190,11 @@ int main (void)
     tmpdir = getcwd(buf, sizeof(buf)/sizeof(*buf));
     assert (tmpdir);
 
+#ifndef _WIN32 /* FIXME: deal with anti-slashes */
     test_current_directory_path ("movie.ogg", tmpdir, "movie.ogg");
     test_current_directory_path (".", tmpdir, ".");
     test_current_directory_path ("", tmpdir, "");
+#endif
 
     /*val = fchdir (fd);
     assert (val != -1);*/
@@ -173,6 +204,7 @@ int main (void)
     test ("mailto:john@example.com", NULL);
     test ("http://www.example.com/file.html#ref", NULL);
     test ("file://", NULL);
+#ifndef _WIN32
     test ("file:///", "/");
     test ("file://localhost/home/john/music%2Eogg", "/home/john/music.ogg");
     test ("file://localhost/home/john/text#ref", "/home/john/text");
@@ -184,6 +216,22 @@ int main (void)
     test ("fd://0#ref", "/dev/stdin");
     test ("fd://1", "/dev/stdout");
     test ("fd://12345", "/dev/fd/12345");
+#else
+    test ("file:///C:", "C:");
+    test ("file:///C:/Users/john/music%2Eogg", "C:\\Users\\john\\music.ogg");
+    test ("file://server/share/dir/file%2Eext",
+          "\\\\server\\share\\dir\\file.ext");
+    test ("file:///C:/Users/john/text#ref", "C:\\Users\\john\\text");
+    test ("file:///C:/Users/john/text?name=value", "C:\\Users\\john\\text");
+    test ("file:///C:/Users/john/text?name=value#ref",
+          "C:\\Users\\john\\text");
+    test ("file://?name=value", NULL);
+    test ("file:///C:?name=value", "C:");
+    test ("fd://0foobar", NULL);
+    test ("fd://0#ref", "CON");
+    test ("fd://1", "CON");
+    test ("fd://12345", NULL);
+#endif
 #undef test
 
     test_url_parse("http://example.com", "http", NULL, NULL, "example.com", 0,
@@ -203,8 +251,74 @@ int main (void)
                    NULL, NULL);
     test_url_parse("p://h/white%20spaced", "p", NULL, NULL, "h", 0,
                    "/white%20spaced", NULL);
+    /* Relative URIs */
+    test_url_parse("//example.com", NULL, NULL, NULL, "example.com", 0,
+                   NULL, NULL);
+    test_url_parse("/file", NULL, NULL, NULL, NULL, 0, "/file", NULL);
+    test_url_parse("?opt=val", NULL, NULL, NULL, NULL, 0, "", "opt=val");
+    test_url_parse("/f?o=v", NULL, NULL, NULL, NULL, 0, "/f", "o=v");
+    test_url_parse("//example.com/file", NULL, NULL, NULL, "example.com", 0,
+                   "/file", NULL);
+    test_url_parse("//example.com?opt=val", NULL, NULL, NULL, "example.com", 0,
+                   NULL, "opt=val");
+    test_url_parse("//example.com/f?o=v", NULL, NULL, NULL, "example.com", 0,
+                   "/f", "o=v");
     /* Invalid URIs */
     test_url_parse("p://G a r b a g e", "p", NULL, NULL, NULL, 0, NULL, NULL);
     test_url_parse("p://h/G a r b a g e", "p", NULL, NULL, "h", 0, NULL, NULL);
+
+    /* Reference test cases for reference URI resolution */
+    static const char *rfc3986_cases[] =
+    {
+        "g:h",           "g:h",
+        "g",             "http://a/b/c/g",
+        "./g",           "http://a/b/c/g",
+        "g/",            "http://a/b/c/g/",
+        "/g",            "http://a/g",
+        "//g",           "http://g",
+        "?y",            "http://a/b/c/d;p?y",
+        "g?y",           "http://a/b/c/g?y",
+        //"#s",            "http://a/b/c/d;p?q#s",
+        //"g#s",           "http://a/b/c/g#s",
+        //"g?y#s",         "http://a/b/c/g?y#s",
+        ";x",            "http://a/b/c/;x",
+        "g;x",           "http://a/b/c/g;x",
+        //"g;x?y#s",       "http://a/b/c/g;x?y#s",
+        "",              "http://a/b/c/d;p?q",
+        ".",             "http://a/b/c/",
+        "./",            "http://a/b/c/",
+        "..",            "http://a/b/",
+        "../",           "http://a/b/",
+        "../g",          "http://a/b/g",
+        "../..",         "http://a/",
+        "../../",        "http://a/",
+        "../../g",       "http://a/g",
+
+        "../../../g",    "http://a/g",
+        "../../../../g", "http://a/g",
+
+        "/./g",          "http://a/g",
+        "/../g",         "http://a/g",
+        "g.",            "http://a/b/c/g.",
+        ".g",            "http://a/b/c/.g",
+        "g..",           "http://a/b/c/g..",
+        "..g",           "http://a/b/c/..g",
+
+        "./../g",        "http://a/b/g",
+        "./g/.",         "http://a/b/c/g/",
+        "g/./h",         "http://a/b/c/g/h",
+        "g/../h",        "http://a/b/c/h",
+        "g;x=1/./y",     "http://a/b/c/g;x=1/y",
+        "g;x=1/../y",    "http://a/b/c/y",
+
+        "g?y/./x",       "http://a/b/c/g?y/./x",
+        "g?y/../x",      "http://a/b/c/g?y/../x",
+        //"g#s/./x",       "http://a/b/c/g#s/./x",
+        //"g#s/../x",      "http://a/b/c/g#s/../x",
+    };
+
+    for (size_t i = 0; i < ARRAY_SIZE(rfc3986_cases); i += 2)
+        test_rfc3986(rfc3986_cases[i], rfc3986_cases[i + 1]);
+
     return 0;
 }

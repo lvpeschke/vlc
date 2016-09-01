@@ -50,7 +50,7 @@
 #include "ts_sl.h"
 #include "ts_scte.h"
 #include "ts_psip.h"
-#include "ts_psi_eit.h"
+#include "ts_si.h"
 
 #include "../access/dtv/en50221_capmt.h"
 
@@ -1626,8 +1626,11 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
                 else
                 {
                     ts_pes_es_t *p_new = ts_pes_Extract_es( p_pes, p_pmt );
+                    ts_pes_es_t *p_old = ts_pes_Extract_es( pespid->u.p_pes, p_pmt );
                     ts_pes_Add_es( pespid->u.p_pes, p_new, false );
+                    assert(p_old == p_existing_es);
                     assert(ts_pes_Count_es(p_pes->p_es, false, NULL) == 0);
+                    ts_pes_Add_es( p_pes, p_old, false );
                     ts_pes_Del( p_demux, p_pes );
                 }
             }
@@ -1652,12 +1655,12 @@ static void PMTCallBack( void *data, dvbpsi_pmt_t *p_dvbpsipmt )
         if( p_en )
         {
             /* DTV/CAM takes ownership of en50221_capmt_info_t on success */
-            if( stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA, p_en ) != VLC_SUCCESS )
+            if( vlc_stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_CA, p_en ) != VLC_SUCCESS )
             {
                 en50221_capmt_Delete( p_en );
                 if ( p_sys->standard == TS_STANDARD_ARIB && !p_sys->arib.b25stream )
                 {
-                    p_sys->arib.b25stream = stream_FilterNew( p_demux->s, "aribcam" );
+                    p_sys->arib.b25stream = vlc_stream_FilterNew( p_demux->s, "aribcam" );
                     p_sys->stream = ( p_sys->arib.b25stream ) ? p_sys->arib.b25stream : p_demux->s;
                 }
             }

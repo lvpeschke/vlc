@@ -85,18 +85,6 @@ struct stream_sys_t
     } stat;
 };
 
-static block_t *AReadBlock(stream_t *s, bool *restrict eof)
-{
-    block_t *block;
-
-    if (stream_Control(s->p_source, STREAM_GET_PRIVATE_BLOCK, &block, eof))
-    {
-        block = NULL;
-        *eof = true;
-    }
-    return block;
-}
-
 static int AStreamRefillBlock(stream_t *s)
 {
     stream_sys_t *sys = s->p_sys;
@@ -127,15 +115,13 @@ static int AStreamRefillBlock(stream_t *s)
 
     for (;;)
     {
-        bool b_eof;
-
         if (vlc_killed())
             return VLC_EGENERIC;
 
         /* Fetch a block */
-        if ((b = AReadBlock(s, &b_eof)))
+        if ((b = vlc_stream_ReadBlock(s->p_source)))
             break;
-        if (b_eof)
+        if (vlc_stream_Eof(s->p_source))
             return VLC_EGENERIC;
     }
 
@@ -190,11 +176,10 @@ static void AStreamPrebufferBlock(stream_t *s)
         }
 
         /* Fetch a block */
-        bool eof;
-        block_t *b = AReadBlock(s, &eof);
+        block_t *b = vlc_stream_ReadBlock(s->p_source);
         if (b == NULL)
         {
-            if (eof)
+            if (vlc_stream_Eof(s->p_source))
                 break;
             continue;
         }
@@ -274,7 +259,7 @@ static int AStreamSeekBlock(stream_t *s, uint64_t i_pos)
     if (i_offset < 0)
     {
         bool b_aseek;
-        stream_Control(s->p_source, STREAM_CAN_SEEK, &b_aseek);
+        vlc_stream_Control(s->p_source, STREAM_CAN_SEEK, &b_aseek);
 
         if (!b_aseek)
         {
@@ -288,8 +273,8 @@ static int AStreamSeekBlock(stream_t *s, uint64_t i_pos)
     {
         bool b_aseek, b_aseekfast;
 
-        stream_Control(s->p_source, STREAM_CAN_SEEK, &b_aseek);
-        stream_Control(s->p_source, STREAM_CAN_FASTSEEK, &b_aseekfast);
+        vlc_stream_Control(s->p_source, STREAM_CAN_SEEK, &b_aseek);
+        vlc_stream_Control(s->p_source, STREAM_CAN_FASTSEEK, &b_aseekfast);
 
         if (!b_aseek)
         {
@@ -320,7 +305,7 @@ static int AStreamSeekBlock(stream_t *s, uint64_t i_pos)
     if (b_seek)
     {
         /* Do the access seek */
-        if (stream_Seek(s->p_source, i_pos)) return VLC_EGENERIC;
+        if (vlc_stream_Seek(s->p_source, i_pos)) return VLC_EGENERIC;
 
         /* Release data */
         block_ChainRelease(sys->p_first);
@@ -379,7 +364,7 @@ static ssize_t AStreamReadBlock(stream_t *s, void *buf, size_t len)
     {   /* seek if possible, else use plain old read and discard */
         bool b_aseek;
 
-        stream_Control(s->p_source, STREAM_CAN_SEEK, &b_aseek);
+        vlc_stream_Control(s->p_source, STREAM_CAN_SEEK, &b_aseek);
         if (b_aseek)
             return AStreamSeekBlock(s, sys->i_pos + len) ? 0 : len;
     }
@@ -401,6 +386,16 @@ static ssize_t AStreamReadBlock(stream_t *s, void *buf, size_t len)
         if (sys->p_current == NULL)
             AStreamRefillBlock(s);
     }
+
+    /**
+     * we should not signal end-of-file if we have not exhausted
+     * the blocks we know about, as such we should try again if that
+     * is the case. i_copy == 0 just means that the processed block does
+     * not contain data at the offset that we want, not EOF.
+     **/
+
+    if( i_copy == 0 && sys->p_current )
+        return AStreamReadBlock( s, buf, len );
 
     sys->i_pos += i_copy;
     return i_copy;
@@ -430,12 +425,12 @@ static int AStreamControl(stream_t *s, int i_query, va_list args)
         case STREAM_SET_PRIVATE_ID_STATE:
         case STREAM_SET_PRIVATE_ID_CA:
         case STREAM_GET_PRIVATE_ID_STATE:
-            return stream_vaControl(s->p_source, i_query, args);
+            return vlc_stream_vaControl(s->p_source, i_query, args);
 
         case STREAM_SET_TITLE:
         case STREAM_SET_SEEKPOINT:
         {
-            int ret = stream_vaControl(s->p_source, i_query, args);
+            int ret = vlc_stream_vaControl(s->p_source, i_query, args);
             if (ret == VLC_SUCCESS)
                 AStreamControlReset(s);
             return ret;
@@ -443,7 +438,7 @@ static int AStreamControl(stream_t *s, int i_query, va_list args)
 
         case STREAM_SET_RECORD_STATE:
         default:
-            msg_Err(s, "invalid stream_vaControl query=0x%x", i_query);
+            msg_Err(s, "invalid vlc_stream_vaControl query=0x%x", i_query);
             return VLC_EGENERIC;
     }
     return VLC_SUCCESS;

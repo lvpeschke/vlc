@@ -124,7 +124,7 @@ static const char* const tooltipL[BUTTON_MAX] = { I_PLAY_TOOLTIP,
     N_("Random"), N_("Change the loop and repeat modes"), N_("Information"),
     N_("Previous media in the playlist"), N_("Next media in the playlist"),
     N_("Open subtitle file"),
-    N_("Dock/undock fullscreen controller to/from bottom of screen")
+    N_("Dock/undock fullscreen controller to/from bottom of screen"),
 };
 static const QString iconL[BUTTON_MAX] ={ ":/toolbar/play_b", ":/toolbar/stop_b",
     ":/toolbar/eject", ":/toolbar/previous_b", ":/toolbar/next_b",

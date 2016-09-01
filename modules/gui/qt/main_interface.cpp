@@ -106,6 +106,7 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf )
     b_interfaceFullScreen= false;
     b_hasPausedWhenMinimized = false;
     i_kc_offset          = false;
+    b_maximizedView      = false;
 
     /* Ask for Privacy */
     FirstRun::CheckAndRun( this, p_intf );
@@ -239,12 +240,12 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf )
     /************
      * Callbacks
      ************/
-    var_AddCallback( p_intf->p_libvlc, "intf-toggle-fscontrol", IntfShowCB, p_intf );
-    var_AddCallback( p_intf->p_libvlc, "intf-boss", IntfBossCB, p_intf );
-    var_AddCallback( p_intf->p_libvlc, "intf-show", IntfRaiseMainCB, p_intf );
+    var_AddCallback( p_intf->obj.libvlc, "intf-toggle-fscontrol", IntfShowCB, p_intf );
+    var_AddCallback( p_intf->obj.libvlc, "intf-boss", IntfBossCB, p_intf );
+    var_AddCallback( p_intf->obj.libvlc, "intf-show", IntfRaiseMainCB, p_intf );
 
     /* Register callback for the intf-popupmenu variable */
-    var_AddCallback( p_intf->p_libvlc, "intf-popupmenu", PopupMenuCB, p_intf );
+    var_AddCallback( p_intf->obj.libvlc, "intf-popupmenu", PopupMenuCB, p_intf );
 
 
     /* Final Sizing, restoration and placement of the interface */
@@ -308,10 +309,10 @@ MainInterface::~MainInterface()
     QVLCTools::saveWidgetPosition(settings, this);
 
     /* Unregister callbacks */
-    var_DelCallback( p_intf->p_libvlc, "intf-boss", IntfBossCB, p_intf );
-    var_DelCallback( p_intf->p_libvlc, "intf-show", IntfRaiseMainCB, p_intf );
-    var_DelCallback( p_intf->p_libvlc, "intf-toggle-fscontrol", IntfShowCB, p_intf );
-    var_DelCallback( p_intf->p_libvlc, "intf-popupmenu", PopupMenuCB, p_intf );
+    var_DelCallback( p_intf->obj.libvlc, "intf-boss", IntfBossCB, p_intf );
+    var_DelCallback( p_intf->obj.libvlc, "intf-show", IntfRaiseMainCB, p_intf );
+    var_DelCallback( p_intf->obj.libvlc, "intf-toggle-fscontrol", IntfShowCB, p_intf );
+    var_DelCallback( p_intf->obj.libvlc, "intf-popupmenu", PopupMenuCB, p_intf );
 
     p_intf->p_sys->p_mi = NULL;
 }
@@ -740,7 +741,7 @@ void MainInterface::getVideoSlot( WId *p_id, struct vout_window_t *p_wnd,
         showVideo();
 
         /* Ask videoWidget to resize correctly, if we are in normal mode */
-        if( !isFullScreen() && !isMaximized() && b_autoresize )
+        if( b_autoresize )
             videoWidget->setSize( *pi_width, *pi_height );
     }
 }
@@ -783,9 +784,33 @@ void MainInterface::setVideoSize( unsigned int w, unsigned int h )
         /* Resize video widget to video size, or keep it at the same
          * size. Call setSize() either way so that vout_window_ReportSize
          * will always get called.
+         * If the video size is too large for the screen, resize it
+         * to the screen size.
          */
         if (b_autoresize)
+        {
+            QRect screen = QApplication::desktop()->availableGeometry();
+            if( h > screen.height() )
+            {
+                w = screen.width();
+                h = screen.height();
+                if( !b_minimalView )
+                {
+                    if( menuBar()->isVisible() )
+                        h -= menuBar()->height();
+                    if( controls->isVisible() )
+                        h -= controls->height();
+                    if( statusBar()->isVisible() )
+                        h -= statusBar()->height();
+                    if( inputC->isVisible() )
+                        h -= inputC->height();
+                }
+                h -= style()->pixelMetric(QStyle::PM_TitleBarHeight);
+                h -= style()->pixelMetric(QStyle::PM_LayoutBottomMargin);
+                h -= 2 * style()->pixelMetric(QStyle::PM_DefaultFrameWidth);
+            }
             videoWidget->setSize( w, h );
+        }
         else
             videoWidget->setSize( videoWidget->width(), videoWidget->height() );
     }
@@ -1369,6 +1394,27 @@ void MainInterface::changeEvent(QEvent *event)
         Qt::WindowStates newState = windowState();
         Qt::WindowStates oldState = windowStateChangeEvent->oldState();
 
+        /* b_maximizedView stores if the window was maximized before entering fullscreen.
+         * It is set when entering maximized mode, unset when leaving it to normal mode.
+         * Upon leaving full screen, if b_maximizedView is set,
+         * the window should be maximized again. */
+        if( newState & Qt::WindowMaximized &&
+            !( oldState & Qt::WindowMaximized ) )
+            b_maximizedView = true;
+
+        if( !( newState & Qt::WindowMaximized ) &&
+            oldState & Qt::WindowMaximized &&
+            !b_videoFullScreen )
+            b_maximizedView = false;
+
+        if( !( newState & Qt::WindowFullScreen ) &&
+            oldState & Qt::WindowFullScreen &&
+            b_maximizedView )
+        {
+            showMaximized();
+            return;
+        }
+
         if( newState & Qt::WindowMinimized )
         {
             b_hasPausedWhenMinimized = false;
@@ -1522,7 +1568,7 @@ void MainInterface::handleKeyPress( QKeyEvent *e )
     int i_vlck = qtEventToVLCKey( e );
     if( i_vlck > 0 )
     {
-        var_SetInteger( p_intf->p_libvlc, "key-pressed", i_vlck );
+        var_SetInteger( p_intf->obj.libvlc, "key-pressed", i_vlck );
         e->accept();
     }
     else
@@ -1532,7 +1578,7 @@ void MainInterface::handleKeyPress( QKeyEvent *e )
 void MainInterface::wheelEvent( QWheelEvent *e )
 {
     int i_vlckey = qtWheelEventToVLCKey( e );
-    var_SetInteger( p_intf->p_libvlc, "key-pressed", i_vlckey );
+    var_SetInteger( p_intf->obj.libvlc, "key-pressed", i_vlckey );
     e->accept();
 }
 
@@ -1609,11 +1655,9 @@ void MainInterface::setRaise()
  *  We don't show the menu directly here because we don't want the
  *  caller to block for a too long time.
  *****************************************************************************/
-static int PopupMenuCB( vlc_object_t *p_this, const char *psz_variable,
-                        vlc_value_t old_val, vlc_value_t new_val, void *param )
+static int PopupMenuCB( vlc_object_t *, const char *,
+                        vlc_value_t, vlc_value_t new_val, void *param )
 {
-    VLC_UNUSED( p_this ); VLC_UNUSED( psz_variable ); VLC_UNUSED( old_val );
-
     intf_thread_t *p_intf = (intf_thread_t *)param;
 
     if( p_intf->pf_show_dialog )
@@ -1628,12 +1672,9 @@ static int PopupMenuCB( vlc_object_t *p_this, const char *psz_variable,
 /*****************************************************************************
  * IntfShowCB: callback triggered by the intf-toggle-fscontrol libvlc variable.
  *****************************************************************************/
-static int IntfShowCB( vlc_object_t *p_this, const char *psz_variable,
-                       vlc_value_t old_val, vlc_value_t new_val, void *param )
+static int IntfShowCB( vlc_object_t *, const char *,
+                       vlc_value_t, vlc_value_t, void *param )
 {
-    VLC_UNUSED( p_this ); VLC_UNUSED( psz_variable ); VLC_UNUSED( old_val );
-    VLC_UNUSED( new_val );
-
     intf_thread_t *p_intf = (intf_thread_t *)param;
     p_intf->p_sys->p_mi->toggleFSC();
 
@@ -1644,12 +1685,9 @@ static int IntfShowCB( vlc_object_t *p_this, const char *psz_variable,
 /*****************************************************************************
  * IntfRaiseMainCB: callback triggered by the intf-show-main libvlc variable.
  *****************************************************************************/
-static int IntfRaiseMainCB( vlc_object_t *p_this, const char *psz_variable,
-                       vlc_value_t old_val, vlc_value_t new_val, void *param )
+static int IntfRaiseMainCB( vlc_object_t *, const char *,
+                            vlc_value_t, vlc_value_t, void *param )
 {
-    VLC_UNUSED( p_this ); VLC_UNUSED( psz_variable ); VLC_UNUSED( old_val );
-    VLC_UNUSED( new_val );
-
     intf_thread_t *p_intf = (intf_thread_t *)param;
     p_intf->p_sys->p_mi->emitRaise();
 
@@ -1659,12 +1697,9 @@ static int IntfRaiseMainCB( vlc_object_t *p_this, const char *psz_variable,
 /*****************************************************************************
  * IntfBossCB: callback triggered by the intf-boss libvlc variable.
  *****************************************************************************/
-static int IntfBossCB( vlc_object_t *p_this, const char *psz_variable,
-                       vlc_value_t old_val, vlc_value_t new_val, void *param )
+static int IntfBossCB( vlc_object_t *, const char *,
+                       vlc_value_t, vlc_value_t, void *param )
 {
-    VLC_UNUSED( p_this ); VLC_UNUSED( psz_variable ); VLC_UNUSED( old_val );
-    VLC_UNUSED( new_val );
-
     intf_thread_t *p_intf = (intf_thread_t *)param;
     p_intf->p_sys->p_mi->emitBoss();
 

@@ -58,7 +58,7 @@ int bdsm_sd_probe_Open( vlc_object_t * );
 static int Open( vlc_object_t * );
 static void Close( vlc_object_t * );
 
-#define vlc_sd_probe_Open bdsm_sd_probe_Open
+VLC_SD_PROBE_HELPER( "dsm", "Windows networks", SD_CAT_LAN )
 
 #define BDSM_HELP N_("libdsm's SMB (Windows network shares) input and browser")
 
@@ -90,7 +90,7 @@ vlc_module_end ()
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
-static ssize_t Read( access_t *, uint8_t *, size_t );
+static ssize_t Read( access_t *, void *, size_t );
 static int Seek( access_t *, uint64_t );
 static int Control( access_t *, int, va_list );
 static int BrowserInit( access_t *p_access );
@@ -128,7 +128,6 @@ static int Open( vlc_object_t *p_this )
     smb_stat st;
 
     /* Init p_access */
-    access_InitFields( p_access );
     p_sys = p_access->p_sys = (access_sys_t*)calloc( 1, sizeof( access_sys_t ) );
     if( p_access->p_sys == NULL )
         return VLC_ENOMEM;
@@ -221,7 +220,8 @@ static int get_address( access_t *p_access )
 {
     access_sys_t *p_sys = p_access->p_sys;
 
-    if( !inet_pton( AF_INET, p_sys->url.psz_host, &p_sys->addr ) )
+    if( p_sys->url.psz_host != NULL &&
+        !inet_pton( AF_INET, p_sys->url.psz_host, &p_sys->addr ) )
     {
         /* This is not an ip address, let's try netbios/dns resolve */
         struct addrinfo *p_info = NULL;
@@ -300,8 +300,7 @@ static bool smb_has_invalid_creds( access_t *p_access )
     access_sys_t *p_sys = p_access->p_sys;
     uint32_t i_nt_status = smb_session_get_nt_status( p_sys->p_session );
 
-    return i_nt_status == NT_STATUS_ACCESS_DENIED
-        || i_nt_status == NT_STATUS_LOGON_FAILURE;
+    return i_nt_status & (NT_STATUS_ACCESS_DENIED | NT_STATUS_LOGON_FAILURE);
 }
 
 /* Performs login with existing credentials and ask the user for new ones on
@@ -325,7 +324,7 @@ static int login( access_t *p_access )
     if( !credential.psz_username )
     {
         psz_login = "Guest";
-        psz_password = "Guest";
+        psz_password = "";
         b_guest = true;
     }
     else
@@ -354,8 +353,7 @@ static int login( access_t *p_access )
                 goto success;
         }
 
-        msg_Err( p_access, "Unable to login with username = '%s', domain = '%s'",
-                 psz_login, psz_domain );
+        msg_Err( p_access, "Unable to login" );
         goto error;
     }
     else if( smb_session_is_guest( p_sys->p_session ) == 1 )
@@ -451,20 +449,16 @@ static int Seek( access_t *p_access, uint64_t i_pos )
     if (smb_fseek(p_sys->p_session, p_sys->i_fd, i_pos, SMB_SEEK_SET) == -1)
         return VLC_EGENERIC;
 
-    p_access->info.b_eof = false;
-
     return VLC_SUCCESS;
 }
 
 /*****************************************************************************
  * Read:
  *****************************************************************************/
-static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
+static ssize_t Read( access_t *p_access, void *p_buffer, size_t i_len )
 {
     access_sys_t *p_sys = p_access->p_sys;
     int i_read;
-
-    if( p_access->info.b_eof ) return 0;
 
     i_read = smb_fread( p_sys->p_session, p_sys->i_fd, p_buffer, i_len );
     if( i_read < 0 )
@@ -472,8 +466,6 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
         msg_Err( p_access, "read failed" );
         return -1;
     }
-
-    if( i_read == 0 ) p_access->info.b_eof = true;
 
     return i_read;
 }
@@ -483,31 +475,32 @@ static ssize_t Read( access_t *p_access, uint8_t *p_buffer, size_t i_len )
  *****************************************************************************/
 static int Control( access_t *p_access, int i_query, va_list args )
 {
+    access_sys_t *p_sys = p_access->p_sys;
+
     switch( i_query )
     {
-    case ACCESS_CAN_SEEK:
-    case ACCESS_CAN_PAUSE:
-    case ACCESS_CAN_CONTROL_PACE:
+    case STREAM_CAN_SEEK:
+    case STREAM_CAN_PAUSE:
+    case STREAM_CAN_CONTROL_PACE:
         *va_arg( args, bool* ) = true;
         break;
 
-    case ACCESS_CAN_FASTSEEK:
+    case STREAM_CAN_FASTSEEK:
         *va_arg( args, bool* ) = false;
         break;
 
-    case ACCESS_GET_SIZE:
+    case STREAM_GET_SIZE:
     {
-        smb_stat st = smb_stat_fd( p_access->p_sys->p_session,
-                                   p_access->p_sys->i_fd );
+        smb_stat st = smb_stat_fd( p_sys->p_session, p_sys->i_fd );
         *va_arg( args, uint64_t * ) = smb_stat_get( st, SMB_STAT_SIZE );
         break;
     }
-    case ACCESS_GET_PTS_DELAY:
+    case STREAM_GET_PTS_DELAY:
         *va_arg( args, int64_t * ) = INT64_C(1000)
             * var_InheritInteger( p_access, "network-caching" );
         break;
 
-    case ACCESS_SET_PAUSE_STATE:
+    case STREAM_SET_PAUSE_STATE:
         /* Nothing to do */
         break;
 
@@ -625,7 +618,7 @@ static int DirControl( access_t *p_access, int i_query, va_list args )
 {
     switch( i_query )
     {
-    case ACCESS_IS_DIRECTORY:
+    case STREAM_IS_DIRECTORY:
         *va_arg( args, bool * ) = p_access->pf_readdir == BrowseDirectory;
                                   /* might loop */
         break;

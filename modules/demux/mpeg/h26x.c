@@ -257,7 +257,7 @@ static int GenericOpen( demux_t *p_demux, const char *psz_module,
     int i_ret = 0;
 
     /* Restrict by type first */
-    if( !p_demux->b_force &&
+    if( !p_demux->obj.force &&
         !check_Property( p_demux, pp_psz_exts, demux_IsPathExtension ) &&
         !check_Property( p_demux, pp_psz_mimes, demux_IsContentType ) )
     {
@@ -265,7 +265,7 @@ static int GenericOpen( demux_t *p_demux, const char *psz_module,
     }
 
     /* First check for first AnnexB header */
-    if( stream_Peek( p_demux->s, &p_peek, H26X_MIN_PEEK ) == H26X_MIN_PEEK &&
+    if( vlc_stream_Peek( p_demux->s, &p_peek, H26X_MIN_PEEK ) == H26X_MIN_PEEK &&
        !memcmp( p_peek, annexb_startcode, 4 ) )
     {
         size_t i_peek = H26X_MIN_PEEK;
@@ -283,7 +283,7 @@ static int GenericOpen( demux_t *p_demux, const char *psz_module,
                     i_peek_target + H26X_PEEK_CHUNK <= H26X_MAX_PEEK )
                 {
                     i_peek_target += H26X_PEEK_CHUNK;
-                    i_peek = stream_Peek( p_demux->s, &p_peek, i_peek_target );
+                    i_peek = vlc_stream_Peek( p_demux->s, &p_peek, i_peek_target );
                 }
 
                 if( i_probe_offset + H26X_MIN_PEEK >= i_peek )
@@ -314,7 +314,7 @@ static int GenericOpen( demux_t *p_demux, const char *psz_module,
 
     if( i_ret < 1 )
     {
-        if( !p_demux->b_force )
+        if( !p_demux->obj.force )
         {
             msg_Warn( p_demux, "%s module discarded (no startcode)", psz_module );
             return VLC_EGENERIC;
@@ -407,9 +407,10 @@ static int Demux( demux_t *p_demux)
     demux_sys_t *p_sys = p_demux->p_sys;
     block_t *p_block_in, *p_block_out;
 
-    if( ( p_block_in = stream_Block( p_demux->s, H26X_PACKET_SIZE ) ) == NULL )
+    p_block_in = vlc_stream_Block( p_demux->s, H26X_PACKET_SIZE );
+    if( p_block_in == NULL )
     {
-        return 0;
+        return VLC_DEMUXER_EOF;
     }
 
     while( (p_block_out = p_sys->p_packetizer->pf_packetize( p_sys->p_packetizer, &p_block_in )) )
@@ -461,7 +462,7 @@ static int Demux( demux_t *p_demux)
             p_block_out = p_next;
         }
     }
-    return 1;
+    return VLC_DEMUXER_SUCCESS;
 }
 
 /*****************************************************************************

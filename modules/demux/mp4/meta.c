@@ -53,6 +53,7 @@ static const struct
     { ATOM_0xa9pub, vlc_meta_Publisher },
     { ATOM_0xa9dir, vlc_meta_Director },
     { ATOM_MCPS,    vlc_meta_EncodedBy }, /* Cleaner Pro */
+    { ATOM_aART,    vlc_meta_AlbumArtist },
     { 0, 0 },
 };
 
@@ -287,11 +288,11 @@ static void SetupmdirMeta( vlc_meta_t *p_meta, MP4_Box_t *p_box )
         if ( p_data && BOXDATA(p_data) && BOXDATA(p_data)->i_blob >= 6 &&
              BOXDATA(p_data)->e_wellknowntype == DATA_WKT_RESERVED )
         {
-            char psz_utf[5 + 5 + 4];
-            snprintf( psz_utf, sizeof( psz_utf ), "%"PRIu16" / %"PRIu16,
-                      GetWBE(&BOXDATA(p_data)->p_blob[2]),
-                      GetWBE(&BOXDATA(p_data)->p_blob[4]) );
-            vlc_meta_AddExtra( p_meta, N_("Disc"), psz_utf );
+            char psz_number[5];
+            snprintf( psz_number, sizeof( psz_number ), "%"PRIu16, GetWBE(&BOXDATA(p_data)->p_blob[2]) );
+            vlc_meta_Set( p_meta, vlc_meta_DiscNumber, psz_number );
+            snprintf( psz_number, sizeof( psz_number ), "%"PRIu16, GetWBE(&BOXDATA(p_data)->p_blob[4]) );
+            vlc_meta_Set( p_meta, vlc_meta_DiscTotal, psz_number );
         }
         break;
     }

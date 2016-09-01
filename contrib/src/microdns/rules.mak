@@ -11,13 +11,13 @@ PKGS_FOUND += microdns
 endif
 
 $(TARBALLS)/microdns-$(LIBMICRODNS_VERSION).tar.gz:
-	$(call download,$(LIBMICRODNS_URL))
+	$(call download_pkg,$(LIBMICRODNS_URL),microdns)
 
 .sum-microdns: $(TARBALLS)/microdns-$(LIBMICRODNS_VERSION).tar.gz
 
 microdns: microdns-$(LIBMICRODNS_VERSION).tar.gz .sum-microdns
 	$(UNPACK)
-	mv microdns-$(LIBMICRODNS_VERSION) microdns
+	$(MOVE)
 
 .microdns: microdns
 	cd $< && $(HOSTVARS) ./configure $(HOSTCONF)

@@ -13,12 +13,8 @@ ZLIB_CONFIG_VARS=CHOST=$(HOST)
 endif
 endif
 
-ifdef HAVE_SOLARIS
-ZLIB_ECFLAGS = -fPIC -DPIC
-endif
-
 $(TARBALLS)/zlib-$(ZLIB_VERSION).tar.gz:
-	$(call download,$(ZLIB_URL))
+	$(call download_pkg,$(ZLIB_URL),zlib)
 
 .sum-zlib: zlib-$(ZLIB_VERSION).tar.gz
 
@@ -28,10 +24,10 @@ zlib: zlib-$(ZLIB_VERSION).tar.gz .sum-zlib
 
 .zlib: zlib
 ifdef HAVE_WIN32
-	cd $< && $(HOSTVARS) $(MAKE) -fwin32/Makefile.gcc $(HOSTVARS) $(ZLIB_CONFIG_VARS) CFLAGS="$(CFLAGS) $(ZLIB_ECFLAGS)" RC="$(HOST)-windres" LD="$(CC)"
+	cd $< && $(HOSTVARS) $(MAKE) -fwin32/Makefile.gcc $(HOSTVARS) $(ZLIB_CONFIG_VARS) RC="$(HOST)-windres" LD="$(CC)"
 	cd $< && $(MAKE) -fwin32/Makefile.gcc install INCLUDE_PATH="$(PREFIX)/include" LIBRARY_PATH="$(PREFIX)/lib" BINARY_PATH="$(PREFIX)/bin"
 else
-	cd $< && $(HOSTVARS) $(ZLIB_CONFIG_VARS) CFLAGS="$(CFLAGS) $(ZLIB_ECFLAGS)" ./configure --prefix=$(PREFIX) --static
+	cd $< && $(HOSTVARS_PIC) $(ZLIB_CONFIG_VARS) ./configure --prefix=$(PREFIX) --static
 	cd $< && $(MAKE) install
 endif
 	touch $@

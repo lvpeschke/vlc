@@ -52,8 +52,12 @@ namespace adaptive
             virtual ~PlaylistManager    ();
 
             bool    start();
+            void    stop();
 
-            AbstractStream::status demux(mtime_t, bool);
+            AbstractStream::buffering_status bufferize(mtime_t, unsigned, unsigned);
+            AbstractStream::status dequeue(mtime_t *);
+            void drain();
+
             virtual bool needsUpdate() const;
             virtual bool updatePlaylist();
             virtual void scheduleNextUpdate();
@@ -75,12 +79,14 @@ namespace adaptive
             virtual mtime_t getFirstPlaybackTime() const;
             mtime_t getCurrentPlaybackTime() const;
 
-            int     esCount() const;
-            bool    seekAble() const;
             void pruneLiveStream();
             virtual bool reactivateStream(AbstractStream *);
             bool setupPeriod();
             void unsetPeriod();
+
+            void updateControlsPosition();
+            void updateControlsContentType();
+
             /* local factories */
             virtual AbstractAdaptationLogic *createLogic(AbstractAdaptationLogic::LogicType,
                                                          HTTPConnectionManager *);
@@ -92,11 +98,40 @@ namespace adaptive
             AbstractStreamFactory               *streamFactory;
             demux_t                             *p_demux;
             std::vector<AbstractStream *>        streams;
-            time_t                               nextPlaylistupdate;
-            mtime_t                              i_nzpcr;
-            mtime_t                              i_firstpcr;
             BasePeriod                          *currentPeriod;
+
+            /* shared with demux/buffering */
+            struct
+            {
+                mtime_t     i_nzpcr;
+                mtime_t     i_firstpcr;
+                vlc_mutex_t lock;
+                vlc_cond_t  cond;
+            } demux;
+
+            /* buffering process */
+            time_t                               nextPlaylistupdate;
             int                                  failedupdates;
+
+            /* Controls */
+            struct
+            {
+                bool        b_live;
+                mtime_t     i_length;
+                mtime_t     i_time;
+                double      f_position;
+                vlc_mutex_t lock;
+            } cached;
+
+        private:
+            void setBufferingRunState(bool);
+            void Run();
+            static void * managerThread(void *);
+            vlc_mutex_t  lock;
+            vlc_thread_t thread;
+            bool         b_thread;
+            vlc_cond_t   waitcond;
+            bool         b_buffering;
     };
 
 }

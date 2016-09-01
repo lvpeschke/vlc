@@ -13,9 +13,22 @@ endif
 
 
 ### Audio codecs ###
+libspdif_plugin_la_SOURCES = codec/spdif.c
+codec_LTLIBRARIES += libspdif_plugin.la
 
-liba52_plugin_la_SOURCES = codec/a52.c codec/a52.h
-codec_LTLIBRARIES += liba52_plugin.la
+libliba52_plugin_la_SOURCES = codec/liba52.c
+libliba52_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CPPFLAGS_liba52)
+libliba52_plugin_la_LIBADD = $(LIBM) $(LIBS_liba52)
+libliba52_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)'
+EXTRA_LTLIBRARIES += libliba52_plugin.la
+codec_LTLIBRARIES += $(LTLIBliba52)
+
+libdca_plugin_la_SOURCES = codec/dca.c
+libdca_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(DCA_CFLAGS)
+libdca_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)'
+libdca_plugin_la_LIBADD = $(LIBM) $(DCA_LIBS)
+EXTRA_LTLIBRARIES += libdca_plugin.la
+codec_LTLIBRARIES += $(LTLIBdca)
 
 libadpcm_plugin_la_SOURCES = codec/adpcm.c
 codec_LTLIBRARIES += libadpcm_plugin.la
@@ -26,9 +39,6 @@ codec_LTLIBRARIES += libaes3_plugin.la
 libaraw_plugin_la_SOURCES = codec/araw.c
 libaraw_plugin_la_LIBADD = $(LIBM)
 codec_LTLIBRARIES += libaraw_plugin.la
-
-libdts_plugin_la_SOURCES = codec/dts.c codec/dts_header.c codec/dts_header.h
-codec_LTLIBRARIES += libdts_plugin.la
 
 libfaad_plugin_la_SOURCES = codec/faad.c
 libfaad_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CPPFLAGS_faad)
@@ -299,7 +309,6 @@ codec_LTLIBRARIES += $(LTLIBoggspots)
 libvideotoolbox_plugin_la_SOURCES = video_chroma/copy.c video_chroma/copy.h codec/videotoolbox.m \
                                     packetizer/h264_nal.c packetizer/h264_nal.h \
                                     packetizer/hxxx_nal.c packetizer/hxxx_nal.h
-libvideotoolbox_plugin_la_CFLAGS = $(AM_CFLAGS) -fobjc-arc
 libvideotoolbox_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)' -Wl,-framework,Foundation -Wl,-framework,VideoToolbox -Wl,-framework,CoreMedia -Wl,-framework,CoreVideo
 EXTRA_LTLIBRARIES += libvideotoolbox_plugin.la
 codec_LTLIBRARIES += $(LTLIBvideotoolbox)
@@ -366,8 +375,9 @@ endif
 
 libdxva2_plugin_la_SOURCES = \
 	codec/avcodec/dxva2.c codec/avcodec/directx_va.c codec/avcodec/directx_va.h \
-	packetizer/h264_nal.c packetizer/h264_nal.h
-libdxva2_plugin_la_LIBADD = -lole32 -lshlwapi -luuid
+	packetizer/h264_nal.c packetizer/h264_nal.h \
+	packetizer/hevc_nal.c packetizer/hevc_nal.h
+libdxva2_plugin_la_LIBADD = $(LIBCOM) -lshlwapi -luuid
 if HAVE_AVCODEC_DXVA2
 codec_LTLIBRARIES += libdxva2_plugin.la
 endif
@@ -375,8 +385,9 @@ endif
 libd3d11va_plugin_la_SOURCES = \
 	codec/avcodec/d3d11va.c codec/avcodec/directx_va.c codec/avcodec/directx_va.h \
 	video_chroma/dxgi_fmt.c video_chroma/dxgi_fmt.h \
-	packetizer/h264_nal.c packetizer/h264_nal.h
-libd3d11va_plugin_la_LIBADD = -lole32 -luuid
+	packetizer/h264_nal.c packetizer/h264_nal.h \
+	packetizer/hevc_nal.c packetizer/hevc_nal.h
+libd3d11va_plugin_la_LIBADD = $(LIBCOM) -luuid
 if HAVE_WINSTORE
 libd3d11va_plugin_la_LIBADD += -ld3d11
 endif
@@ -505,6 +516,14 @@ libvpx_plugin_la_LIBADD = $(VPX_LIBS)
 EXTRA_LTLIBRARIES += libvpx_plugin.la
 codec_LTLIBRARIES += $(LTLIBvpx)
 
+libaom_plugin_la_SOURCES = codec/aom.c
+libaom_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
+libaom_plugin_la_CFLAGS = $(AM_CFLAGS) $(AOM_CFLAGS) $(CPPFLAGS_aom)
+libaom_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)'
+libaom_plugin_la_LIBADD = $(AOM_LIBS) $(LIBPTHREAD)
+EXTRA_LTLIBRARIES += libaom_plugin.la
+codec_LTLIBRARIES += $(LTLIBaom)
+
 libtwolame_plugin_la_SOURCES = codec/twolame.c
 libtwolame_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DLIBTWOLAME_STATIC
 libtwolame_plugin_la_CFLAGS = $(AM_CFLAGS) $(TWOLAME_CFLAGS)
@@ -536,13 +555,13 @@ libdmo_plugin_la_SOURCES = codec/dmo/dmo.c codec/dmo/dmo.h codec/dmo/buffer.c
 libqsv_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
 libdmo_plugin_la_LIBADD = $(LIBM)
 if HAVE_WIN32
-libdmo_plugin_la_LIBADD += -lole32 -luuid
+libdmo_plugin_la_LIBADD += $(LIBCOM) -luuid
 codec_LTLIBRARIES += libdmo_plugin.la
 endif
 
 libmft_plugin_la_SOURCES = codec/mft.c packetizer/h264_nal.c packetizer/h264_nal.h
 if HAVE_WIN32
-libmft_plugin_la_LIBADD = -lole32 -luuid -lmfuuid -lmfplat
+libmft_plugin_la_LIBADD = $(LIBCOM) -luuid -lmfuuid -lmfplat
 codec_LTLIBRARIES += libmft_plugin.la
 endif
 

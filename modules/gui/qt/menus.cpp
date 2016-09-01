@@ -82,6 +82,8 @@ static QActionGroup *currentGroup;
 QMenu *VLCMenuBar::recentsMenu = NULL;
 QMenu *VLCMenuBar::audioDeviceMenu = NULL;
 QMenu *VLCMenuBar::ppMenu = NULL;
+QMenu *VLCMenuBar::rendererMenu = NULL;
+QActionGroup *VLCMenuBar::rendererGroup = NULL;
 
 /**
  * @brief Add static entries to DP in menus
@@ -668,6 +670,10 @@ QMenu *VLCMenuBar::VideoMenu( intf_thread_t *p_intf, QMenu *current )
         addActionWithSubmenu( current, "video-es", qtr( "Video &Track" ) );
 
         current->addSeparator();
+        rendererMenu = RendererMenu( p_intf );
+        current->addMenu( rendererMenu );
+
+        current->addSeparator();
         /* Surface modifiers */
         addActionWithCheckbox( current, "fullscreen", qtr( "&Fullscreen" ) );
         addActionWithCheckbox( current, "autoscale", qtr( "Always Fit &Window" ) );
@@ -1076,7 +1082,7 @@ QMenu* VLCMenuBar::PopupMenu( intf_thread_t *p_intf, bool show )
         /* In skins interface, append some items */
         if( p_intf->p_sys->b_isDialogProvider )
         {
-            vlc_object_t* p_object = p_intf->p_parent;
+            vlc_object_t* p_object = p_intf->obj.parent;
             submenu->setTitle( qtr( "Interface" ) );
 
             /* Open skin dialog box */
@@ -1541,6 +1547,9 @@ void VLCMenuBar::updateAudioDevice( intf_thread_t * p_intf, audio_output_t *p_ao
 
     current->clear();
     int i_result = aout_DevicesList( p_aout, &ids, &names);
+    if( i_result < 0 )
+        return;
+
     selected = aout_DeviceGet( p_aout );
 
     QActionGroup *actionGroup = new QActionGroup(current);
@@ -1614,6 +1623,34 @@ void VLCMenuBar::updateRecents( intf_thread_t *p_intf )
             recentsMenu->setEnabled( true );
         }
     }
+}
+
+QMenu *VLCMenuBar::RendererMenu( intf_thread_t *p_intf )
+{
+    QMenu *submenu = new QMenu( qtr("&Renderer") );
+
+    rendererGroup = new QActionGroup(submenu);
+
+    QAction *action = new QAction( qtr("<Local>"), submenu );
+    action->setCheckable(true);
+    submenu->addAction( action );
+    rendererGroup->addAction(action);
+
+    char *psz_renderer = var_InheritString( THEPL, "sout" );
+    if ( psz_renderer == NULL )
+        action->setChecked( true );
+    else
+        free( psz_renderer );
+
+    submenu->addSeparator();
+
+    action = new QAction( qtr("Scan"), submenu );
+    action->setCheckable(true);
+    submenu->addAction( action );
+
+    CONNECT( action, triggered(bool), ActionsManager::getInstance( p_intf ), ScanRendererAction( bool ) );
+
+    return submenu;
 }
 
 QMenu *VLCMenuBar::PPMenu( intf_thread_t *p_intf )

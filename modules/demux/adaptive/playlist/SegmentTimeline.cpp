@@ -38,7 +38,7 @@ SegmentTimeline::SegmentTimeline(TimescaleAble *parent)
 SegmentTimeline::SegmentTimeline(uint64_t scale)
     :TimescaleAble(NULL)
 {
-    timescale.Set(scale);
+    setTimescale(scale);
 }
 
 SegmentTimeline::~SegmentTimeline()
@@ -94,7 +94,10 @@ uint64_t SegmentTimeline::getElementNumberByScaledPlaybackTime(stime_t scaled) c
     {
         const Element *el = *it;
         if(it == elements.begin())
+        {
             scaled -= el->t;
+            prevnumber = el->number;
+        }
 
         for(uint64_t repeat = 1 + el->r; repeat; repeat--)
         {
@@ -112,9 +115,11 @@ uint64_t SegmentTimeline::getElementNumberByScaledPlaybackTime(stime_t scaled) c
     return prevnumber;
 }
 
-stime_t SegmentTimeline::getScaledPlaybackTimeByElementNumber(uint64_t number) const
+bool SegmentTimeline::getScaledPlaybackTimeDurationBySegmentNumber(uint64_t number,
+                                                                   stime_t *time, stime_t *duration) const
 {
     stime_t totalscaledtime = 0;
+    stime_t lastduration = 0;
 
     std::list<Element *>::const_iterator it;
     for(it = elements.begin(); it != elements.end(); ++it)
@@ -126,6 +131,8 @@ stime_t SegmentTimeline::getScaledPlaybackTimeByElementNumber(uint64_t number) c
         {
             totalscaledtime = el->t;
         }
+
+        lastduration = el->d;
 
         if(number <= el->number)
             break;
@@ -139,7 +146,16 @@ stime_t SegmentTimeline::getScaledPlaybackTimeByElementNumber(uint64_t number) c
         totalscaledtime += (el->d * (el->r + 1));
     }
 
-    return totalscaledtime;
+    *time = totalscaledtime;
+    *duration = lastduration;
+    return true;
+}
+
+stime_t SegmentTimeline::getScaledPlaybackTimeByElementNumber(uint64_t number) const
+{
+    stime_t time, duration;
+    (void) getScaledPlaybackTimeDurationBySegmentNumber(number, &time, &duration);
+    return time;
 }
 
 uint64_t SegmentTimeline::maxElementNumber() const
@@ -160,8 +176,8 @@ uint64_t SegmentTimeline::minElementNumber() const
 
 void SegmentTimeline::pruneByPlaybackTime(mtime_t time)
 {
-    const uint64_t timescale = inheritTimescale();
-    uint64_t num = getElementNumberByScaledPlaybackTime(time * timescale / CLOCK_FREQ);
+    const Timescale timescale = inheritTimescale();
+    uint64_t num = getElementNumberByScaledPlaybackTime(timescale.ToScaled(time));
     pruneBySequenceNumber(num);
 }
 
@@ -236,7 +252,7 @@ mtime_t SegmentTimeline::start() const
 {
     if(elements.empty())
         return 0;
-    return elements.front()->t * CLOCK_FREQ / inheritTimescale();
+    return inheritTimescale().ToTime(elements.front()->t);
 }
 
 mtime_t SegmentTimeline::end() const
@@ -245,7 +261,7 @@ mtime_t SegmentTimeline::end() const
         return 0;
     const Element *last = elements.back();
     stime_t scaled = last->t + last->d * (last->r + 1);
-    return scaled  * CLOCK_FREQ / inheritTimescale();
+    return inheritTimescale().ToTime(scaled);
 }
 
 void SegmentTimeline::debug(vlc_object_t *obj, int indent) const

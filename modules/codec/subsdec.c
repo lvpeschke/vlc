@@ -739,6 +739,7 @@ static text_segment_t* ParseSubtitles( int *pi_align, const char *psz_subtitle )
     /* */
     while( *psz_subtitle )
     {
+        /* HTML extensions */
         if( *psz_subtitle == '<' )
         {
             char *psz_tagname = GetTag( &psz_subtitle, false );
@@ -912,6 +913,7 @@ static text_segment_t* ParseSubtitles( int *pi_align, const char *psz_subtitle )
                 psz_subtitle++;
             }
         }
+        /* SSA extensions */
         else if( psz_subtitle[0] == '{' && psz_subtitle[1] == '\\' &&
                  strchr( psz_subtitle, '}' ) )
         {
@@ -931,38 +933,84 @@ static text_segment_t* ParseSubtitles( int *pi_align, const char *psz_subtitle )
             /* Hide {\stupidity} */
             psz_subtitle = strchr( psz_subtitle, '}' ) + 1;
         }
+        /* MicroDVD extensions */
+        /* FIXME:
+         *  - Currently, we don't do difference between X and x, and we should:
+         *    Capital Letters applies to the whole text and not one line
+         *  - We don't support Position and Coordinates
+         *  - We don't support the DEFAULT flag (HEADER)
+         */
+
         else if( psz_subtitle[0] == '{' &&
-                ( psz_subtitle[1] == 'Y' || psz_subtitle[1] == 'y' )
-                && psz_subtitle[2] == ':' && strchr( psz_subtitle, '}' ) )
+                 psz_subtitle[2] == ':' && strchr( &psz_subtitle[2], '}' ) )
         {
-            // FIXME: We don't do difference between Y and y, and we should.
-            if( psz_subtitle[3] == 'i' )
+            const char *psz_tag_end = strchr( &psz_subtitle[2], '}' );
+            size_t i_len = psz_tag_end - &psz_subtitle[3];
+
+            if( psz_subtitle[1] == 'Y' || psz_subtitle[1] == 'y' )
+            {
+                if( psz_subtitle[3] == 'i' )
+                {
+                    p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
+                    p_segment->style->i_style_flags |= STYLE_ITALIC;
+                    p_segment->style->i_features |= STYLE_HAS_FLAGS;
+                    psz_subtitle++;
+                }
+                if( psz_subtitle[3] == 'b' )
+                {
+                    p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
+                    p_segment->style->i_style_flags |= STYLE_BOLD;
+                    p_segment->style->i_features |= STYLE_HAS_FLAGS;
+                    psz_subtitle++;
+                }
+                if( psz_subtitle[3] == 'u' )
+                {
+                    p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
+                    p_segment->style->i_style_flags |= STYLE_UNDERLINE;
+                    p_segment->style->i_features |= STYLE_HAS_FLAGS;
+                    psz_subtitle++;
+                }
+            }
+            else if( (psz_subtitle[1] == 'C' || psz_subtitle[1] == 'c' )
+                    && psz_subtitle[3] == '$' && i_len >= 7 )
+            {
+                /* Yes, they use BBGGRR, instead of RRGGBB */
+                char psz_color[7];
+                psz_color[0] = psz_subtitle[8]; psz_color[1] = psz_subtitle[9];
+                psz_color[2] = psz_subtitle[6]; psz_color[3] = psz_subtitle[7];
+                psz_color[4] = psz_subtitle[4]; psz_color[5] = psz_subtitle[5];
+                psz_color[6] = '\0';
+                p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
+                p_segment->style->i_font_color = vlc_html_color( psz_color, NULL );
+                p_segment->style->i_features |= STYLE_HAS_FONT_COLOR;
+            }
+            else if( psz_subtitle[1] == 'F' || psz_subtitle[1] == 'f' )
             {
                 p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
-                p_segment->style->i_style_flags |= STYLE_ITALIC;
-                p_segment->style->i_features |= STYLE_HAS_FLAGS;
-                psz_subtitle++;
+                p_segment->style->psz_fontname = strndup( &psz_subtitle[3], i_len );
             }
-            if( psz_subtitle[3] == 'b' )
+            else if( psz_subtitle[1] == 'S' || psz_subtitle[1] == 's' )
             {
-                p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
-                p_segment->style->i_style_flags |= STYLE_BOLD;
-                p_segment->style->i_features |= STYLE_HAS_FLAGS;
-                psz_subtitle++;
+                int size = atoi( &psz_subtitle[3] );
+                if( size )
+                {
+                    p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
+                    p_segment->style->i_font_size = size;
+                    p_segment->style->f_font_relsize = STYLE_DEFAULT_REL_FONT_SIZE *
+                                STYLE_DEFAULT_FONT_SIZE / p_segment->style->i_font_size;
+
+                }
             }
-            if( psz_subtitle[3] == 'u' )
+            /* Currently unsupported since we don't have access to the i_align flag here
+            else if( psz_subtitle[1] == 'P' )
             {
-                p_segment = NewTextSegmentPushStyle( p_segment, &p_stack );
-                p_segment->style->i_style_flags |= STYLE_UNDERLINE;
-                p_segment->style->i_features |= STYLE_HAS_FLAGS;
-                psz_subtitle++;
-            }
-            psz_subtitle = strchr( psz_subtitle, '}' ) + 1;
-        }
-        else if( psz_subtitle[0] == '{' &&  psz_subtitle[2] == ':' && strchr( psz_subtitle, '}' ) )
-        {
-            // Hide other {x:y} atrocities, like {c:$bbggrr} or {P:x}
-            psz_subtitle = strchr( psz_subtitle, '}' ) + 1;
+                if( psz_subtitle[3] == "1" )
+                    i_align = SUBPICTURE_ALIGN_TOP;
+                else if( psz_subtitle[3] == "0" )
+                    i_align = SUBPICTURE_ALIGN_BOTTOM;
+            } */
+            // Hide other {x:y} atrocities, notably {o:x}
+            psz_subtitle = psz_tag_end + 1;
         }
         else
         {

@@ -109,14 +109,15 @@ struct picture_sys_t {
 struct decoder_sys_t
 {
     CMVideoCodecType            codec;
-    size_t                      codec_profile;
-    size_t                      codec_level;
     uint8_t                     i_nal_length_size;
 
     bool                        b_started;
+    bool                        b_is_restarting;
     bool                        b_is_avcc;
     VTDecompressionSessionRef   session;
     CMVideoFormatDescriptionRef videoFormatDescription;
+    CFMutableDictionaryRef      decoderConfiguration;
+    CFMutableDictionaryRef      destinationPixelBufferAttributes;
 
     NSMutableArray              *outputTimeStamps;
     NSMutableDictionary         *outputFrames;
@@ -131,7 +132,7 @@ struct decoder_sys_t
 static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
-    size_t i_profile = 0xFFFF, i_level = 0xFFFF;
+    uint8_t i_profile = 0xFF, i_level = 0xFF;
     bool b_ret = false;
     CMVideoCodecType codec;
 
@@ -146,7 +147,7 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
                 return kCMVideoCodecType_H264;
             }
 
-            msg_Dbg(p_dec, "trying to decode MPEG-4 Part 10: profile %zu, level %zu", i_profile, i_level);
+            msg_Dbg(p_dec, "trying to decode MPEG-4 Part 10: profile %" PRIx8 ", level %i" PRIx8, i_profile, i_level);
 
             switch (i_profile) {
                 case PROFILE_H264_BASELINE:
@@ -162,7 +163,7 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
 
                 default:
                 {
-                    msg_Dbg(p_dec, "unsupported H264 profile %zu", i_profile);
+                    msg_Dbg(p_dec, "unsupported H264 profile %" PRIx8, i_profile);
                     return -1;
                 }
             }
@@ -171,7 +172,7 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
             /* a level higher than 5.2 was not tested, so don't dare to
              * try to decode it*/
             if (i_level > 52) {
-                msg_Dbg(p_dec, "unsupported H264 level %zu", i_level);
+                msg_Dbg(p_dec, "unsupported H264 level %" PRIx8, i_level);
                 return -1;
             }
 #else
@@ -179,7 +180,7 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
             if (i_level > 42) {
                 /* on Twister, we can do up to 5.2 */
                 if (!deviceSupportsAdvancedLevels() || i_level > 52) {
-                    msg_Dbg(p_dec, "unsupported H264 level %zu", i_level);
+                    msg_Dbg(p_dec, "unsupported H264 level %" PRIx8, i_level);
                     return -1;
                 }
             }
@@ -187,14 +188,23 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
 
             break;
         case VLC_CODEC_MP4V:
+        {
+            if (p_dec->fmt_in.i_original_fourcc == VLC_FOURCC( 'X','V','I','D' )) {
+                msg_Warn(p_dec, "XVID decoding not implemented, fallback on software");
+                return -1;
+            }
+
+            msg_Dbg(p_dec, "Will decode MP4V with original FourCC '%4.4s'", (char *)&p_dec->fmt_in.i_original_fourcc);
             codec = kCMVideoCodecType_MPEG4Video;
+
             break;
+        }
         case VLC_CODEC_H263:
             codec = kCMVideoCodecType_H263;
             break;
 
 #if !TARGET_OS_IPHONE
-        /* there are no DV or ProRes decoders on iOS, so bailout early */
+            /* there are no DV or ProRes decoders on iOS, so bailout early */
         case VLC_CODEC_PRORES:
             /* the VT decoder can't differenciate between the ProRes flavors, so we do it */
             switch (p_dec->fmt_in.i_original_fourcc) {
@@ -264,282 +274,9 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
     return codec;
 }
 
-static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
+static int StartVideoToolboxSession(decoder_t *p_dec)
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
-    OSStatus status;
-
-    /* setup the decoder */
-    CFMutableDictionaryRef decoderConfiguration = CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                                                            2,
-                                                                            &kCFTypeDictionaryKeyCallBacks,
-                                                                            &kCFTypeDictionaryValueCallBacks);
-    CFDictionarySetValue(decoderConfiguration,
-                         kCVImageBufferChromaLocationBottomFieldKey,
-                         kCVImageBufferChromaLocation_Left);
-    CFDictionarySetValue(decoderConfiguration,
-                         kCVImageBufferChromaLocationTopFieldKey,
-                         kCVImageBufferChromaLocation_Left);
-    p_sys->b_zero_copy = var_InheritBool(p_dec, "videotoolbox-zero-copy");
-
-    /* fetch extradata */
-    CFMutableDictionaryRef extradata_info = NULL;
-    CFDataRef extradata = NULL;
-
-    extradata_info = CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                               1,
-                                               &kCFTypeDictionaryKeyCallBacks,
-                                               &kCFTypeDictionaryValueCallBacks);
-
-    unsigned i_video_width = 0, i_video_visible_width = 0;
-    unsigned i_video_height = 0, i_video_visible_height = 0;
-    int i_sar_den = 0;
-    int i_sar_num = 0;
-
-    if (p_sys->codec == kCMVideoCodecType_H264) {
-        /* Do a late opening if there is no extra data and no valid video size */
-        if ((p_dec->fmt_in.video.i_width == 0 || p_dec->fmt_in.video.i_height == 0
-          || p_dec->fmt_in.i_extra == 0) && p_block == NULL) {
-            msg_Dbg(p_dec, "waiting for H264 SPS/PPS, will start late");
-
-            return VLC_SUCCESS;
-        }
-
-        size_t i_buf;
-        uint8_t *p_buf = NULL;
-        uint8_t *p_alloc_buf = NULL;
-        int i_ret = 0;
-
-        if (p_block == NULL) {
-            /* we need to convert the SPS and PPS units we received from the
-            * demuxer's avvC atom so we can process them further */
-            if(h264_isavcC(p_dec->fmt_in.p_extra, p_dec->fmt_in.i_extra))
-            {
-                p_alloc_buf = h264_avcC_to_AnnexB_NAL(p_dec->fmt_in.p_extra,
-                                                      p_dec->fmt_in.i_extra,
-                                                      &i_buf,
-                                                      &p_sys->i_nal_length_size);
-                p_buf = p_alloc_buf;
-                p_sys->b_is_avcc = !!p_buf;
-            }
-        } else {
-            /* we are mid-stream, let's have the h264_get helper see if it
-             * can find a NAL unit */
-            i_buf = p_block->i_buffer;
-            p_buf = p_block->p_buffer;
-            p_sys->i_nal_length_size = 4; /* default to 4 bytes */
-            i_ret = VLC_SUCCESS;
-        }
-
-        uint8_t *p_sps_buf = NULL, *p_pps_buf = NULL;
-        size_t i_sps_size = 0, i_pps_size = 0;
-        if (!p_buf) {
-            msg_Warn(p_dec, "no valid extradata or conversion failed");
-            return VLC_EGENERIC;
-        }
-
-        /* get the SPS and PPS units from the NAL unit which is either
-         * part of the demuxer's avvC atom or the mid stream data block */
-        i_ret = h264_get_spspps(p_buf,
-                                i_buf,
-                                &p_sps_buf,
-                                &i_sps_size,
-                                &p_pps_buf,
-                                &i_pps_size);
-        if(p_alloc_buf)
-            free(p_alloc_buf);
-        if (i_ret != VLC_SUCCESS) {
-            msg_Warn(p_dec, "sps pps detection failed");
-            return VLC_EGENERIC;
-        }
-
-        /* Decode Sequence Parameter Set */
-        const uint8_t *p_stp_sps_buf = p_sps_buf;
-        size_t i_stp_sps_nal = i_sps_size;
-        h264_sequence_parameter_set_t *p_sps_data;
-        if( !( p_sps_data = h264_decode_sps(p_stp_sps_buf, i_stp_sps_nal, true) ) )
-        {
-            msg_Warn(p_dec, "sps pps parsing failed");
-            return VLC_EGENERIC;
-        }
-
-        /* this data is more trust-worthy than what we receive
-         * from the demuxer, so we will use it to over-write
-         * the current values */
-        (void)
-        h264_get_picture_size( p_sps_data, &i_video_width,
-                                           &i_video_height,
-                                           &i_video_visible_width,
-                                           &i_video_visible_height );
-        i_sar_den = p_sps_data->vui.i_sar_den;
-        i_sar_num = p_sps_data->vui.i_sar_num;
-
-        /* no evaluation here as this is done in the precheck */
-        p_sys->codec_profile = p_sps_data->i_profile;
-        p_sys->codec_level = p_sps_data->i_level;
-
-        h264_release_sps( p_sps_data );
-        /* !Decode Sequence Parameter Set */
-
-        if(!p_sys->b_is_avcc)
-        {
-            block_t *p_avcC = h264_AnnexB_NAL_to_avcC(
-                                    p_sys->i_nal_length_size,
-                                    p_sps_buf, i_sps_size,
-                                    p_pps_buf, i_pps_size);
-            if (!p_avcC) {
-                msg_Warn(p_dec, "buffer creation failed");
-                return VLC_EGENERIC;
-            }
-
-            extradata = CFDataCreate(kCFAllocatorDefault,
-                                     p_avcC->p_buffer,
-                                     p_avcC->i_buffer);
-            block_Release(p_avcC);
-        }
-        else /* already avcC extradata */
-        {
-            extradata = CFDataCreate(kCFAllocatorDefault,
-                                     p_dec->fmt_in.p_extra,
-                                     p_dec->fmt_in.i_extra);
-        }
-
-        if (extradata)
-            CFDictionarySetValue(extradata_info, CFSTR("avcC"), extradata);
-
-        CFDictionarySetValue(decoderConfiguration,
-                             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
-                             extradata_info);
-
-    } else if (p_sys->codec == kCMVideoCodecType_MPEG4Video) {
-        extradata = ESDSCreate(p_dec,
-                               (uint8_t*)p_dec->fmt_in.p_extra,
-                               p_dec->fmt_in.i_extra);
-
-        if (extradata)
-            CFDictionarySetValue(extradata_info, CFSTR("esds"), extradata);
-
-        CFDictionarySetValue(decoderConfiguration,
-                             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
-                             extradata_info);
-    } else {
-        CFDictionarySetValue(decoderConfiguration,
-                             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
-                             extradata_info);
-    }
-
-    if (extradata)
-        CFRelease(extradata);
-    CFRelease(extradata_info);
-
-    /* pixel aspect ratio */
-    CFMutableDictionaryRef pixelaspectratio = CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                                                        2,
-                                                                        &kCFTypeDictionaryKeyCallBacks,
-                                                                        &kCFTypeDictionaryValueCallBacks);
-    /* fallback on the demuxer if we don't have better info */
-    /* FIXME ?: can't we skip temp storage using directly fmt_out */
-    if (i_video_width == 0)
-        i_video_width = p_dec->fmt_in.video.i_width;
-    if (i_video_height == 0)
-        i_video_height = p_dec->fmt_in.video.i_height;
-    if(!i_video_visible_width)
-        i_video_visible_width = p_dec->fmt_in.video.i_visible_width;
-    if(!i_video_visible_height)
-        i_video_visible_height = p_dec->fmt_in.video.i_visible_height;
-    if (i_sar_num == 0)
-        i_sar_num = p_dec->fmt_in.video.i_sar_num ? p_dec->fmt_in.video.i_sar_num : 1;
-    if (i_sar_den == 0)
-        i_sar_den = p_dec->fmt_in.video.i_sar_den ? p_dec->fmt_in.video.i_sar_den : 1;
-
-    VTDictionarySetInt32(pixelaspectratio,
-                         kCVImageBufferPixelAspectRatioHorizontalSpacingKey,
-                         i_sar_num);
-    VTDictionarySetInt32(pixelaspectratio,
-                         kCVImageBufferPixelAspectRatioVerticalSpacingKey,
-                         i_sar_den);
-    CFDictionarySetValue(decoderConfiguration,
-                         kCVImageBufferPixelAspectRatioKey,
-                         pixelaspectratio);
-    CFRelease(pixelaspectratio);
-
-#if !TARGET_OS_IPHONE
-    /* enable HW accelerated playback, since this is optional on OS X
-     * note that the backend may still fallback on software mode if no
-     * suitable hardware is available */
-    CFDictionarySetValue(decoderConfiguration,
-                         kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder,
-                         kCFBooleanTrue);
-
-    /* on OS X, we can force VT to fail if no suitable HW decoder is available,
-     * preventing the aforementioned SW fallback */
-    if (var_InheritInteger(p_dec, "videotoolbox-hw-decoder-only"))
-        CFDictionarySetValue(decoderConfiguration,
-                             kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
-                             kCFBooleanTrue);
-#endif
-
-    p_sys->b_enable_temporal_processing = false;
-    if (var_InheritInteger(p_dec, "videotoolbox-temporal-deinterlacing")) {
-        if (p_block != NULL) {
-            if (p_block->i_flags & BLOCK_FLAG_TOP_FIELD_FIRST ||
-                p_block->i_flags & BLOCK_FLAG_BOTTOM_FIELD_FIRST) {
-                msg_Dbg(p_dec, "Interlaced content detected, inserting temporal deinterlacer");
-                CFDictionarySetValue(decoderConfiguration, kVTDecompressionPropertyKey_FieldMode, kVTDecompressionProperty_FieldMode_DeinterlaceFields);
-                CFDictionarySetValue(decoderConfiguration, kVTDecompressionPropertyKey_DeinterlaceMode, kVTDecompressionProperty_DeinterlaceMode_Temporal);
-                p_sys->b_enable_temporal_processing = true;
-            }
-        }
-    }
-
-    /* create video format description */
-    status = CMVideoFormatDescriptionCreate(kCFAllocatorDefault,
-                                            p_sys->codec,
-                                            i_video_width,
-                                            i_video_height,
-                                            decoderConfiguration,
-                                            &p_sys->videoFormatDescription);
-    if (status) {
-        CFRelease(decoderConfiguration);
-        msg_Err(p_dec, "video format description creation failed (%i)", status);
-        return VLC_EGENERIC;
-    }
-
-    /* destination pixel buffer attributes */
-    CFMutableDictionaryRef dpba = CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                                            2,
-                                                            &kCFTypeDictionaryKeyCallBacks,
-                                                            &kCFTypeDictionaryValueCallBacks);
-
-#if !TARGET_OS_IPHONE
-    CFDictionarySetValue(dpba,
-                         kCVPixelBufferOpenGLCompatibilityKey,
-                         kCFBooleanTrue);
-#else
-    CFDictionarySetValue(dpba,
-                         kCVPixelBufferOpenGLESCompatibilityKey,
-                         kCFBooleanTrue);
-#endif
-
-    /* full range allows a broader range of colors but is H264 only */
-    if (p_sys->codec == kCMVideoCodecType_H264) {
-        VTDictionarySetInt32(dpba,
-                             kCVPixelBufferPixelFormatTypeKey,
-                             kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
-    } else {
-        VTDictionarySetInt32(dpba,
-                             kCVPixelBufferPixelFormatTypeKey,
-                             kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
-    }
-    VTDictionarySetInt32(dpba,
-                         kCVPixelBufferWidthKey,
-                         i_video_width);
-    VTDictionarySetInt32(dpba,
-                         kCVPixelBufferHeightKey,
-                         i_video_height);
-    VTDictionarySetInt32(dpba,
-                         kCVPixelBufferBytesPerRowAlignmentKey,
-                         i_video_width * 2);
 
     /* setup decoder callback record */
     VTDecompressionOutputCallbackRecord decoderCallbackRecord;
@@ -547,16 +284,12 @@ static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
     decoderCallbackRecord.decompressionOutputRefCon = p_dec;
 
     /* create decompression session */
-    status = VTDecompressionSessionCreate(kCFAllocatorDefault,
-                                          p_sys->videoFormatDescription,
-                                          decoderConfiguration,
-                                          dpba,
-                                          &decoderCallbackRecord,
-                                          &p_sys->session);
-
-    /* release no longer needed storage items */
-    CFRelease(dpba);
-    CFRelease(decoderConfiguration);
+    OSStatus status = VTDecompressionSessionCreate(kCFAllocatorDefault,
+                                                   p_sys->videoFormatDescription,
+                                                   p_sys->decoderConfiguration,
+                                                   p_sys->destinationPixelBufferAttributes,
+                                                   &decoderCallbackRecord,
+                                                   &p_sys->session);
 
     /* check if the session is valid */
     if (status) {
@@ -600,6 +333,288 @@ static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
         return VLC_EGENERIC;
     }
 
+    return VLC_SUCCESS;
+}
+
+static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
+{
+    decoder_sys_t *p_sys = p_dec->p_sys;
+    OSStatus status;
+
+    /* setup the decoder */
+    p_sys->decoderConfiguration = CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                                            2,
+                                                            &kCFTypeDictionaryKeyCallBacks,
+                                                            &kCFTypeDictionaryValueCallBacks);
+    CFDictionarySetValue(p_sys->decoderConfiguration,
+                         kCVImageBufferChromaLocationBottomFieldKey,
+                         kCVImageBufferChromaLocation_Left);
+    CFDictionarySetValue(p_sys->decoderConfiguration,
+                         kCVImageBufferChromaLocationTopFieldKey,
+                         kCVImageBufferChromaLocation_Left);
+    p_sys->b_zero_copy = var_InheritBool(p_dec, "videotoolbox-zero-copy");
+
+    /* fetch extradata */
+    CFMutableDictionaryRef extradata_info = NULL;
+    CFDataRef extradata = NULL;
+
+    extradata_info = CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                               1,
+                                               &kCFTypeDictionaryKeyCallBacks,
+                                               &kCFTypeDictionaryValueCallBacks);
+
+    unsigned i_video_width = 0, i_video_visible_width = 0;
+    unsigned i_video_height = 0, i_video_visible_height = 0;
+    int i_sar_den = 0;
+    int i_sar_num = 0;
+
+    if (p_sys->codec == kCMVideoCodecType_H264) {
+        /* Do a late opening if there is no extra data and no valid video size */
+        if ((p_dec->fmt_in.video.i_width == 0 || p_dec->fmt_in.video.i_height == 0
+             || p_dec->fmt_in.i_extra == 0) && p_block == NULL) {
+            msg_Dbg(p_dec, "waiting for H264 SPS/PPS, will start late");
+
+            return VLC_SUCCESS;
+        }
+
+        size_t i_buf;
+        uint8_t *p_buf = NULL;
+        uint8_t *p_alloc_buf = NULL;
+        int i_ret = 0;
+
+        if (p_block == NULL) {
+            /* we need to convert the SPS and PPS units we received from the
+             * demuxer's avvC atom so we can process them further */
+            if(h264_isavcC(p_dec->fmt_in.p_extra, p_dec->fmt_in.i_extra))
+            {
+                p_alloc_buf = h264_avcC_to_AnnexB_NAL(p_dec->fmt_in.p_extra,
+                                                      p_dec->fmt_in.i_extra,
+                                                      &i_buf,
+                                                      &p_sys->i_nal_length_size);
+                p_buf = p_alloc_buf;
+                p_sys->b_is_avcc = !!p_buf;
+            }
+        } else {
+            /* we are mid-stream, let's have the h264_get helper see if it
+             * can find a NAL unit */
+            i_buf = p_block->i_buffer;
+            p_buf = p_block->p_buffer;
+            p_sys->i_nal_length_size = 4; /* default to 4 bytes */
+            i_ret = VLC_SUCCESS;
+        }
+
+        uint8_t *p_sps_ab = NULL, *p_pps_ab = NULL, *p_ext_ab = NULL;
+        size_t i_sps_absize = 0, i_pps_absize = 0, i_ext_absize = 0;
+        if (!p_buf) {
+            msg_Warn(p_dec, "no valid extradata or conversion failed");
+            return VLC_EGENERIC;
+        }
+
+        /* get the SPS and PPS units from the NAL unit which is either
+         * part of the demuxer's avvC atom or the mid stream data block */
+        i_ret = h264_get_spspps(p_buf, i_buf,
+                                &p_sps_ab, &i_sps_absize,
+                                &p_pps_ab, &i_pps_absize,
+                                &p_ext_ab, &i_ext_absize);
+        if(p_alloc_buf)
+            free(p_alloc_buf);
+        if (i_ret != VLC_SUCCESS) {
+            msg_Warn(p_dec, "sps pps detection failed");
+            return VLC_EGENERIC;
+        }
+
+        /* Decode Sequence Parameter Set */
+        if( p_sps_ab )
+        {
+            const uint8_t *p_stp_sps_buf = p_sps_ab;
+            size_t i_stp_sps_nal = i_sps_absize;
+            h264_sequence_parameter_set_t *p_sps_data;
+            if( ! hxxx_strip_AnnexB_startcode( &p_stp_sps_buf, &i_stp_sps_nal ) ||
+               !( p_sps_data = h264_decode_sps(p_stp_sps_buf, i_stp_sps_nal, true) ) )
+            {
+                msg_Warn(p_dec, "sps pps parsing failed");
+                return VLC_EGENERIC;
+            }
+
+            /* this data is more trust-worthy than what we receive
+             * from the demuxer, so we will use it to over-write
+             * the current values */
+            (void)
+            h264_get_picture_size( p_sps_data, &i_video_width,
+                                  &i_video_height,
+                                  &i_video_visible_width,
+                                  &i_video_visible_height );
+            i_sar_den = p_sps_data->vui.i_sar_den;
+            i_sar_num = p_sps_data->vui.i_sar_num;
+
+            h264_release_sps( p_sps_data );
+        }
+        /* !Decode Sequence Parameter Set */
+
+        if(!p_sys->b_is_avcc)
+        {
+            block_t *p_avcC = h264_AnnexB_NAL_to_avcC(
+                                                      p_sys->i_nal_length_size,
+                                                      p_sps_ab, i_sps_absize,
+                                                      p_pps_ab, i_pps_absize);
+            if (!p_avcC) {
+                msg_Warn(p_dec, "buffer creation failed");
+                return VLC_EGENERIC;
+            }
+
+            extradata = CFDataCreate(kCFAllocatorDefault,
+                                     p_avcC->p_buffer,
+                                     p_avcC->i_buffer);
+            block_Release(p_avcC);
+        }
+        else /* already avcC extradata */
+        {
+            extradata = CFDataCreate(kCFAllocatorDefault,
+                                     p_dec->fmt_in.p_extra,
+                                     p_dec->fmt_in.i_extra);
+        }
+
+        if (extradata)
+            CFDictionarySetValue(extradata_info, CFSTR("avcC"), extradata);
+
+        CFDictionarySetValue(p_sys->decoderConfiguration,
+                             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
+                             extradata_info);
+
+    } else if (p_sys->codec == kCMVideoCodecType_MPEG4Video) {
+        extradata = ESDSCreate(p_dec,
+                               (uint8_t*)p_dec->fmt_in.p_extra,
+                               p_dec->fmt_in.i_extra);
+
+        if (extradata)
+            CFDictionarySetValue(extradata_info, CFSTR("esds"), extradata);
+
+        CFDictionarySetValue(p_sys->decoderConfiguration,
+                             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
+                             extradata_info);
+    } else {
+        CFDictionarySetValue(p_sys->decoderConfiguration,
+                             kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms,
+                             extradata_info);
+    }
+
+    if (extradata)
+        CFRelease(extradata);
+    CFRelease(extradata_info);
+
+    /* pixel aspect ratio */
+    CFMutableDictionaryRef pixelaspectratio = CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                                                        2,
+                                                                        &kCFTypeDictionaryKeyCallBacks,
+                                                                        &kCFTypeDictionaryValueCallBacks);
+    /* fallback on the demuxer if we don't have better info */
+    /* FIXME ?: can't we skip temp storage using directly fmt_out */
+    if (i_video_width == 0)
+        i_video_width = p_dec->fmt_in.video.i_width;
+    if (i_video_height == 0)
+        i_video_height = p_dec->fmt_in.video.i_height;
+    if(!i_video_visible_width)
+        i_video_visible_width = p_dec->fmt_in.video.i_visible_width;
+    if(!i_video_visible_height)
+        i_video_visible_height = p_dec->fmt_in.video.i_visible_height;
+    if (i_sar_num == 0)
+        i_sar_num = p_dec->fmt_in.video.i_sar_num ? p_dec->fmt_in.video.i_sar_num : 1;
+    if (i_sar_den == 0)
+        i_sar_den = p_dec->fmt_in.video.i_sar_den ? p_dec->fmt_in.video.i_sar_den : 1;
+
+    VTDictionarySetInt32(pixelaspectratio,
+                         kCVImageBufferPixelAspectRatioHorizontalSpacingKey,
+                         i_sar_num);
+    VTDictionarySetInt32(pixelaspectratio,
+                         kCVImageBufferPixelAspectRatioVerticalSpacingKey,
+                         i_sar_den);
+    CFDictionarySetValue(p_sys->decoderConfiguration,
+                         kCVImageBufferPixelAspectRatioKey,
+                         pixelaspectratio);
+    CFRelease(pixelaspectratio);
+
+#if !TARGET_OS_IPHONE
+    /* enable HW accelerated playback, since this is optional on OS X
+     * note that the backend may still fallback on software mode if no
+     * suitable hardware is available */
+    CFDictionarySetValue(p_sys->decoderConfiguration,
+                         kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder,
+                         kCFBooleanTrue);
+
+    /* on OS X, we can force VT to fail if no suitable HW decoder is available,
+     * preventing the aforementioned SW fallback */
+    if (var_InheritInteger(p_dec, "videotoolbox-hw-decoder-only"))
+        CFDictionarySetValue(p_sys->decoderConfiguration,
+                             kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
+                             kCFBooleanTrue);
+#endif
+
+    p_sys->b_enable_temporal_processing = false;
+    if (var_InheritInteger(p_dec, "videotoolbox-temporal-deinterlacing")) {
+        if (p_block != NULL) {
+            if (p_block->i_flags & BLOCK_FLAG_TOP_FIELD_FIRST ||
+                p_block->i_flags & BLOCK_FLAG_BOTTOM_FIELD_FIRST) {
+                msg_Dbg(p_dec, "Interlaced content detected, inserting temporal deinterlacer");
+                CFDictionarySetValue(p_sys->decoderConfiguration, kVTDecompressionPropertyKey_FieldMode, kVTDecompressionProperty_FieldMode_DeinterlaceFields);
+                CFDictionarySetValue(p_sys->decoderConfiguration, kVTDecompressionPropertyKey_DeinterlaceMode, kVTDecompressionProperty_DeinterlaceMode_Temporal);
+                p_sys->b_enable_temporal_processing = true;
+            }
+        }
+    }
+
+    /* create video format description */
+    status = CMVideoFormatDescriptionCreate(kCFAllocatorDefault,
+                                            p_sys->codec,
+                                            i_video_width,
+                                            i_video_height,
+                                            p_sys->decoderConfiguration,
+                                            &p_sys->videoFormatDescription);
+    if (status) {
+        CFRelease(p_sys->decoderConfiguration);
+        msg_Err(p_dec, "video format description creation failed (%i)", status);
+        return VLC_EGENERIC;
+    }
+
+    /* destination pixel buffer attributes */
+    p_sys->destinationPixelBufferAttributes = CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                                                        2,
+                                                                        &kCFTypeDictionaryKeyCallBacks,
+                                                                        &kCFTypeDictionaryValueCallBacks);
+
+#if !TARGET_OS_IPHONE
+    CFDictionarySetValue(p_sys->destinationPixelBufferAttributes,
+                         kCVPixelBufferOpenGLCompatibilityKey,
+                         kCFBooleanTrue);
+#else
+    CFDictionarySetValue(p_sys->destinationPixelBufferAttributes,
+                         kCVPixelBufferOpenGLESCompatibilityKey,
+                         kCFBooleanTrue);
+#endif
+
+    /* full range allows a broader range of colors but is H264 only */
+    if (p_sys->codec == kCMVideoCodecType_H264) {
+        VTDictionarySetInt32(p_sys->destinationPixelBufferAttributes,
+                             kCVPixelBufferPixelFormatTypeKey,
+                             kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
+    } else {
+        VTDictionarySetInt32(p_sys->destinationPixelBufferAttributes,
+                             kCVPixelBufferPixelFormatTypeKey,
+                             kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange);
+    }
+    VTDictionarySetInt32(p_sys->destinationPixelBufferAttributes,
+                         kCVPixelBufferWidthKey,
+                         i_video_width);
+    VTDictionarySetInt32(p_sys->destinationPixelBufferAttributes,
+                         kCVPixelBufferHeightKey,
+                         i_video_height);
+    VTDictionarySetInt32(p_sys->destinationPixelBufferAttributes,
+                         kCVPixelBufferBytesPerRowAlignmentKey,
+                         i_video_width * 2);
+
+    if (StartVideoToolboxSession(p_dec) != VLC_SUCCESS) {
+        return VLC_EGENERIC;
+    }
+
     p_dec->fmt_out.video.i_width = i_video_width;
     p_dec->fmt_out.video.i_height = i_video_height;
     p_dec->fmt_out.video.i_visible_width = i_video_visible_width;
@@ -621,6 +636,7 @@ static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
     }
 
     p_sys->b_started = YES;
+    p_sys->b_is_restarting = NO;
 
     return VLC_SUCCESS;
 }
@@ -631,10 +647,10 @@ static void StopVideoToolbox(decoder_t *p_dec)
 
     if (p_sys->b_started) {
         if (p_sys->outputTimeStamps != nil)
-            CFRelease(p_sys->outputTimeStamps);
+            [p_sys->outputTimeStamps release];
         p_sys->outputTimeStamps = nil;
         if (p_sys->outputFrames != nil)
-            CFRelease(p_sys->outputFrames);
+            [p_sys->outputFrames release];
         p_sys->outputFrames = nil;
 
         p_sys->b_started = false;
@@ -651,6 +667,42 @@ static void StopVideoToolbox(decoder_t *p_dec)
         CFRelease(p_sys->videoFormatDescription);
         p_sys->videoFormatDescription = nil;
     }
+    if (p_sys->decoderConfiguration != nil) {
+        CFRelease(p_sys->decoderConfiguration);
+        p_sys->decoderConfiguration = nil;
+    }
+    if (p_sys->destinationPixelBufferAttributes != nil) {
+        CFRelease(p_sys->destinationPixelBufferAttributes);
+        p_sys->destinationPixelBufferAttributes = nil;
+    }
+}
+
+static void RestartVideoToolbox(decoder_t *p_dec)
+{
+    decoder_sys_t *p_sys = p_dec->p_sys;
+
+    msg_Dbg(p_dec, "Restarting decoder session");
+
+    p_sys->b_is_restarting = true;
+    p_sys->b_started = false;
+
+    if (p_sys->session != nil) {
+        VTDecompressionSessionInvalidate(p_sys->session);
+        CFRelease(p_sys->session);
+        p_sys->session = nil;
+    }
+
+    p_sys->b_format_propagated = false;
+
+    Flush(p_dec);
+
+    if (StartVideoToolboxSession(p_dec) == VLC_SUCCESS) {
+        p_sys->b_started = true;
+    } else {
+        msg_Warn(p_dec, "Decoder session restart failed");
+    }
+
+    p_sys->b_is_restarting = false;
 }
 
 #pragma mark - module open and close
@@ -687,6 +739,8 @@ static int OpenDecoder(vlc_object_t *p_this)
     p_sys->b_is_avcc = false;
     p_sys->codec = codec;
     p_sys->videoFormatDescription = nil;
+    p_sys->decoderConfiguration = nil;
+    p_sys->destinationPixelBufferAttributes = nil;
 
     int i_ret = StartVideoToolbox(p_dec, NULL);
     if (i_ret != VLC_SUCCESS) {
@@ -833,62 +887,6 @@ static block_t *H264ProcessBlock(decoder_t *p_dec, block_t *p_block)
     if (p_sys->b_is_avcc) /* FIXME: no change checks done for AVC ? */
         return p_block;
 
-    uint8_t *p_sps_buf = NULL, *p_pps_buf = NULL;
-    size_t i_sps_size = 0, i_pps_size = 0;
-    int i_ret = 0;
-
-    i_ret = h264_get_spspps(p_block->p_buffer,
-                            p_block->i_buffer,
-                            &p_sps_buf,
-                            &i_sps_size,
-                            &p_pps_buf,
-                            &i_pps_size);
-
-    if (i_ret == VLC_SUCCESS) {
-        /* Decode Sequence Parameter Set */
-        const uint8_t *p_stp_sps_buf = p_sps_buf;
-        size_t i_stp_sps_nal = i_sps_size;
-        h264_sequence_parameter_set_t *p_sps_data;
-        if( hxxx_strip_AnnexB_startcode( &p_stp_sps_buf, &i_stp_sps_nal ) &&
-          ( p_sps_data = h264_decode_sps(p_stp_sps_buf, i_stp_sps_nal, true) ) )
-        {
-            bool b_something_changed = false;
-            unsigned v[4];
-            if(! h264_get_picture_size( p_sps_data, &v[0], &v[1], &v[2], &v[3] ) )
-                v[0] = v[1] = 0;
-
-            if (p_sys->codec_profile != p_sps_data->i_profile) {
-                msg_Warn(p_dec, "mid stream profile change found, restarting decoder");
-                b_something_changed = true;
-            } else if (p_sys->codec_level != p_sps_data->i_level) {
-                msg_Warn(p_dec, "mid stream level change found, restarting decoder");
-                b_something_changed = true;
-            } else if (p_dec->fmt_out.video.i_width != v[0]) {
-                msg_Warn(p_dec, "mid stream width change found, restarting decoder");
-                b_something_changed = true;
-            } else if (p_dec->fmt_out.video.i_height != v[1]) {
-                msg_Warn(p_dec, "mid stream height change found, restarting decoder");
-                b_something_changed = true;
-            } else if (p_dec->fmt_out.video.i_sar_den != p_sps_data->vui.i_sar_den) {
-                msg_Warn(p_dec, "mid stream SAR DEN change found, restarting decoder");
-                b_something_changed = true;
-            } else if (p_dec->fmt_out.video.i_sar_num != p_sps_data->vui.i_sar_num) {
-                msg_Warn(p_dec, "mid stream SAR NUM change found, restarting decoder");
-                b_something_changed = true;
-            }
-
-            if (b_something_changed)
-            {
-                p_sys->codec_profile = p_sps_data->i_profile;
-                p_sys->codec_level = p_sps_data->i_level;
-                StopVideoToolbox(p_dec);
-                block_Release(p_block);
-                p_block = NULL;
-            }
-            h264_release_sps( p_sps_data );
-        }
-    }
-
     return (p_block) ? hxxx_AnnexB_to_xVC(p_block, p_sys->i_nal_length_size) : NULL;
 }
 
@@ -973,7 +971,7 @@ static void copy420YpCbCr8Planar(picture_t *p_pic,
         pi_pitch[i] = CVPixelBufferGetBytesPerRowOfPlane(buffer, i);
     }
 
-    CopyFromNv12ToI420(p_pic, pp_plane, pi_pitch, i_width, i_height);
+    CopyFromNv12ToI420(p_pic, pp_plane, pi_pitch, i_height);
 
     CVPixelBufferUnlockBaseAddress(buffer, 0);
 }
@@ -1009,7 +1007,7 @@ static picture_t *DecodeBlock(decoder_t *p_dec, block_t **pp_block)
     p_block = *pp_block;
 
     if (likely(p_block != NULL)) {
-        if (unlikely(p_block->i_flags&(BLOCK_FLAG_CORRUPTED))) {
+        if (unlikely(p_block->i_flags&(BLOCK_FLAG_CORRUPTED) || p_sys->b_is_restarting)) {
             Flush(p_dec);
             block_Release(p_block);
             goto skip;
@@ -1069,7 +1067,10 @@ static picture_t *DecodeBlock(decoder_t *p_dec, block_t **pp_block)
                         StopVideoToolbox(p_dec);
                     } else if (status == -8960 || status == -12911) {
                         msg_Err(p_dec, "decoder failure: internal malfunction (%i)", status);
-                        StopVideoToolbox(p_dec);
+                        RestartVideoToolbox(p_dec);
+                    } else if (status == -12903) {
+                        msg_Warn(p_dec, "decoder failure: session invalid");
+                        RestartVideoToolbox(p_dec);
                     } else
                         msg_Dbg(p_dec, "decoding frame failed (%i)", status);
                 }

@@ -74,13 +74,6 @@ void vlc_trace (const char *fn, const char *file, unsigned line)
      fsync (2);
 }
 
-static inline unsigned long vlc_threadid (void)
-{
-     union { pthread_t th; unsigned long int i; } v = { };
-     v.th = pthread_self ();
-     return v.i;
-}
-
 #ifndef NDEBUG
 /* Reports a fatal error from the threading layer, for debugging purposes. */
 static void
@@ -89,7 +82,7 @@ vlc_thread_fatal (const char *action, int error,
 {
     int canc = vlc_savecancel ();
     fprintf (stderr, "LibVLC fatal error %s (%d) in thread %lu ",
-             action, error, vlc_threadid ());
+             action, error, vlc_thread_id ());
     vlc_trace (function, file, line);
 
     char buf[1000];
@@ -193,30 +186,21 @@ void vlc_mutex_unlock (vlc_mutex_t *p_mutex)
     VLC_THREAD_ASSERT ("unlocking mutex");
 }
 
-enum
-{
-    VLC_CLOCK_MONOTONIC = 0,
-    VLC_CLOCK_REALTIME,
-};
-
 void vlc_cond_init (vlc_cond_t *p_condvar)
 {
-    if (unlikely(pthread_cond_init (&p_condvar->cond, NULL)))
+    if (unlikely(pthread_cond_init (p_condvar, NULL)))
         abort ();
-    p_condvar->clock = VLC_CLOCK_MONOTONIC;
 }
 
 void vlc_cond_init_daytime (vlc_cond_t *p_condvar)
 {
-    if (unlikely(pthread_cond_init (&p_condvar->cond, NULL)))
+    if (unlikely(pthread_cond_init (p_condvar, NULL)))
         abort ();
-    p_condvar->clock = VLC_CLOCK_REALTIME;
-
 }
 
 void vlc_cond_destroy (vlc_cond_t *p_condvar)
 {
-    int val = pthread_cond_destroy (&p_condvar->cond);
+    int val = pthread_cond_destroy (p_condvar);
 
     /* due to a faulty pthread implementation within Darwin 11 and
      * later condition variables cannot be destroyed without
@@ -244,26 +228,48 @@ void vlc_cond_destroy (vlc_cond_t *p_condvar)
 
 void vlc_cond_signal (vlc_cond_t *p_condvar)
 {
-    int val = pthread_cond_signal (&p_condvar->cond);
+    int val = pthread_cond_signal (p_condvar);
     VLC_THREAD_ASSERT ("signaling condition variable");
 }
 
 void vlc_cond_broadcast (vlc_cond_t *p_condvar)
 {
-    pthread_cond_broadcast (&p_condvar->cond);
+    pthread_cond_broadcast (p_condvar);
 }
 
 void vlc_cond_wait (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex)
 {
-    int val = pthread_cond_wait (&p_condvar->cond, p_mutex);
+    int val = pthread_cond_wait (p_condvar, p_mutex);
     VLC_THREAD_ASSERT ("waiting on condition");
 }
 
 int vlc_cond_timedwait (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex,
                         mtime_t deadline)
 {
-    int val = 0;
+    /* according to POSIX standards, cond_timedwait should be a cancellation point
+     * Of course, Darwin does not care */
+    pthread_testcancel();
 
+    /*
+     * mdate() is the monotonic clock, pthread_cond_timedwait expects
+     * origin of gettimeofday(). Use timedwait_relative_np() instead.
+     */
+    mtime_t base = mdate();
+    deadline -= base;
+    if (deadline < 0)
+        deadline = 0;
+
+    struct timespec ts = mtime_to_ts(deadline);
+    int val = pthread_cond_timedwait_relative_np(p_condvar, p_mutex, &ts);
+    if (val != ETIMEDOUT)
+        VLC_THREAD_ASSERT ("timed-waiting on condition");
+    return val;
+}
+
+/* variant for vlc_cond_init_daytime */
+int vlc_cond_timedwait_daytime (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex,
+                                time_t deadline)
+{
     /*
      * Note that both pthread_cond_timedwait_relative_np and pthread_cond_timedwait
      * convert the given timeout to a mach absolute deadline, with system startup
@@ -272,42 +278,21 @@ int vlc_cond_timedwait (vlc_cond_t *p_condvar, vlc_mutex_t *p_mutex,
      * For more details, see: https://devforums.apple.com/message/931605
      */
 
-    /* according to POSIX standards, cond_timedwait should be a cancellation point
-     * Of course, Darwin does not care */
     pthread_testcancel();
 
-    if (p_condvar->clock == VLC_CLOCK_MONOTONIC) {
+    /*
+     * FIXME: It is assumed, that in this case the system waits until the real
+     * time deadline is passed, even if the real time is adjusted in between.
+     * This is not fulfilled, as described above.
+     */
+    struct timespec ts = mtime_to_ts(deadline);
+    int val = pthread_cond_timedwait(p_condvar, p_mutex, &ts);
 
-        /* 
-         * mdate() is the monotonic clock, pthread_cond_timedwait expects
-         * origin of gettimeofday(). Use timedwait_relative_np() instead.
-         */
-        mtime_t base = mdate();
-        deadline -= base;
-        if (deadline < 0)
-            deadline = 0;
-        struct timespec ts = mtime_to_ts(deadline);
-
-        val = pthread_cond_timedwait_relative_np(&p_condvar->cond, p_mutex, &ts);
-
-    } else {
-        /* variant for vlc_cond_init_daytime */
-        assert (p_condvar->clock == VLC_CLOCK_REALTIME);
-
-        /* 
-         * FIXME: It is assumed, that in this case the system waits until the real
-         * time deadline is passed, even if the real time is adjusted in between.
-         * This is not fulfilled, as described above.
-         */
-        struct timespec ts = mtime_to_ts(deadline);
-
-        val = pthread_cond_timedwait(&p_condvar->cond, p_mutex, &ts);
-    }
-    
     if (val != ETIMEDOUT)
         VLC_THREAD_ASSERT ("timed-waiting on condition");
     return val;
 }
+
 
 /* Initialize a semaphore. */
 void vlc_sem_init (vlc_sem_t *sem, unsigned value)
@@ -469,6 +454,16 @@ int vlc_clone_detach (vlc_thread_t *th, void *(*entry) (void *), void *data,
     pthread_attr_init (&attr);
     pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
     return vlc_clone_attr (th, &attr, entry, data, priority);
+}
+
+vlc_thread_t vlc_thread_self (void)
+{
+    return pthread_self ();
+}
+
+unsigned long vlc_thread_id (void)
+{
+    return -1;
 }
 
 int vlc_set_priority (vlc_thread_t th, int priority)

@@ -948,6 +948,7 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
         if ( BOXDATA(p_chan)->layout.i_channels_layout_tag == MP4_CHAN_USE_CHANNELS_BITMAP )
         {
             uint32_t rgi_chans_sequence[AOUT_CHAN_MAX + 1];
+            memset(rgi_chans_sequence, 0, sizeof(rgi_chans_sequence));
             uint16_t i_vlc_mapping = 0;
             uint8_t i_channels = 0;
             const uint32_t i_bitmap = BOXDATA(p_chan)->layout.i_channels_bitmap;
@@ -964,16 +965,21 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
                         break;
                     }
                     i_vlc_mapping |= chan_bitmap_mapping[i].i_vlc;
-                    rgi_chans_sequence[i_channels] = chan_bitmap_mapping[i].i_vlc;
+                    rgi_chans_sequence[i_channels++] = chan_bitmap_mapping[i].i_vlc;
                 }
-                i_channels++;
             }
             rgi_chans_sequence[i_channels] = 0;
-            p_track->b_chans_reorder = !!
-                    aout_CheckChannelReorder( rgi_chans_sequence, NULL, i_vlc_mapping,
-                                              p_track->rgi_chans_reordering );
-        }
+            if( aout_CheckChannelReorder( rgi_chans_sequence, NULL, i_vlc_mapping,
+                                          p_track->rgi_chans_reordering ) &&
+                aout_BitsPerSample( p_track->fmt.i_codec ) )
+            {
+                p_track->b_chans_reorder = true;
+                p_track->fmt.audio.i_channels = i_channels;
+                p_track->fmt.audio.i_physical_channels =
+                p_track->fmt.audio.i_original_channels = i_vlc_mapping;
+            }
 
+        }
     }
 
     SetupGlobalExtensions( p_track, p_sample );
@@ -1043,7 +1049,8 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
         }
 
         default:
-            msg_Dbg( p_demux, "Unrecognized FourCC %4.4s", (char *)&p_sample->i_type );
+            if(p_track->fmt.i_codec == 0)
+                msg_Dbg( p_demux, "Unrecognized FourCC %4.4s", (char *)&p_sample->i_type );
             break;
     }
 
@@ -1101,7 +1108,7 @@ int SetupSpuES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
             {
                 if ( p_text->i_font_size ) /* !WARN: in % of 5% height */
                 {
-                    p_style->f_font_relsize = p_text->i_font_size * 5 / 100;
+                    p_style->i_font_size = p_text->i_font_size;
                 }
                 if ( p_text->i_font_color )
                 {

@@ -41,11 +41,25 @@ vlc_fourcc_t vlc_va_GetChroma(enum PixelFormat hwfmt, enum PixelFormat swfmt)
             return VLC_CODEC_YV12;
 
         case AV_PIX_FMT_DXVA2_VLD:
-            return VLC_CODEC_D3D9_OPAQUE;
+            switch (swfmt)
+            {
+                case AV_PIX_FMT_YUV420P10LE:
+                    return VLC_CODEC_D3D9_OPAQUE_10B;
+                default:
+                    return VLC_CODEC_D3D9_OPAQUE;
+            }
+            break;
 
 #if LIBAVUTIL_VERSION_CHECK(54, 13, 1, 24, 100)
         case AV_PIX_FMT_D3D11VA_VLD:
-            return VLC_CODEC_D3D11_OPAQUE;
+            switch (swfmt)
+            {
+                case AV_PIX_FMT_YUV420P10LE:
+                    return VLC_CODEC_D3D11_OPAQUE_10B;
+                default:
+                    return VLC_CODEC_D3D11_OPAQUE;
+            }
+        break;
 #endif
 #if (LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(53, 14, 0))
         case AV_PIX_FMT_VDA:
@@ -114,9 +128,12 @@ vlc_va_t *vlc_va_New(vlc_object_t *obj, AVCodecContext *avctx,
     }
 
     vlc_fourcc_t chroma;
+    vlc_fourcc_t expected = vlc_va_GetChroma( pix_fmt, avctx->sw_pix_fmt );
     va->setup(va, &chroma);
-    if (chroma != vlc_va_GetChroma(pix_fmt, AV_PIX_FMT_YUV420P))
+    if (chroma != expected)
     {   /* Mismatch, cannot work, fail */
+        msg_Dbg( obj, "chroma mismatch %4.4s expected %4.4s",
+                 (const char*)&chroma, (const char*) &expected );
         vlc_va_Delete(va, avctx);
 #endif
         va = NULL;

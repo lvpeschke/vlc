@@ -36,7 +36,7 @@
 #include <new>
 
 extern "C" {
-#include "../../modules/codec/dts_header.h"
+#include "../../packetizer/dts_header.h"
 }
 
 #include <vlc_fs.h>
@@ -105,7 +105,7 @@ static int Open( vlc_object_t * p_this )
     bool                b_need_preload = false;
 
     /* peek the begining */
-    if( stream_Peek( p_demux->s, &p_peek, 4 ) < 4 ) return VLC_EGENERIC;
+    if( vlc_stream_Peek( p_demux->s, &p_peek, 4 ) < 4 ) return VLC_EGENERIC;
 
     /* is a valid file */
     if( p_peek[0] != 0x1a || p_peek[1] != 0x45 ||
@@ -203,12 +203,12 @@ static int Open( vlc_object_t * p_this )
                             const uint8_t *p_peek;
                             bool          file_ok = false;
                             char          *psz_url = vlc_path2uri( s_filename.c_str(), "file" );
-                            stream_t      *p_file_stream = stream_UrlNew(
+                            stream_t      *p_file_stream = vlc_stream_NewMRL(
                                                             p_demux,
                                                             psz_url );
                             /* peek the begining */
                             if( p_file_stream &&
-                                stream_Peek( p_file_stream, &p_peek, 4 ) >= 4
+                                vlc_stream_Peek( p_file_stream, &p_peek, 4 ) >= 4
                                 && p_peek[0] == 0x1a && p_peek[1] == 0x45 &&
                                 p_peek[2] == 0xdf && p_peek[3] == 0xa3 ) file_ok = true;
 
@@ -235,7 +235,7 @@ static int Open( vlc_object_t * p_this )
                             else
                             {
                                 if( p_file_stream ) {
-                                    stream_Delete( p_file_stream );
+                                    vlc_stream_Delete( p_file_stream );
                                 }
                                 msg_Dbg( p_demux, "the file '%s' cannot be opened", s_filename.c_str() );
                             }
@@ -307,7 +307,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
     switch( i_query )
     {
         case DEMUX_CAN_SEEK:
-            return stream_vaControl( p_demux->s, i_query, args );
+            return vlc_stream_vaControl( p_demux->s, i_query, args );
 
         case DEMUX_GET_ATTACHMENTS:
             ppp_attach = va_arg( args, input_attachment_t*** );
@@ -620,17 +620,16 @@ void BlockDecode( demux_t *p_demux, KaxBlock *block, KaxSimpleBlock *simpleblock
          }
 
         case VLC_CODEC_DTS:
+        {
             /* Check if packetization is correct and without padding.
              * example: Test_mkv_div3_DTS_1920x1080_1785Kbps_23,97fps.mkv */
-            if( p_block->i_buffer > 6 )
-            {
-                unsigned int a, b, c, d;
-                bool e;
-                int i_frame_size = GetSyncInfo( p_block->p_buffer, &e, &a, &b, &c, &d );
-                if( i_frame_size > 0 )
-                    p_block->i_buffer = __MIN(p_block->i_buffer, (size_t)i_frame_size);
-            }
+            vlc_dts_header_t dts;
+            if( vlc_dts_header_Parse( &dts, p_block->p_buffer, p_block->i_buffer )
+                == VLC_SUCCESS && dts.i_frame_size > 0 )
+                p_block->i_buffer = __MIN(p_block->i_buffer,
+                                          (size_t)dts.i_frame_size);
             break;
+        }
 
          case VLC_CODEC_OPUS:
             mtime_t i_length = i_duration * track. f_timecodescale *

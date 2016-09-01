@@ -29,13 +29,13 @@ namespace hls
     class HLSStream : public AbstractStream
     {
         public:
-            HLSStream(demux_t *, const StreamFormat &);
+            HLSStream(demux_t *);
             virtual bool setPosition(mtime_t, bool); /* reimpl */
 
         protected:
             virtual AbstractDemuxer * createDemux(const StreamFormat &); /* reimpl */
             virtual bool restartDemux(); /* reimpl */
-            virtual void prepareFormatChange(); /* reimpl */
+            virtual void prepareRestart(bool = true); /* reimpl */
 
             virtual block_t *checkBlock(block_t *, bool); /* reimpl */
 

@@ -91,7 +91,6 @@ static const vlc_input_callback_t p_input_callbacks[] =
     CALLBACK( "state", StateCallback ),
     CALLBACK( "rate", RateCallback ),
     CALLBACK( "position", PositionCallback ),
-    CALLBACK( "position-offset", PositionCallback ),
     CALLBACK( "time", TimeCallback ),
     CALLBACK( "time-offset", TimeOffsetCallback ),
     CALLBACK( "bookmark", BookmarkCallback ),
@@ -108,7 +107,7 @@ static const vlc_input_callback_t p_input_callbacks[] =
 
     CALLBACK( NULL, NULL )
 };
-static const vlc_input_callback_t p_input_navigation_callbacks[] =
+static const vlc_input_callback_t p_input_title_navigation_callbacks[] =
 {
     CALLBACK( "next-title", TitleCallback ),
     CALLBACK( "prev-title", TitleCallback ),
@@ -117,7 +116,7 @@ static const vlc_input_callback_t p_input_navigation_callbacks[] =
 
     CALLBACK( NULL, NULL )
 };
-static const vlc_input_callback_t p_input_title_callbacks[] =
+static const vlc_input_callback_t p_input_seekpoint_navigation_callbacks[] =
 {
     CALLBACK( "next-chapter", SeekpointCallback ),
     CALLBACK( "prev-chapter", SeekpointCallback ),
@@ -146,7 +145,6 @@ void input_ControlVarInit ( input_thread_t *p_input )
 
     /* Position */
     var_Create( p_input, "position",  VLC_VAR_FLOAT );
-    var_Create( p_input, "position-offset",  VLC_VAR_FLOAT );
 
     /* Time */
     var_Create( p_input, "time", VLC_VAR_INTEGER );
@@ -229,21 +227,29 @@ void input_ControlVarInit ( input_thread_t *p_input )
  *****************************************************************************/
 void input_ControlVarStop( input_thread_t *p_input )
 {
+    demux_t* p_demux  = p_input->p->master->p_demux;
+    int i_cur_title;
+
     if( !p_input->b_preparsing )
         InputDelCallbacks( p_input, p_input_callbacks );
 
-    if( p_input->p->i_title > 0 )
+    if( p_input->p->i_title > 1 )
+        InputDelCallbacks( p_input, p_input_title_navigation_callbacks );
+
+    for( int i = 0; i < p_input->p->i_title; i++ )
     {
-        InputDelCallbacks( p_input, p_input_navigation_callbacks );
-        InputDelCallbacks( p_input, p_input_title_callbacks );
+        char name[sizeof("title ") + 3 * sizeof (int)];
 
-        for( int i = 0; i < p_input->p->i_title; i++ )
-        {
-            char name[sizeof("title ") + 3 * sizeof (int)];
+        sprintf( name, "title %2u", i );
+        var_DelCallback( p_input, name, NavigationCallback, (void *)(intptr_t)i );
+    }
 
-            sprintf( name, "title %2u", i );
-            var_DelCallback( p_input, name, NavigationCallback, (void *)(intptr_t)i );
-        }
+    if( !demux_Control( p_demux, DEMUX_GET_TITLE, &i_cur_title ) )
+    {
+        input_title_t* t = p_input->p->title[ i_cur_title ];
+
+        if( t->i_seekpoint > 1 )
+            InputDelCallbacks( p_input, p_input_seekpoint_navigation_callbacks );
     }
 }
 
@@ -513,6 +519,7 @@ void input_ConfigVarInit ( input_thread_t *p_input )
     /* */
     var_Create( p_input, "access", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
     var_Create( p_input, "demux", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
+    var_Create( p_input, "demux-filter", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
     var_Create( p_input, "stream-filter", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
 
     /* Meta */
@@ -585,32 +592,20 @@ static int PositionCallback( vlc_object_t *p_this, char const *psz_cmd,
                              void *p_data )
 {
     input_thread_t *p_input = (input_thread_t*)p_this;
-    VLC_UNUSED(oldval); VLC_UNUSED(p_data);
 
-    if( !strcmp( psz_cmd, "position-offset" ) )
+    VLC_UNUSED(psz_cmd); VLC_UNUSED(oldval); VLC_UNUSED(p_data);
+
+    /* Update "length" for better intf behaviour */
+    const int64_t i_length = var_GetInteger( p_input, "length" );
+    if( i_length > 0 && newval.f_float >= 0.f && newval.f_float <= 1.f )
     {
-        float f_position = var_GetFloat( p_input, "position" ) + newval.f_float;
-        if( f_position < 0.f )
-            f_position = 0.f;
-        else if( f_position > 1.f )
-            f_position = 1.f;
-        var_SetFloat( p_this, "position", f_position );
-    }
-    else
-    {
-        /* Update "length" for better intf behaviour */
-        const int64_t i_length = var_GetInteger( p_input, "length" );
-        if( i_length > 0 && newval.f_float >= 0.f && newval.f_float <= 1.f )
-        {
-            vlc_value_t val;
+        vlc_value_t val;
 
-            val.i_int = i_length * newval.f_float;
-            var_Change( p_input, "time", VLC_VAR_SETVALUE, &val, NULL );
-        }
-
-        /* */
-        input_ControlPush( p_input, INPUT_CONTROL_SET_POSITION, &newval );
+        val.i_int = i_length * newval.f_float;
+        var_Change( p_input, "time", VLC_VAR_SETVALUE, &val, NULL );
     }
+
+    input_ControlPush( p_input, INPUT_CONTROL_SET_POSITION, &newval );
     return VLC_SUCCESS;
 }
 

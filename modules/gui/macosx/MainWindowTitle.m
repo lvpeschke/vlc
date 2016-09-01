@@ -22,9 +22,9 @@
  *****************************************************************************/
 
 #import <vlc_common.h>
-#import "intf.h"
+#import "VLCMain.h"
 #import "MainWindowTitle.h"
-#import "CoreInteraction.h"
+#import "VLCCoreInteraction.h"
 #import "CompatibilityFixes.h"
 #import <SystemConfiguration/SystemConfiguration.h> // for the revealInFinder clone
 
@@ -89,7 +89,7 @@
 {
     b_nativeFullscreenMode = var_InheritBool(getIntf(), "macosx-nativefullscreenmode");
 
-    if (!b_nativeFullscreenMode || OSX_YOSEMITE || OSX_EL_CAPITAN) {
+    if (!b_nativeFullscreenMode || OSX_YOSEMITE || OSX_EL_CAPITAN || OSX_SIERRA) {
         [_fullscreenButton setHidden: YES];
     }
 
@@ -494,12 +494,9 @@
 
 
 @implementation VLCCustomWindowFullscreenButton
-#ifdef MAC_OS_X_VERSION_10_7
 - (id)extendedAccessibilityAttributeValue: (NSString*)theAttributeName {
     return ([theAttributeName isEqualToString: NSAccessibilitySubroleAttribute] ? NSAccessibilityFullScreenButtonAttribute : nil);
 }
-#endif
-
 @end
 
 

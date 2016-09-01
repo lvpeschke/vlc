@@ -26,8 +26,8 @@
 
 using namespace hls;
 
-HLSStream::HLSStream(demux_t *demux, const StreamFormat &format)
-    :AbstractStream(demux, format)
+HLSStream::HLSStream(demux_t *demux)
+    : AbstractStream(demux)
 {
     b_timestamps_offset_set = false;
     i_aac_offset = 0;
@@ -58,9 +58,6 @@ AbstractDemuxer * HLSStream::createDemux(const StreamFormat &format)
     AbstractDemuxer *ret = NULL;
     switch((unsigned)format)
     {
-        case StreamFormat::UNKNOWN:
-            ret = new Demuxer(p_realdemux, "any", fakeesout->getEsOut(), demuxersource);
-            break;
 
         case StreamFormat::PACKEDAAC:
             ret = new Demuxer(p_realdemux, "avformat", fakeesout->getEsOut(), demuxersource);
@@ -68,6 +65,12 @@ AbstractDemuxer * HLSStream::createDemux(const StreamFormat &format)
 
         case StreamFormat::MPEG2TS:
             ret = new Demuxer(p_realdemux, "ts", fakeesout->getEsOut(), demuxersource);
+            if(ret)
+                ret->setCanDetectSwitches(false);
+            break;
+
+        case StreamFormat::MP4:
+            ret = new Demuxer(p_realdemux, "mp4", fakeesout->getEsOut(), demuxersource);
             break;
 
         default:
@@ -80,14 +83,14 @@ AbstractDemuxer * HLSStream::createDemux(const StreamFormat &format)
         delete ret;
         ret = NULL;
     }
-    else fakeesout->commandsqueue.Commit();
+    else commandsqueue->Commit();
 
     return ret;
 }
 
-void HLSStream::prepareFormatChange()
+void HLSStream::prepareRestart(bool b_discontinuity)
 {
-    AbstractStream::prepareFormatChange();
+    AbstractStream::prepareRestart(b_discontinuity);
     if((unsigned)format == StreamFormat::PACKEDAAC)
     {
         fakeesout->setTimestampOffset( i_aac_offset );
@@ -158,13 +161,11 @@ block_t * HLSStream::checkBlock(block_t *p_block, bool b_first)
 AbstractStream * HLSStreamFactory::create(demux_t *realdemux, const StreamFormat &,
                                SegmentTracker *tracker, HTTPConnectionManager *manager) const
 {
-    HLSStream *stream;
-    try
+    HLSStream *stream = new (std::nothrow) HLSStream(realdemux);
+    if(stream && !stream->init(StreamFormat(StreamFormat::UNKNOWN), tracker, manager))
     {
-        stream = new HLSStream(realdemux, StreamFormat(StreamFormat::UNKNOWN));
-    } catch (int) {
+        delete stream;
         return NULL;
     }
-    stream->bind(tracker, manager);
     return stream;
 }

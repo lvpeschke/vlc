@@ -172,6 +172,9 @@ void video_format_Setup( video_format_t *p_fmt, vlc_fourcc_t i_chroma,
     case VLC_CODEC_J440:
         p_fmt->i_bits_per_pixel = 16;
         break;
+    case VLC_CODEC_P010:
+        p_fmt->i_bits_per_pixel = 15;
+        break;
     case VLC_CODEC_I411:
     case VLC_CODEC_YV12:
     case VLC_CODEC_I420:
@@ -394,6 +397,9 @@ bool video_format_IsSimilar( const video_format_t *f1,
 
     if( f1->orientation != f2->orientation)
         return false;
+
+    if( f1->multiview_mode!= f2->multiview_mode )
+       return false;
 
     if( f1->i_chroma == VLC_CODEC_RGB15 ||
         f1->i_chroma == VLC_CODEC_RGB16 ||

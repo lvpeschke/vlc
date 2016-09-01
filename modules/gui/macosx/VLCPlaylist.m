@@ -41,11 +41,12 @@
 
 #import "CompatibilityFixes.h"
 
-#import "intf.h"
+#import "VLCMain.h"
 #import "VLCPlaylist.h"
-#import "MainMenu.h"
+#import "VLCMainMenu.h"
 #import "VLCPlaylistInfo.h"
-#import "ResumeDialogController.h"
+#import "VLCResumeDialogController.h"
+#import "VLCOpenWindowController.h"
 
 #include <vlc_keys.h>
 #import <vlc_interface.h>
@@ -75,7 +76,7 @@
 
     BOOL b_playlistmenu_nib_loaded;
 
-    PLModel *_model;
+    VLCPLModel *_model;
 
     // information for playlist table columns menu
 
@@ -140,7 +141,7 @@
     [defaults registerDefaults:appDefaults];
 }
 
-- (PLModel *)model
+- (VLCPLModel *)model
 {
     return _model;
 }
@@ -177,7 +178,7 @@
 
     playlist_t * p_playlist = pl_Get(getIntf());
 
-    _model = [[PLModel alloc] initWithOutlineView:_outlineView playlist:p_playlist rootItem:p_playlist->p_playing];
+    _model = [[VLCPLModel alloc] initWithOutlineView:_outlineView playlist:p_playlist rootItem:p_playlist->p_playing];
     [_outlineView setDataSource:_model];
     [_outlineView reloadData];
 
@@ -236,6 +237,7 @@
     [_revealInFinderPlaylistMenuItem setTitle: _NS("Reveal in Finder")];
     [_sortNamePlaylistMenuItem setTitle: _NS("Sort Node by Name")];
     [_sortAuthorPlaylistMenuItem setTitle: _NS("Sort Node by Author")];
+    [_addFilesToPlaylistMenuItem setTitle: _NS("Add File...")];
 }
 
 - (void)playlistUpdated
@@ -256,7 +258,7 @@
 
 - (void)currentlyPlayingItemChanged
 {
-    PLItem *item = [[self model] currentlyPlayingItem];
+    VLCPLItem *item = [[self model] currentlyPlayingItem];
     if (!item)
         return;
 
@@ -265,7 +267,7 @@
     if (itemIndex < 0) {
         // expand if needed
         while (item != nil) {
-            PLItem *parent = [item parent];
+            VLCPLItem *parent = [item parent];
 
             if (![_outlineView isExpandable: parent])
                 break;
@@ -282,6 +284,7 @@
     }
 
     [_outlineView selectRowIndexes: [NSIndexSet indexSetWithIndex: itemIndex] byExtendingSelection: NO];
+    [_outlineView scrollRowToVisible: itemIndex];
 }
 
 #pragma mark -
@@ -296,7 +299,7 @@
     if (sender == _outlineView && [_outlineView clickedRow] == -1)
         return;
 
-    PLItem *o_item = [_outlineView itemAtRow:[_outlineView selectedRow]];
+    VLCPLItem *o_item = [_outlineView itemAtRow:[_outlineView selectedRow]];
     if (!o_item)
         return;
 
@@ -316,7 +319,7 @@
     if (selectedRows.count < 1)
         return;
 
-    PLItem *o_item = [_outlineView itemAtRow:selectedRows.firstIndex];
+    VLCPLItem *o_item = [_outlineView itemAtRow:selectedRows.firstIndex];
 
     char *psz_url = input_item_GetURI([o_item input]);
     if (!psz_url)
@@ -345,7 +348,7 @@
     NSUInteger indexes[i_count];
     [o_selected_indexes getIndexes:indexes maxCount:i_count inIndexRange:nil];
     for (int i = 0; i < i_count; i++) {
-        PLItem *o_item = [_outlineView itemAtRow:indexes[i]];
+        VLCPLItem *o_item = [_outlineView itemAtRow:indexes[i]];
         [_outlineView deselectRow: indexes[i]];
 
         if (![o_item isLeaf]) {
@@ -353,7 +356,7 @@
             continue;
         }
 
-        libvlc_MetaRequest(p_intf->p_libvlc, [o_item input], META_REQUEST_OPTION_NONE);
+        libvlc_MetadataRequest(p_intf->obj.libvlc, [o_item input], META_REQUEST_OPTION_NONE, -1, NULL);
 
     }
     [self playlistUpdated];
@@ -373,12 +376,12 @@
     NSUInteger indexes[i_count];
     [o_selected_indexes getIndexes:indexes maxCount:i_count inIndexRange:nil];
     for (int i = 0; i < i_count; i++) {
-        PLItem *o_item = [_outlineView itemAtRow: indexes[i]];
+        VLCPLItem *o_item = [_outlineView itemAtRow: indexes[i]];
 
         if (![o_item isLeaf])
             continue;
 
-        libvlc_ArtRequest(p_intf->p_libvlc, [o_item input], META_REQUEST_OPTION_NONE);
+        libvlc_ArtRequest(p_intf->obj.libvlc, [o_item input], META_REQUEST_OPTION_NONE);
     }
     [self playlistUpdated];
 }
@@ -391,6 +394,11 @@
 - (IBAction)showInfoPanel:(id)sender
 {
     [[[VLCMain sharedInstance] currentMediaInfoPanel] toggleWindow:sender];
+}
+
+- (IBAction)addFilesToPlaylist:(id)sender
+{
+    [[[VLCMain sharedInstance] open] openFile];
 }
 
 - (IBAction)deleteItem:(id)sender
@@ -496,7 +504,7 @@
         if (selectedRows.count != 1)
             return NO;
 
-        PLItem *o_item = [_outlineView itemAtRow:selectedRows.firstIndex];
+        VLCPLItem *o_item = [_outlineView itemAtRow:selectedRows.firstIndex];
 
         // Check if item exists in file system
         char *psz_url = input_item_GetURI([o_item input]);
@@ -900,9 +908,6 @@
         mtime_t lastPos = (mtime_t)lastPosition.intValue * 1000000;
         msg_Dbg(getIntf(), "continuing playback at %lld", lastPos);
         var_SetInteger(p_input_thread, "time", lastPos);
-
-        if (result == RESUME_ALWAYS)
-            config_PutInt(getIntf(), "macosx-continue-playback", 1);
     };
 
     if (settingValue == 1) { // always

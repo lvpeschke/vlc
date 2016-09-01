@@ -58,7 +58,7 @@ vlc_module_end ()
 /*****************************************************************************
  * Exported prototypes
  *****************************************************************************/
-static block_t *BlockRead( access_t * );
+static block_t *BlockRead( access_t *, bool * );
 static int     Seek( access_t *, uint64_t );
 static int     Control( access_t *, int, va_list );
 
@@ -148,6 +148,9 @@ static int Open( vlc_object_t *p_this )
     char* psz_server = NULL;
     int i_result;
 
+    if( p_access->b_preparsing )
+        return VLC_EGENERIC;
+
     /* Discard legacy username/password syntax - not supported */
     const char *psz_location = strchr( p_access->psz_location, '@' );
     if( psz_location != NULL )
@@ -159,7 +162,6 @@ static int Open( vlc_object_t *p_this )
     p_access->pf_block = BlockRead;
     p_access->pf_seek = Seek;
     p_access->pf_control = Control;
-    p_access->info.b_eof = false;
     p_access->p_sys = p_sys = malloc( sizeof( access_sys_t ) );
     if( !p_sys )
         return VLC_ENOMEM;
@@ -261,7 +263,7 @@ static void Close( vlc_object_t * p_this )
 /*****************************************************************************
  * Read: standard read on a file descriptor.
  *****************************************************************************/
-static block_t *BlockRead( access_t *p_access )
+static block_t *BlockRead( access_t *p_access, bool *restrict eof )
 {
     access_sys_t *p_sys = p_access->p_sys;
     block_t *p_block;
@@ -275,13 +277,14 @@ static block_t *BlockRead( access_t *p_access )
         return p_block;
     }
 
-    i_size = real_get_rdt_chunk_header( p_access->p_sys->p_rtsp, &pheader );
+    i_size = real_get_rdt_chunk_header( p_sys->p_rtsp, &pheader );
     if( i_size <= 0 ) return NULL;
 
     p_block = block_Alloc( i_size );
-    p_block->i_buffer = real_get_rdt_chunk( p_access->p_sys->p_rtsp, &pheader,
+    p_block->i_buffer = real_get_rdt_chunk( p_sys->p_rtsp, &pheader,
                                             &p_block->p_buffer );
 
+    (void) eof;
     return p_block;
 }
 
@@ -302,22 +305,22 @@ static int Control( access_t *p_access, int i_query, va_list args )
 {
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_FASTSEEK:
-        case ACCESS_CAN_PAUSE:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_FASTSEEK:
+        case STREAM_CAN_PAUSE:
             *va_arg( args, bool* ) = false;
             break;
 
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_CONTROL_PACE:
             *va_arg( args, bool* ) = true;
             break;
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             *va_arg( args, int64_t * ) = INT64_C(1000)
                 * var_InheritInteger(p_access, "network-caching");
             break;
 
-        case ACCESS_SET_PAUSE_STATE:
+        case STREAM_SET_PAUSE_STATE:
             /* Nothing to do */
             break;
 

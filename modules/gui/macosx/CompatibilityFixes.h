@@ -29,4 +29,24 @@
 #define OSX_MOUNTAIN_LION (NSAppKitVersionNumber < 1244 && NSAppKitVersionNumber >= 1162)
 #define OSX_MAVERICKS (NSAppKitVersionNumber < 1334 && NSAppKitVersionNumber >= 1244)
 #define OSX_YOSEMITE (NSAppKitVersionNumber < 1404 && NSAppKitVersionNumber >= 1334)
-#define OSX_EL_CAPITAN (NSAppKitVersionNumber >= 1404)
+#define OSX_EL_CAPITAN (NSAppKitVersionNumber >= 1404 && NSAppKitVersionNumber < 1485)
+#define OSX_SIERRA (NSAppKitVersionNumber >= 1485)
+
+// Sierra only APIs
+#ifndef MAC_OS_X_VERSION_10_12
+
+typedef NS_OPTIONS(NSUInteger, NSStatusItemBehavior) {
+
+    NSStatusItemBehaviorRemovalAllowed = (1 << 1),
+    NSStatusItemBehaviorTerminationOnRemoval = (1 << 2),
+};
+
+@interface NSStatusItem(IntroducedInSierra)
+
+@property (assign) NSStatusItemBehavior behavior;
+@property (assign, getter=isVisible) BOOL visible;
+@property (null_resettable, copy) NSString *autosaveName;
+
+@end
+
+#endif

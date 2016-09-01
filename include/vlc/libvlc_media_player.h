@@ -955,6 +955,28 @@ LIBVLC_API void libvlc_media_player_navigate( libvlc_media_player_t* p_mi,
 LIBVLC_API void libvlc_media_player_set_video_title_display( libvlc_media_player_t *p_mi, libvlc_position_t position, unsigned int timeout );
 
 /**
+ * Add a slave to the current media player.
+ *
+ * \note If the player is playing, the slave will be added directly. This call
+ * will also update the slave list of the attached libvlc_media_t.
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \see libvlc_media_slaves_add
+ *
+ * \param p_mi the media player
+ * \param i_type subtitle or audio
+ * \param psz_uri Uri of the slave (should contain a valid scheme).
+ * \param b_select True if this slave should be selected when it's loaded
+ *
+ * \return 0 on success, -1 on error.
+ */
+LIBVLC_API
+int libvlc_media_player_add_slave( libvlc_media_player_t *p_mi,
+                                   libvlc_media_slave_type_t i_type,
+                                   const char *psz_uri, bool b_select );
+
+/**
  * Release (free) libvlc_track_description_t
  *
  * \param p_track_description the structure to release
@@ -1147,15 +1169,6 @@ LIBVLC_API libvlc_track_description_t *
  * \return 0 on success, -1 if out of range
  */
 LIBVLC_API int libvlc_video_set_spu( libvlc_media_player_t *p_mi, int i_spu );
-
-/**
- * Set new video subtitle file.
- *
- * \param p_mi the media player
- * \param psz_subtitle new video subtitle file
- * \return the success status (boolean)
- */
-LIBVLC_API int libvlc_video_set_subtitle_file( libvlc_media_player_t *p_mi, const char *psz_subtitle );
 
 /**
  * Get the current subtitle delay. Positive values means subtitles are being
@@ -1954,6 +1967,47 @@ LIBVLC_API float libvlc_audio_equalizer_get_amp_at_index( libvlc_equalizer_t *p_
  * \version LibVLC 2.2.0 or later
  */
 LIBVLC_API int libvlc_media_player_set_equalizer( libvlc_media_player_t *p_mi, libvlc_equalizer_t *p_equalizer );
+
+/**
+ * Media player roles.
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * See \ref libvlc_media_player_set_role()
+ */
+typedef enum libvlc_media_player_role {
+    libvlc_role_None = 0, /**< Don't use a media player role */
+    libvlc_role_Music,   /**< Music (or radio) playback */
+    libvlc_role_Video, /**< Video playback */
+    libvlc_role_Communication, /**< Speech, real-time communication */
+    libvlc_role_Game, /**< Video game */
+    liblvc_role_Notification, /**< User interaction feedback */
+    libvlc_role_Animation, /**< Embedded animation (e.g. in web page) */
+    libvlc_role_Production, /**< Audio editting/production */
+    libvlc_role_Accessibility, /**< Accessibility */
+    libvlc_role_Test /** Testing */
+#define libvlc_role_Last libvlc_role_Test
+} libvlc_media_player_role_t;
+
+/**
+ * Gets the media role.
+ *
+ * \version LibVLC 3.0.0 and later.
+ *
+ * \param p_mi media player
+ * \return the media player role (\ref libvlc_media_player_role_t)
+ */
+LIBVLC_API int libvlc_media_player_get_role(libvlc_media_player_t *p_mi);
+
+/**
+ * Sets the media role.
+ *
+ * \param p_mi media player
+ * \param role the media player role (\ref libvlc_media_player_role_t)
+ * \return 0 on success, -1 on error
+ */
+LIBVLC_API int libvlc_media_player_set_role(libvlc_media_player_t *p_mi,
+                                            unsigned role);
 
 /** @} audio */
 

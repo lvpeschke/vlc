@@ -93,7 +93,13 @@ void h264_release_pps( h264_picture_parameter_set_t * );
 struct h264_sequence_parameter_set_t
 {
     int i_id;
-    int i_profile, i_profile_compatibility, i_level;
+    uint8_t i_profile, i_level;
+    uint8_t i_constraint_set_flags;
+    /* according to avcC, 3 bits max for those */
+    uint8_t i_chroma_idc;
+    uint8_t i_bit_depth_luma;
+    uint8_t i_bit_depth_chroma;
+
     uint32_t pic_width_in_mbs_minus1;
     uint32_t pic_height_in_map_units_minus1;
     struct
@@ -123,7 +129,7 @@ struct h264_sequence_parameter_set_t
         uint32_t i_time_scale;
         bool b_fixed_frame_rate;
         bool b_pic_struct_present_flag;
-        bool b_cpb_dpb_delays_present_flag;
+        bool b_hrd_parameters_present_flag;
         uint8_t i_cpb_removal_delay_length_minus1;
         uint8_t i_dpb_output_delay_length_minus1;
     } vui;
@@ -154,7 +160,8 @@ void h264_AVC_to_AnnexB( uint8_t *p_buf, uint32_t i_len,
  * Returns 0 if a SPS and/or a PPS is found */
 int h264_get_spspps( uint8_t *p_buf, size_t i_buf,
                      uint8_t **pp_sps, size_t *p_sps_size,
-                     uint8_t **pp_pps, size_t *p_pps_size );
+                     uint8_t **pp_pps, size_t *p_pps_size,
+                     uint8_t **pp_ext, size_t *p_ext_size );
 
 /* Create a AVCDecoderConfigurationRecord from SPS/PPS
  * Returns a valid block_t on success, must be freed with block_Release */
@@ -170,8 +177,11 @@ uint8_t * h264_avcC_to_AnnexB_NAL( const uint8_t *p_buf, size_t i_buf,
 
 bool h264_get_picture_size( const h264_sequence_parameter_set_t *, unsigned *p_w, unsigned *p_h,
                             unsigned *p_vw, unsigned *p_vh );
-/* Get level and Profile */
-bool h264_get_profile_level(const es_format_t *p_fmt, size_t *p_profile,
-                            size_t *p_level, uint8_t *p_nal_length_size);
+bool h264_get_chroma_luma( const h264_sequence_parameter_set_t *, uint8_t *pi_chroma_format,
+                           uint8_t *pi_depth_luma, uint8_t *pi_depth_chroma );
+
+/* Get level and Profile from DecoderConfigurationRecord */
+bool h264_get_profile_level(const es_format_t *p_fmt, uint8_t *pi_profile,
+                            uint8_t *pi_level, uint8_t *p_nal_length_size);
 
 #endif /* H264_NAL_H */

@@ -456,6 +456,7 @@ static block_t *ParseNALBlock( decoder_t *p_dec, bool *pb_ts_used, block_t *p_fr
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
     block_t *p_pic = NULL;
+    bool b_new_picture = false;
 
     const int i_nal_ref_idc = (p_frag->p_buffer[4] >> 5)&0x03;
     const int i_nal_type = p_frag->p_buffer[4]&0x1f;
@@ -486,7 +487,6 @@ static block_t *ParseNALBlock( decoder_t *p_dec, bool *pb_ts_used, block_t *p_fr
     else if( i_nal_type >= H264_NAL_SLICE && i_nal_type <= H264_NAL_SLICE_IDR )
     {
         slice_t slice;
-        bool  b_new_picture;
 
         if(ParseSlice( p_dec, &b_new_picture, &slice, i_nal_ref_idc, i_nal_type, p_frag ))
         {
@@ -553,7 +553,7 @@ static block_t *ParseNALBlock( decoder_t *p_dec, bool *pb_ts_used, block_t *p_fr
 
     *pb_ts_used = false;
     if( p_sys->i_frame_dts <= VLC_TS_INVALID &&
-        p_sys->i_frame_pts <= VLC_TS_INVALID )
+        p_sys->i_frame_pts <= VLC_TS_INVALID && b_new_picture )
     {
         p_sys->i_frame_dts = i_frag_dts;
         p_sys->i_frame_pts = i_frag_pts;
@@ -624,26 +624,32 @@ static block_t *OutputPicture( decoder_t *p_dec )
         p_pic = block_ChainGather( p_sys->p_frame );
     }
 
-    unsigned i_num_clock_ts = 1;
-    if( p_sys->b_frame_mbs_only == 0 && p_sys->b_pic_struct_present_flag )
+    unsigned i_num_clock_ts = 2;
+    if( p_sys->b_frame_mbs_only == 0 )
     {
-        if( p_sys->i_pic_struct < 9 )
+        if( p_sys->b_pic_struct_present_flag && p_sys->i_pic_struct < 9 )
         {
             const uint8_t rgi_numclock[9] = { 1, 1, 1, 2, 2, 3, 3, 2, 3 };
             i_num_clock_ts = rgi_numclock[ p_sys->i_pic_struct ];
         }
+        else if( p_sys->slice.i_field_pic_flag ) /* See D-1 and E-6 */
+        {
+            i_num_clock_ts = 1;
+        }
     }
 
-    if( p_sys->i_time_scale )
+    if( p_sys->i_time_scale && p_pic->i_length == 0 )
     {
         p_pic->i_length = CLOCK_FREQ * i_num_clock_ts *
                           p_sys->i_num_units_in_tick / p_sys->i_time_scale;
     }
 
+    mtime_t i_field_pts = VLC_TS_INVALID;
     if( p_sys->b_frame_mbs_only == 0 && p_sys->b_pic_struct_present_flag )
     {
         switch( p_sys->i_pic_struct )
         {
+        /* Top and Bottom field slices */
         case 1:
         case 2:
             if( !p_sys->b_even_frame )
@@ -651,13 +657,15 @@ static block_t *OutputPicture( decoder_t *p_dec )
                 p_pic->i_flags |= (p_sys->i_pic_struct == 1) ? BLOCK_FLAG_TOP_FIELD_FIRST
                                                              : BLOCK_FLAG_BOTTOM_FIELD_FIRST;
             }
-            else if( p_pic->i_pts <= VLC_TS_INVALID && p_sys->i_prev_pts > VLC_TS_INVALID )
+            else if( p_pic->i_pts <= VLC_TS_INVALID && p_sys->i_prev_pts > VLC_TS_INVALID && p_pic->i_length )
             {
                 /* interpolate from even frame */
-                p_pic->i_pts = p_sys->i_prev_pts + p_pic->i_length;
+                i_field_pts = p_sys->i_prev_pts + p_pic->i_length;
             }
+
             p_sys->b_even_frame = !p_sys->b_even_frame;
             break;
+        /* Each of the following slices contains multiple fields */
         case 3:
             p_pic->i_flags |= BLOCK_FLAG_TOP_FIELD_FIRST;
             p_sys->b_even_frame = false;
@@ -678,21 +686,30 @@ static block_t *OutputPicture( decoder_t *p_dec )
         }
     }
 
-    if( p_sys->i_frame_dts <= VLC_TS_INVALID )
-        p_sys->i_frame_dts = p_sys->i_prev_dts;
-
+    /* set dts/pts to current block timestamps */
     p_pic->i_dts = p_sys->i_frame_dts;
     p_pic->i_pts = p_sys->i_frame_pts;
+
+    /* Fixup missing timestamps after split (multiple AU/block)*/
+    if( p_pic->i_dts <= VLC_TS_INVALID )
+        p_pic->i_dts = p_sys->i_prev_dts;
+
+    /* PTS Fixup, interlaced fields (multiple AU/block) */
+    if( p_pic->i_pts <= VLC_TS_INVALID && i_field_pts != VLC_TS_INVALID )
+        p_pic->i_pts = i_field_pts;
+
+    /* save for next pic fixups */
+    p_sys->i_prev_dts = p_pic->i_dts;
+    p_sys->i_prev_pts = p_pic->i_pts;
+
     p_pic->i_flags |= p_sys->slice.i_frame_type;
     p_pic->i_flags &= ~BLOCK_FLAG_PRIVATE_AUD;
     if( !p_sys->b_header )
         p_pic->i_flags |= BLOCK_FLAG_PREROLL;
 
-    p_sys->i_prev_dts = p_sys->i_frame_dts;
-    p_sys->i_prev_pts = p_sys->i_frame_pts;
+    /* reset after output */
     p_sys->i_frame_dts = VLC_TS_INVALID;
     p_sys->i_frame_pts = VLC_TS_INVALID;
-
     p_sys->slice.i_frame_type = 0;
     p_sys->p_frame = NULL;
     p_sys->pp_frame_last = &p_sys->p_frame;
@@ -756,7 +773,7 @@ static void PutSPS( decoder_t *p_dec, block_t *p_frag )
         p_sys->i_time_scale = p_sps->vui.i_time_scale;
         p_sys->b_fixed_frame_rate = p_sps->vui.b_fixed_frame_rate;
         p_sys->b_pic_struct_present_flag = p_sps->vui.b_pic_struct_present_flag;
-        p_sys->b_cpb_dpb_delays_present_flag = p_sps->vui.b_cpb_dpb_delays_present_flag;
+        p_sys->b_cpb_dpb_delays_present_flag = p_sps->vui.b_hrd_parameters_present_flag;
         p_sys->i_cpb_removal_delay_length_minus1 = p_sps->vui.i_cpb_removal_delay_length_minus1;
         p_sys->i_dpb_output_delay_length_minus1 = p_sps->vui.i_dpb_output_delay_length_minus1;
 

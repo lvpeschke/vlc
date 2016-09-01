@@ -127,6 +127,27 @@ SegmentSeeker::add_seekpoint( track_id_t track_id, int trust_level, fptr_t fpos,
     }
 }
 
+SegmentSeeker::tracks_seekpoint_t
+SegmentSeeker::find_greatest_seekpoints_in_range( fptr_t start_fpos, mtime_t end_pts )
+{
+    tracks_seekpoint_t tpoints;
+
+    for( tracks_seekpoints_t::const_iterator it = _tracks_seekpoints.begin(); it != _tracks_seekpoints.end(); ++it )
+    {
+        Seekpoint sp = get_seekpoints_around( end_pts, it->second, Seekpoint::TRUSTED ).first;
+
+        if( sp.fpos < start_fpos )
+            continue;
+
+        if( sp.pts > end_pts )
+            continue;
+
+        tpoints.insert( tracks_seekpoint_t::value_type( it->first, sp ) );
+    }
+
+    return tpoints;
+}
+
 SegmentSeeker::seekpoint_pair_t
 SegmentSeeker::get_seekpoints_around( mtime_t pts, seekpoints_t const& seekpoints, int trust_level )
 {
@@ -166,28 +187,25 @@ SegmentSeeker::get_seekpoints_around( mtime_t pts, seekpoints_t const& seekpoint
 }
 
 SegmentSeeker::seekpoint_pair_t
-SegmentSeeker::get_seekpoints_around( mtime_t pts, int trust_level )
+SegmentSeeker::get_seekpoints_around( mtime_t target_pts, track_ids_t const& priority_tracks )
 {
-    if( _tracks_seekpoints.empty() )
-    {
-        return seekpoint_pair_t( );
-    }
-
     seekpoint_pair_t points;
-    {
-        typedef tracks_seekpoints_t::const_iterator iterator;
 
-        iterator const begin = _tracks_seekpoints.begin();
-        iterator const end   = _tracks_seekpoints.end();
+    if( _tracks_seekpoints.empty() )
+        return points;
 
-        for( iterator it = begin; it != end; ++it )
+    { // locate the max/min seekpoints for priority_tracks //
+
+        typedef track_ids_t::const_iterator track_iterator;
+
+        track_iterator const begin = priority_tracks.begin();
+        track_iterator const end   = priority_tracks.end();
+
+        for( track_iterator it = begin; it != end; ++it )
         {
-            seekpoint_pair_t track_points = get_seekpoints_around(
-              pts, it->second, trust_level
-            );
+            seekpoint_pair_t track_points = get_seekpoints_around( target_pts, _tracks_seekpoints[ *it ] );
 
-            if( it == begin )
-            {
+            if( it == begin ) {
                 points = track_points;
                 continue;
             }
@@ -195,60 +213,73 @@ SegmentSeeker::get_seekpoints_around( mtime_t pts, int trust_level )
             if( points.first.fpos > track_points.first.fpos )
                 points.first = track_points.first;
 
-            if( points.second.fpos > track_points.second.fpos )
+            if( points.second.fpos < track_points.second.fpos )
                 points.second = track_points.second;
+        }
+    }
+
+    { // check if we got a cluster which is closer to target_pts than the found cues //
+
+        cluster_map_t::iterator it = _clusters.lower_bound( target_pts );
+
+        if( it != _clusters.begin() && --it != _clusters.end() )
+        {
+            Cluster const& cluster = it->second;
+
+            if( cluster.fpos > points.first.fpos )
+            {
+                points.first.fpos = cluster.fpos;
+                points.first.pts  = cluster.pts;
+
+                // do we need to update the max point? //
+
+                if( points.second.fpos < points.first.fpos )
+                {
+                    points.second.fpos = cluster.fpos + cluster.size;
+                    points.second.pts  = cluster.pts  + cluster.duration;
+                }
+            }
         }
     }
 
     return points;
 }
 
-// -----------------------------------------------------------------------------
-
 SegmentSeeker::tracks_seekpoint_t
-SegmentSeeker::find_greatest_seekpoints_in_range( mtime_t start_pts, mtime_t end_pts )
+SegmentSeeker::get_seekpoints( matroska_segment_c& ms, mtime_t target_pts, track_ids_t const& priority_tracks )
 {
-    tracks_seekpoint_t tpoints; 
-
-    for( tracks_seekpoints_t::const_iterator it = _tracks_seekpoints.begin(); it != _tracks_seekpoints.end(); ++it )
-    {
-        Seekpoint sp = get_seekpoints_around( end_pts, it->second, Seekpoint::TRUSTED ).first;
-
-        if( sp.pts < start_pts )
-            continue;
-
-        tpoints.insert( tracks_seekpoint_t::value_type( it->first, sp ) );
-    }
-    
-    return tpoints;
-}
-
-SegmentSeeker::tracks_seekpoint_t
-SegmentSeeker::get_seekpoints_cues( matroska_segment_c& ms, mtime_t target_pts )
-{
-    seekpoint_pair_t sp_range = get_seekpoints_around( target_pts );
-
-    Seekpoint& sp_start = sp_range.first;
-    Seekpoint& sp_end   = sp_range.second;
-
-    // TODO: jump to most likely range for the PTS, using _clusters 
-
-    index_range( ms, Range( sp_start.fpos, sp_end.fpos ), target_pts );
-    {
-        tracks_seekpoint_t tpoints;
-
-        for( ; tpoints.size() != _tracks_seekpoints.size(); sp_start.pts -= 1 )
+    struct contains_all_of_t {
+        bool operator()( tracks_seekpoint_t const& haystack, track_ids_t const& track_ids )
         {
-            tpoints = find_greatest_seekpoints_in_range( sp_start.pts, target_pts );
+            for( track_ids_t::const_iterator it = track_ids.begin(); it != track_ids.end(); ++it ) {
+                if( haystack.find( *it ) == haystack.end() )
+                    return false;
+            }
 
-            sp_end   = sp_start;
-            sp_start = get_seekpoints_around( sp_start.pts ).first;
+            return true;
+        }
+    };
 
-            index_range( ms, Range( sp_start.fpos, sp_end.fpos ), sp_end.pts );
+    for( mtime_t needle_pts = target_pts; ; )
+    {
+        seekpoint_pair_t seekpoints = get_seekpoints_around( needle_pts, priority_tracks );
+
+        Seekpoint const& start = seekpoints.first;
+        Seekpoint const& end   = seekpoints.second;
+
+        index_range( ms, Range( start.fpos, end.fpos ), needle_pts );
+
+        {
+            tracks_seekpoint_t tpoints = find_greatest_seekpoints_in_range( start.fpos, target_pts );
+
+            if( contains_all_of_t() ( tpoints, priority_tracks ) )
+                return tpoints;
         }
 
-        return tpoints;
+        needle_pts = start.pts - 1;
     }
+
+    vlc_assert_unreachable();
 }
 
 void
@@ -366,9 +397,11 @@ SegmentSeeker::get_search_areas( fptr_t start, fptr_t end ) const
             areas_to_search.push_back( Range( needle.start, it->start ) );
         }
 
-        needle.start = it->end + 1;
+        if( needle.start <= it->end )
+            needle.start = it->end + 1;
     }
 
+    needle.start = std::max( needle.start, start );
     if( it == _ranges_searched.end() && needle.start < needle.end )
     {
         areas_to_search.push_back( needle );
@@ -394,7 +427,12 @@ SegmentSeeker::mkv_jump_to( matroska_segment_c& ms, fptr_t fpos )
 
     while( ms.cluster == NULL || ms.cluster->GetEndPosition() < fpos )
     {
-        ms.cluster    = static_cast<KaxCluster*>( ms.ep->Get() );
+        if( !( ms.cluster = static_cast<KaxCluster*>( ms.ep->Get() ) ) )
+        {
+            msg_Err( &ms.sys.demuxer, "unable to read KaxCluster during seek, giving up" );
+            return;
+        }
+
         i_cluster_pos = ms.cluster->GetElementPosition();
 
         add_cluster_position( i_cluster_pos );

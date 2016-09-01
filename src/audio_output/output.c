@@ -95,7 +95,7 @@ static void aout_MuteNotify (audio_output_t *aout, bool mute)
 
 static void aout_PolicyNotify (audio_output_t *aout, bool cork)
 {
-    (cork ? var_IncInteger : var_DecInteger) (aout->p_parent, "corks");
+    (cork ? var_IncInteger : var_DecInteger) (aout->obj.parent, "corks");
 }
 
 static void aout_DeviceNotify (audio_output_t *aout, const char *id)
@@ -334,10 +334,10 @@ void aout_Destroy (audio_output_t *aout)
     aout_OutputUnlock (aout);
 
     var_DelCallback (aout, "audio-filter", FilterCallback, NULL);
-    var_DelCallback (aout, "device", var_CopyDevice, aout->p_parent);
-    var_DelCallback (aout, "mute", var_Copy, aout->p_parent);
+    var_DelCallback (aout, "device", var_CopyDevice, aout->obj.parent);
+    var_DelCallback (aout, "mute", var_Copy, aout->obj.parent);
     var_SetFloat (aout, "volume", -1.f);
-    var_DelCallback (aout, "volume", var_Copy, aout->p_parent);
+    var_DelCallback (aout, "volume", var_Copy, aout->obj.parent);
     vlc_object_release (aout);
 }
 
@@ -692,20 +692,46 @@ int aout_DevicesList (audio_output_t *aout, char ***ids, char ***names)
 {
     aout_owner_t *owner = aout_owner (aout);
     char **tabid, **tabname;
-    unsigned count;
+    unsigned i = 0;
 
     vlc_mutex_lock (&owner->dev.lock);
-    count = owner->dev.count;
-    tabid = xmalloc (sizeof (*tabid) * count);
-    tabname = xmalloc (sizeof (*tabname) * count);
+    tabid = malloc (sizeof (*tabid) * owner->dev.count);
+    tabname = malloc (sizeof (*tabname) * owner->dev.count);
+
+    if (unlikely(tabid == NULL || tabname == NULL))
+        goto error;
+
     *ids = tabid;
     *names = tabname;
+
     for (aout_dev_t *dev = owner->dev.list; dev != NULL; dev = dev->next)
     {
-        *(tabid++) = xstrdup (dev->id);
-        *(tabname++) = xstrdup (dev->name);
+        tabid[i] = strdup(dev->id);
+        if (unlikely(tabid[i] == NULL))
+            goto error;
+
+        tabname[i] = strdup(dev->name);
+        if (unlikely(tabname[i] == NULL))
+        {
+            free(tabid[i]);
+            goto error;
+        }
+
+        i++;
     }
     vlc_mutex_unlock (&owner->dev.lock);
 
-    return count;
+    return i;
+
+error:
+    vlc_mutex_unlock(&owner->dev.lock);
+    while (i > 0)
+    {
+        i--;
+        free(tabname[i]);
+        free(tabid[i]);
+    }
+    free(tabname);
+    free(tabid);
+    return -1;
 }

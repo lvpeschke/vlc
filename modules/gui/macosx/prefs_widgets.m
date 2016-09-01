@@ -37,7 +37,7 @@
 #include <vlc_plugin.h>
 #include <vlc_keys.h>
 
-#include "intf.h"
+#include "VLCMain.h"
 #include "prefs_widgets.h"
 
 #define CONFIG_ITEM_STRING_LIST (CONFIG_ITEM_STRING + 10)
@@ -879,7 +879,7 @@ o_textfield = [[NSSecureTextField alloc] initWithFrame: s_rc];              \
         case CONFIG_ITEM_KEY:
             /* So you don't need to restart to have the changes take effect */
             val.i_int = [self intValue];
-            var_Set(getIntf()->p_libvlc, psz_name, val);
+            var_Set(getIntf()->obj.libvlc, psz_name, val);
         case CONFIG_ITEM_INTEGER:
         case CONFIG_ITEM_BOOL:
             config_PutInt(getIntf(), psz_name, [self intValue]);
@@ -2081,7 +2081,7 @@ o_moduleenabled = [NSNumber numberWithBool:NO];\
     /* FIXME: support for multiple selection... */
     //    [o_tableview setAllowsMultipleSelection:YES];
 
-    NSCell *o_headerCell = [[NSCell alloc] initTextCell:@"Enabled"];
+    NSTableHeaderCell *o_headerCell = [[NSTableHeaderCell alloc] initTextCell:@"Enabled"];
     NSCell *o_dataCell = [[NSButtonCell alloc] init];
     [(NSButtonCell*)o_dataCell setButtonType:NSSwitchButton];
     [o_dataCell setTitle:@""];
@@ -2093,7 +2093,7 @@ o_moduleenabled = [NSNumber numberWithBool:NO];\
     [o_tableColumn setWidth:17];
     [o_tableview addTableColumn: o_tableColumn];
 
-    o_headerCell = [[NSCell alloc] initTextCell:@"Module Name"];
+    o_headerCell = [[NSTableHeaderCell alloc] initTextCell:@"Module Name"];
     o_dataCell = [[NSTextFieldCell alloc] init];
     [o_dataCell setFont:[NSFont systemFontOfSize:12]];
     o_tableColumn = [[NSTableColumn alloc]

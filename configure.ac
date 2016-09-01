@@ -269,6 +269,7 @@ case "${host_os}" in
                 HAVE_WIN64="1"
                 WINDOWS_ARCH="x64"
                 PROGRAMFILES="PROGRAMFILES64"
+                LDFLAGS="${LDFLAGS} -Wl,--high-entropy-va -Wl,--image-base,0x140000000"
             ;;
             *)
                 WINDOWS_ARCH="x86"
@@ -307,13 +308,16 @@ AC_ARG_ENABLE(winstore_app,
 
 vlc_winstore_app=0
 AS_IF([test "${SYS}" = "mingw32"],[
+  LIBCOM="-lole32"
   AS_IF([test "${enable_winstore_app}" = "yes"], [
     vlc_winstore_app=1
-     VLC_ADD_LIBS([libvlccore], [-lole32 -lruntimeobject])
+    LIBCOM=""
+     VLC_ADD_LIBS([libvlccore], [-lruntimeobject])
      AC_LIBOBJ([gai_strerror])
     ],[
      VLC_ADD_LIBS([libvlccore],[-lwinmm])
     ])
+  AC_SUBST(LIBCOM)
   ])
 AC_DEFINE_UNQUOTED(VLC_WINSTORE_APP, ${vlc_winstore_app}, [Define to 1 if you want to build for Windows Store apps])
 
@@ -334,7 +338,7 @@ dnl
 dnl Sadly autoconf does not think about testing foo.exe when ask to test
 dnl for program foo on win32
 case "${build_os}" in
-    cygwin|msys)
+    cygwin|msys|mingw32)
         ac_executable_extensions=".exe"
     ;;
     os2*)
@@ -425,13 +429,24 @@ AS_IF([test -n "${CONTRIB_DIR}"], [
 ])
 AS_IF([test -n "${CONTRIB_DIR}"], [
   AC_MSG_RESULT([${CONTRIB_DIR}])
-  export PATH=${CONTRIB_DIR}/bin:$PATH
   CPPFLAGS="${CPPFLAGS} -I${CONTRIB_DIR}/include"
   CFLAGS="${CFLAGS} -I${CONTRIB_DIR}/include"
   CXXFLAGS="${CXXFLAGS} -I${CONTRIB_DIR}/include"
   OBJCFLAGS="${OBJCFLAGS} -I${CONTRIB_DIR}/include"
   export PKG_CONFIG_PATH="${CONTRIB_DIR}/lib/pkgconfig:$PKG_CONFIG_PATH"
   LDFLAGS="${LDFLAGS} -L${CONTRIB_DIR}/lib"
+
+  AS_IF([test -z "$LUAC"], [
+    dnl Old contribs mixed cross-tools and cross-compiled executables
+    AS_IF([test -x "${CONTRIB_DIR}/bin/luac"], [
+      LUAC="${CONTRIB_DIR}/bin/luac"
+    ])
+
+    dnl Newer contribs follow usual name space rules
+    AS_IF([test -x "${CONTRIB_DIR}/../bin/${host_alias}-luac"], [
+      LUAC="${CONTRIB_DIR}/../bin/${host_alias}-luac"
+    ])
+  ])
 
   AS_IF([test "${SYS}" = "darwin"], [
     export LD_LIBRARY_PATH="${CONTRIB_DIR}/lib:$LD_LIBRARY_PATH"
@@ -583,7 +598,7 @@ need_libc=false
 dnl Check for usual libc functions
 AC_CHECK_DECLS([nanosleep],,,[#include <time.h>])
 AC_CHECK_FUNCS([daemon fcntl flock fstatvfs fork getenv getpwuid_r isatty lstat memalign mkostemp mmap open_memstream openat pread posix_fadvise posix_madvise setlocale stricmp strnicmp strptime uselocale pthread_cond_timedwait_monotonic_np pthread_condattr_setclock])
-AC_REPLACE_FUNCS([atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv nrand48 poll posix_memalign recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tdestroy timegm timespec_get strverscmp])
+AC_REPLACE_FUNCS([atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv memrchr nrand48 poll posix_memalign recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tdestroy timegm timespec_get strverscmp])
 AC_REPLACE_FUNCS([gettimeofday])
 AC_CHECK_FUNCS(fdatasync,,
   [AC_DEFINE(fdatasync, fsync, [Alias fdatasync() to fsync() if missing.])
@@ -612,7 +627,7 @@ AC_FUNC_STRCOLL
 dnl Check for non-standard system calls
 case "$SYS" in
   "linux")
-    AC_CHECK_FUNCS([accept4 pipe2 eventfd vmsplice sched_getaffinity])
+    AC_CHECK_FUNCS([accept4 pipe2 eventfd vmsplice sched_getaffinity recvmmsg])
     ;;
   "mingw32")
     AC_CHECK_FUNCS([_lock_file])
@@ -788,7 +803,7 @@ dnl Check for headers
 dnl
 
 dnl  POSIX
-AC_CHECK_HEADERS([arpa/inet.h pthread.h search.h sys/shm.h sys/socket.h])
+AC_CHECK_HEADERS([arpa/inet.h pthread.h search.h sys/shm.h sys/socket.h sys/uio.h])
 AC_CHECK_HEADERS([net/if.h], [], [],
 [
 #include <sys/types.h>
@@ -1010,28 +1025,21 @@ AS_IF([test "${enable_optimizations}" != "no"], [
     AS_IF([test "${ac_cv_c_o3}" = "no"], [VLC_RESTORE_FLAGS])
   ])
 
-  dnl Check for -ffast-math
-  VLC_SAVE_FLAGS
-  CFLAGS="${CFLAGS} -ffast-math"
-  CXXFLAGS="${CXXFLAGS} -ffast-math"
-  OBJCFLAGS="${OBJCFLAGS} -ffast-math"
-  AC_CACHE_CHECK([if $CC accepts -ffast-math], [ac_cv_c_fast_math], [
-    AC_COMPILE_IFELSE([AC_LANG_PROGRAM()], [
-      ac_cv_c_fast_math=yes
-    ], [
-      ac_cv_c_fast_math=no
-    ])
-  ])
-  AS_IF([test "${ac_cv_c_fast_math}" = "no"], [VLC_RESTORE_FLAGS])
-  AH_BOTTOM([
-#ifndef __FAST_MATH__
-# ifndef _MSC_VER
-#  pragma STDC FENV_ACCESS OFF
-#  pragma STDC FP_CONTRACT ON
-# else
-#  pragma fenv_access(off)
-#  pragma fp_contract(on)
-# endif
+  dnl Check for fast maths
+  RDC_PROG_CC_FFLAGS([no-math-errno unsafe-math-optimizations no-rounding-math no-signaling-nans cx-limited-range])
+  AC_LANG_PUSH(C++)
+  RDC_PROG_CXX_FFLAGS([no-math-errno unsafe-math-optimizations no-rounding-math no-signaling-nans cx-limited-range])
+  AC_LANG_POP
+
+AH_BOTTOM([
+#if defined(_MSC_VER) && !defined(__clang__)
+# pragma fenv_access(off)
+# pragma fp_contract(on)
+#elif defined(__GNUC__)
+/* Not supported so far */
+#else
+# pragma STDC FENV_ACCESS OFF
+# pragma STDC FP_CONTRACT ON
 #endif
 ])
 
@@ -1079,6 +1087,17 @@ AC_CACHE_CHECK([if linker supports -Bsymbolic], [ac_cv_ld_bsymbolic], [
 VLC_RESTORE_FLAGS
 SYMBOLIC_LDFLAGS="${ac_cv_ld_bsymbolic}"
 AC_SUBST(SYMBOLIC_LDFLAGS)
+
+VLC_SAVE_FLAGS
+LDFLAGS="${LDFLAGS} -Wl,-z,defs"
+AC_CACHE_CHECK([if linker supports -z,defs], [ac_cv_ld_z_defs], [
+  AC_TRY_LINK([],, [
+    ac_cv_ld_z_defs="yes"
+  ], [
+    ac_cv_ld_z_defs="no"
+  ])
+])
+AS_IF([test "${ac_cv_ld_z_defs}" = "no"], [VLC_RESTORE_FLAGS])
 
 dnl Checks for __attribute__(aligned()) directive
 VLC_SAVE_FLAGS
@@ -1424,6 +1443,26 @@ asm volatile("vqmovun.s64 d0, q1":::"d0");
 ])
 AM_CONDITIONAL(HAVE_NEON, [test "${ac_cv_arm_neon}" = "yes"])
 
+AC_ARG_ENABLE(arm64,
+  [AS_HELP_STRING([--disable-arm64],
+    [disable arm 64-bit optimizations (default auto)])],, [
+  AS_IF([test "${host_cpu}" = "aarch64"], [enable_arm64="yes"] ,[enable_arm64="no"])
+])
+AS_IF([test "${enable_arm64}" != "no"], [
+  AC_CACHE_CHECK([if $CCAS groks ARM 64 SIMD assembly], [ac_cv_arm64], [
+    AC_COMPILE_IFELSE([
+      AC_LANG_PROGRAM(,[[
+asm volatile("uhadd v0.8b, v0.8b, v1.8b":::"v0");
+]])
+    ], [
+      ac_cv_arm64="yes"
+    ], [
+      ac_cv_arm64="no"
+    ])
+  ])
+])
+AM_CONDITIONAL(HAVE_ARM64, [test "${ac_cv_arm64}" = "yes"])
+
 
 AC_ARG_ENABLE(altivec,
   [AS_HELP_STRING([--disable-altivec],
@@ -1565,13 +1604,14 @@ then
       AC_MSG_ERROR([Could not find lua. Lua is needed for some interfaces (rc, telnet, http) as well as many other custom scripts. Use --disable-lua to ignore this error.])
   fi
   AC_ARG_VAR([LUAC], [LUA byte compiler])
-  AC_CHECK_PROGS(LUAC, [${LUAC} luac], [false])
+  AS_IF([test -z "$LUAC"], [
+     AC_CHECK_TOOL(LUAC, [luac], [false])
+  ])
   AS_IF([test "${LUAC}" = "false"], [
     AC_MSG_ERROR([Could not find the LUA byte compiler.])
   ])
   AS_IF([test -d "${CONTRIB_DIR}" -a -f "${CONTRIB_DIR}/lib/liblua.a" -a `echo|${LUAC} -o - -|od -j 8 -N 2 -t x2|head -n 1|tr -s ' '|cut -d' ' -f2` != 0404], [
-    AC_MSG_WARN([You need 32-bits luac when using lua from contrib.])
-    have_lua=no
+    AC_MSG_ERROR([You need 32-bits luac when using lua from contrib.])
   ])
 fi
 AM_CONDITIONAL(BUILD_LUA, [test "${have_lua}" = "yes"])
@@ -1787,7 +1827,7 @@ PKG_ENABLE_MODULES_VLC([SFTP], [sftp], [libssh2], (support SFTP file transfer vi
 dnl
 dnl nfs access support
 dnl
-PKG_ENABLE_MODULES_VLC([NFS], [nfs], [libnfs], (support nfs protocol via libnfs), [auto])
+PKG_ENABLE_MODULES_VLC([NFS], [nfs], [libnfs >= 1.10.0], (support nfs protocol via libnfs), [auto])
 
 dnl
 dnl  Video4Linux 2
@@ -1953,13 +1993,14 @@ fi
 dnl
 dnl QTKit
 AC_ARG_ENABLE(macosx-qtkit,
-  [  --enable-macosx-qtkit Mac OS X qtsound (audio) module (default enabled on Mac OS X)])
+  [  --enable-macosx-qtkit Mac OS X qtsound (audio) module (default enabled on Mac OS X <= v10.11)])
 if test "x${enable_macosx_qtkit}" != "xno" &&
   (test "${SYS}" = "darwin" || test "${enable_macosx_qtkit}" = "yes")
 then
-  VLC_ADD_PLUGIN([qtsound])
+  AC_CHECK_HEADERS(QTKit/QTKit.h, [
+      VLC_ADD_PLUGIN([qtsound])
+    ])
 fi
-AM_CONDITIONAL(HAVE_QTKIT, [test "${SYS}" = "darwin" -a "x${enable_macosx_qtkit}" != "xno"])
 
 dnl
 dnl AVFoundation
@@ -2065,53 +2106,7 @@ fi
 dnl
 dnl  matroska demux plugin
 dnl
-AC_ARG_ENABLE(mkv,
-  [AS_HELP_STRING([--disable-mkv],
-    [do not use libmatroska (default auto)])])
-if test "${enable_mkv}" != "no" -a "${CXX}" != ""; then
-  AC_LANG_PUSH(C++)
-  AC_CHECK_HEADERS(ebml/EbmlVersion.h, [
-    AC_MSG_CHECKING(for libebml version >= 1.0.0)
-    AC_EGREP_CPP(yes,
-      [#include <ebml/EbmlVersion.h>
-       #ifdef LIBEBML_VERSION
-       #if LIBEBML_VERSION >= 0x010000
-       yes
-       #endif
-       #endif],
-      [AC_MSG_RESULT([yes])
-        AC_CHECK_HEADERS(matroska/KaxVersion.h, [
-          AC_MSG_CHECKING(for libmatroska version >= 1.0.0)
-          AC_EGREP_CPP(yes,
-            [#include <matroska/KaxVersion.h>
-             #ifdef LIBMATROSKA_VERSION
-             #if LIBMATROSKA_VERSION >= 0x010000
-             yes
-             #endif
-             #endif],
-            [AC_MSG_RESULT([yes])
-              AC_CHECK_HEADERS(matroska/KaxAttachments.h)
-              AC_CHECK_LIB(ebml_pic, main, [
-                VLC_ADD_PLUGIN([mkv])
-                VLC_ADD_LIBS([mkv],[-lmatroska -lebml_pic])
-              ],[
-                AC_CHECK_LIB(ebml, main, [
-                  VLC_ADD_PLUGIN([mkv])
-                  VLC_ADD_LIBS([mkv],[-lmatroska -lebml])
-                ])
-              ])
-            ], [
-              AC_MSG_RESULT([no])
-              AC_MSG_ERROR([Your libmatroska is too old: you may get a more recent one from http://dl.matroska.org/downloads/libmatroska/. Alternatively you can use --disable-mkv to disable the matroska plugin.])
-          ])
-        ])
-      ],
-      [AC_MSG_RESULT([no])
-        AC_MSG_ERROR([Your libebml is too old: you may get a more recent one from http://dl.matroska.org/downloads/libebml/. Alternatively you can use --disable-mkv to disable the matroska plugin.])
-    ])
-  ])
-  AC_LANG_POP(C++)
-fi
+PKG_ENABLE_MODULES_VLC([MATROSKA], [mkv], [libebml libmatroska], [MKV format support], [auto])
 
 dnl
 dnl  modplug demux plugin
@@ -2628,6 +2623,11 @@ AS_IF([test "${enable_faad}" != "no"], [
 ])
 
 dnl
+dnl  AOM decoder plugin
+dnl
+PKG_ENABLE_MODULES_VLC([AOM], [], [aom], [experimental AV1 codec], [disabled])
+
+dnl
 dnl libvpx decoder plugin
 dnl
 AC_ARG_ENABLE(vpx,
@@ -2684,13 +2684,13 @@ then
       CPPFLAGS_test="-I${with_a52}/include"
     fi
     VLC_SAVE_FLAGS
-    CPPFLAGS="${CPPFLAGS} ${CPPFLAGS_test} ${CPPFLAGS_a52tofloat32}"
-    LDFLAGS="${LDFLAGS} ${LDFLAGS_test} ${LIBS_a52tofloat32}"
+    CPPFLAGS="${CPPFLAGS} ${CPPFLAGS_test} ${CPPFLAGS_liba52}"
+    LDFLAGS="${LDFLAGS} ${LDFLAGS_test} ${LIBS_liba52}"
     AC_CHECK_HEADERS(a52dec/a52.h, [
       AC_CHECK_LIB(a52, a52_free, [
-        VLC_ADD_PLUGIN([a52tofloat32])
-        VLC_ADD_LIBS([a52tofloat32],[${LDFLAGS_test} -la52])
-        VLC_ADD_CPPFLAGS([a52tofloat32],[${CPPFLAGS_test}])
+        VLC_ADD_PLUGIN([liba52])
+        VLC_ADD_LIBS([liba52],[${LDFLAGS_test} -la52])
+        VLC_ADD_CPPFLAGS([liba52],[${CPPFLAGS_test}])
       ],[
         AC_MSG_ERROR([Could not find liba52 on your system: you may get it from http://liba52.sf.net/. Alternatively you can use --disable-a52 to disable the a52 plugin.])
         ], [$LIBM])
@@ -2703,7 +2703,7 @@ fi
 dnl
 dnl DTS Coherent Acoustics decoder plugin
 dnl
-PKG_ENABLE_MODULES_VLC([DCA], [dtstofloat32], [libdca >= 0.0.5], [DTS Coherent Acoustics support with libdca], [auto])
+PKG_ENABLE_MODULES_VLC([DCA], [dca], [libdca >= 0.0.5], [DTS Coherent Acoustics support with libdca], [auto])
 
 dnl
 dnl  Flac plugin
@@ -2893,6 +2893,8 @@ dnl
 dnl libfluidsynth (MIDI synthetizer) plugin
 dnl
 PKG_ENABLE_MODULES_VLC([FLUIDSYNTH], [], [fluidsynth >= 1.1.2], [MIDI synthetiser with libfluidsynth], [auto])
+PKG_ENABLE_MODULES_VLC([FLUIDLITE], [fluidsynth], [fluidlite], [MIDI synthetiser with libfluidsynth], [auto])
+AC_CHECK_HEADERS(fluidlite.h, [AC_SUBST([FLUIDSYNTH_LIBS], ${FLUIDLITE_LIBS})])
 
 dnl
 dnl Teletext Modules
@@ -3288,17 +3290,6 @@ AM_CONDITIONAL([HAVE_SAPI], [test "${have_sapi}" = "yes"])
 AC_LANG_POP([C++])
 
 dnl
-dnl  QuartzText vout module (iOS/Mac OS)
-dnl
-AC_ARG_ENABLE(macosx-quartztext,
-  [  --enable-macosx-quartztext   Mac OS X quartz text module (default enabled on Mac OS X)])
-if test "x${enable_macosx_quartztext}" != "xno" &&
-  (test "${SYS}" = "darwin" || test "${enable_macosx_quartztext}" = "yes")
-then
-  VLC_ADD_PLUGIN([quartztext])
-fi
-
-dnl
 dnl  SVG module (text rendering and image decoding)
 dnl
 PKG_ENABLE_MODULES_VLC([SVG], [], [librsvg-2.0 >= 2.9.0], [SVG rendering library],[auto])
@@ -3325,7 +3316,7 @@ AS_IF([test "${enable_directx}" != "no"], [
 
   dnl OpenGL
   AC_CHECK_HEADERS(GL/wglew.h, [
-    VLC_ADD_PLUGIN([glwin32])
+    VLC_ADD_PLUGIN([glwin32, wgl])
   ],, [
     #include <windows.h>
     #include <GL/gl.h>
@@ -3396,19 +3387,19 @@ if test "${enable_directfb}" = "yes"; then
         fi
     else
         dnl Look for directfb-config
-        AC_PATH_PROG(DIRECTFB_CONFIG, directfb-config, no, ${PATH})
-        if test "${DIRECTFB_CONFIG}" != "no"; then
+        AC_CHECK_PROG(DIRECTFB_CONFIG, [directfb-config], [false])
+        AS_IF(["${DIRECTFB_CONFIG}" != "false"], [
             CPPFLAGS_mydirectfb="`${DIRECTFB_CONFIG} --cflags`"
             LIBS_mydirectfb="`${DIRECTFB_CONFIG} --libs`"
             have_directfb="true"
-        else
+        ], [
             dnl Trying with pkg-config
             PKG_CHECK_MODULES(DIRECTFB, directfb, [
                 CPPFLAGS_mydirectfb="${DIRECTFB_CFLAGS}"
                 LIBS_mydirectfb="${DIRECTFB_LIBS}"
                 have_directfb="true"
                 ], [have_directfb="false"])
-        fi
+        ])
     fi
     if test "${have_directfb}" = "true"; then
         VLC_ADD_PLUGIN([directfb])
@@ -3781,9 +3772,9 @@ AS_IF([test "${enable_qt}" != "no"], [
       ])
       QT_PATH="$(eval $PKG_CONFIG --variable=exec_prefix Qt5Core)"
       QT_HOST_PATH="$(eval $PKG_CONFIG --variable=host_bins Qt5Core)"
-      AC_PATH_PROGS(MOC, [moc-qt5 moc], moc, ["${QT_HOST_PATH}" "${QT_PATH}/bin" "${CONTRIB_DIR}/bin"])
-      AC_PATH_PROGS(RCC, [rcc-qt5 rcc], rcc, ["${QT_HOST_PATH}" "${QT_PATH}/bin" "${CONTRIB_DIR}/bin"])
-      AC_PATH_PROGS(UIC, [uic-qt5 uic], uic, ["${QT_HOST_PATH}" "${QT_PATH}/bin" "${CONTRIB_DIR}/bin"])
+      AC_PATH_PROGS(MOC, [moc-qt5 moc], moc, ["${QT_HOST_PATH}" "${QT_PATH}/bin"])
+      AC_PATH_PROGS(RCC, [rcc-qt5 rcc], rcc, ["${QT_HOST_PATH}" "${QT_PATH}/bin"])
+      AC_PATH_PROGS(UIC, [uic-qt5 uic], uic, ["${QT_HOST_PATH}" "${QT_PATH}/bin"])
     ], [
       PKG_CHECK_MODULES([QT], [QtCore QtGui >= 4.8.0],, [
         AS_IF([test -n "${enable_qt}"],[
@@ -3794,9 +3785,9 @@ AS_IF([test "${enable_qt}" != "no"], [
         enable_qt="no"
       ])
       QT_PATH="$(eval $PKG_CONFIG --variable=exec_prefix QtCore)"
-      AC_PATH_PROGS(MOC, [moc-qt4 moc], moc, ["${QT_PATH}/bin" "${CONTRIB_DIR}/bin"])
-      AC_PATH_PROG(RCC, rcc, rcc, [${QT_PATH}/bin ${CONTRIB_DIR}/bin])
-      AC_PATH_PROGS(UIC, [uic-qt4 uic], uic, ["${QT_PATH}/bin" "${CONTRIB_DIR}/bin"])
+      AC_PATH_PROGS(MOC, [moc-qt4 moc], moc, ["${QT_PATH}/bin"])
+      AC_PATH_PROG(RCC, rcc, rcc, [${QT_PATH}/bin])
+      AC_PATH_PROGS(UIC, [uic-qt4 uic], uic, ["${QT_PATH}/bin"])
     ])
 ])
 AS_IF([test "${enable_qt}" != "no"], [
@@ -4044,28 +4035,42 @@ dnl libgcrypt
 dnl
 AC_ARG_ENABLE(libgcrypt,
   [  --disable-libgcrypt     gcrypt support (default enabled)])
+AC_ARG_VAR([GCRYPT_CFLAGS], [C compiler flags for gcrypt])
+AC_ARG_VAR([GCRYPT_LIBS], [linker flags flags for gcrypt])
+
 # require libgcrypt >= 1.6.0
 AS_IF([test "${enable_libgcrypt}" != "no"], [
-  AC_TRY_COMPILE([
-#include <gcrypt.h>
+  AC_CACHE_CHECK([for gcrypt 1.6.0 or later], [ac_cv_lib_gcrypt], [
+    VLC_SAVE_FLAGS
+    CFLAGS="${CFLAGS} ${GCRYPT_CFLAGS}"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([
+[#include <gcrypt.h>
 #if GCRYPT_VERSION_NUMBER < 0x010600
 #error
-#endif],
-  [], [
-    have_libgcrypt="yes"
+#endif]])], [
+      ac_cv_lib_gcrypt=yes
+    ], [
+      ac_cv_lib_gcrypt=no
+    ])
+    VLC_RESTORE_FLAGS
+  ])
+
+  AS_IF([test "${ac_cv_lib_gcrypt}" = "yes"], [
     AC_DEFINE([HAVE_GCRYPT], 1, [Defined if having gcrypt])
-    GCRYPT_CFLAGS="`libgcrypt-config --cflags`"
-    GCRYPT_LIBS="`libgcrypt-config --libs`"
   ], [
-    AS_IF([test "${enable_libgcrypt}" == "yes"], [
+    AS_IF([test "${enable_libgcrypt}" = "yes"], [
       AC_MSG_ERROR([libgcrypt version 1.6.0 or higher not found. Install libgcrypt or pass --disable-libgcrypt.])
     ])
   ])
 ])
 
+AS_IF([test -z "$GCRYPT_LIBS"], [
+  GCRYPT_LIBS="-lgcrypt -lgpg-error"
+])
+
 AC_SUBST(GCRYPT_CFLAGS)
 AC_SUBST(GCRYPT_LIBS)
-AM_CONDITIONAL([HAVE_GCRYPT], [test "${have_libgcrypt}" = "yes"])
+AM_CONDITIONAL([HAVE_GCRYPT], [test "${ac_cv_lib_gcrypt}" = "yes"])
 
 dnl
 dnl TLS/SSL
@@ -4099,42 +4104,7 @@ AS_IF([test "${enable_taglib}" != "no"], [
 dnl
 dnl  libsecret
 dnl
-PKG_ENABLE_MODULES_VLC([SECRET], [], [libsecret-1], [use libsecret for keystore], [auto])
-
-dnl
-dnl  kwallet
-dnl
-AC_ARG_ENABLE(kwallet,
-  [AS_HELP_STRING([--enable-kwallet],
-    [use KWallet for keystore (default auto)])])
-have_kwallet="no"
-KWALLET_CXXFLAGS=""
-KWALLET_LIBS=""
-AS_IF([test "${SYS}" != "mingw32" -a "${SYS}" != "darwin" \
-         -a "${enable_qt}" != "no" -a "${KDE4_CONFIG}" != "no" \
-         -a "${enable_kwallet}" != "no" ], [
-  VLC_SAVE_FLAGS
-  AC_LANG_PUSH([C++])
-  KWALLET_CXXFLAGS="$QT_CFLAGS $CXXFLAGS_qt -I`$KDE4_CONFIG --path include`"
-  CPPFLAGS="$CPPFLAGS $KWALLET_CXXFLAGS"
-  AC_CHECK_HEADER([kwallet.h], [
-    KWALLET_LIBS="$QT_LIBS -L`$KDE4_CONFIG --install lib` -lkdeui"
-    LDFLAGS="$LDFLAGS $KWALLET_LIBS"
-    AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <kwallet.h>], [
-KWallet::Wallet::LocalWallet();
-    ])], [
-      have_kwallet="yes"
-    ])
-  ])
-  AC_LANG_POP([C++])
-  VLC_RESTORE_FLAGS
-])
-AS_IF([test "$enable_kwallet" = "yes" -a "$have_kwallet" = "no" ], [
-  AC_MSG_ERROR([KWallet headers or so not found])
-])
-AC_SUBST(KWALLET_CXXFLAGS)
-AC_SUBST(KWALLET_LIBS)
-AM_CONDITIONAL([HAVE_KWALLET], [test "${have_kwallet}" = "yes"])
+PKG_ENABLE_MODULES_VLC([SECRET], [], [libsecret-1 >= 0.18], [use libsecret for keystore], [auto])
 
 dnl
 dnl  Developers helper modules (should be hidden from configure help)
@@ -4151,10 +4121,8 @@ AC_ARG_ENABLE(update-check,
   [  --enable-update-check   update checking system (default disabled)])
 if test "${enable_update_check}" = "yes"
 then
-  if test "${have_libgcrypt}" != "yes"
-  then
-    AC_MSG_ERROR([libgcrypt is required for update checking system])
-  fi
+ AS_IF([test "${ac_cv_lib_gcrypt}" != "yes"],[
+    AC_MSG_ERROR([libgcrypt is required for update checking system]) ])
   VLC_ADD_LIBS([libvlccore], [${GCRYPT_LIBS}])
   VLC_ADD_CFLAGS([libvlccore], [${GCRYPT_CFLAGS}])
   AC_DEFINE([UPDATE_CHECK], 1, [Define if you want to use the VLC update mechanism])

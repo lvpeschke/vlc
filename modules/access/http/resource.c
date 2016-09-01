@@ -37,7 +37,7 @@
 #include "resource.h"
 
 static struct vlc_http_msg *
-vlc_http_res_req(const struct vlc_http_resource *res)
+vlc_http_res_req(const struct vlc_http_resource *res, void *opaque)
 {
     struct vlc_http_msg *req;
 
@@ -58,7 +58,8 @@ vlc_http_res_req(const struct vlc_http_resource *res)
     }
 
     /* Authentication */
-    /* TODO: authentication */
+    if (res->username != NULL)
+        vlc_http_msg_add_creds_basic(req, false, res->username, res->password);
 
     /* Request context */
     if (res->agent != NULL)
@@ -71,32 +72,30 @@ vlc_http_res_req(const struct vlc_http_resource *res)
 
     /* TODO: vlc_http_msg_add_header(req, "TE", "gzip, deflate"); */
 
+    if (res->cbs->request_format(res, req, opaque))
+    {
+        vlc_http_msg_destroy(req);
+        return NULL;
+    }
+
     return req;
 }
 
 struct vlc_http_msg *vlc_http_res_open(struct vlc_http_resource *res,
-    int (*request_cb)(struct vlc_http_msg *, const struct vlc_http_resource *,
-                      void *), void *opaque)
+                                       void *opaque)
 {
     struct vlc_http_msg *req;
 retry:
-    req = vlc_http_res_req(res);
+    req = vlc_http_res_req(res, opaque);
     if (unlikely(req == NULL))
         return NULL;
-
-    if (request_cb(req, res, opaque))
-    {
-        vlc_http_msg_destroy(req);
-
-        /* LVP added */
-        fprintf(stderr, "LVP msg_destroy in resource_open because request_cb ?\n");
-
-        return NULL;
-    }
 
     struct vlc_http_msg *resp = vlc_http_mgr_request(res->manager, res->secure,
                                                     res->host, res->port, req);
     vlc_http_msg_destroy(req);
+	
+    /* LVP added */
+    fprintf(stderr, "LVP msg_destroy in vlc_http_res_open because status 406 and negotiation fail\n");
 
     resp = vlc_http_msg_get_final(resp);
     if (resp == NULL)
@@ -121,11 +120,14 @@ retry:
         vlc_http_msg_destroy(resp);
 
         /* LVP added */
-        fprintf(stderr, "LVP msg_destroy in resource_open because status 406 and negotiation fail\n");
+        fprintf(stderr, "LVP msg_destroy in resource_open because status 406 and negotiation success\n");
 
         res->negotiate = false;
         goto retry;
     }
+
+    if (res->cbs->response_validate(res, resp, opaque))
+        goto fail;
 
     return resp;
 fail:
@@ -137,13 +139,41 @@ fail:
     return NULL;
 }
 
-void vlc_http_res_deinit(struct vlc_http_resource *res)
+int vlc_http_res_get_status(struct vlc_http_resource *res)
+{
+    if (res->response == NULL)
+    {
+        if (res->failure)
+            return -1;
+
+        res->response = vlc_http_res_open(res, res + 1);
+        if (res->response == NULL)
+        {
+            res->failure = true;
+            return -1;
+        }
+    }
+    return vlc_http_msg_get_status(res->response);
+}
+
+static void vlc_http_res_deinit(struct vlc_http_resource *res)
 {
     free(res->referrer);
     free(res->agent);
+    free(res->password);
+    free(res->username);
     free(res->path);
     free(res->authority);
     free(res->host);
+
+    if (res->response != NULL)
+        vlc_http_msg_destroy(res->response);
+}
+
+void vlc_http_res_destroy(struct vlc_http_resource *res)
+{
+    vlc_http_res_deinit(res);
+    free(res);
 }
 
 static char *vlc_http_authority(const char *host, unsigned port)
@@ -159,8 +189,9 @@ static char *vlc_http_authority(const char *host, unsigned port)
 }
 
 int vlc_http_res_init(struct vlc_http_resource *restrict res,
-                      struct vlc_http_mgr *mgr, const char *uri,
-                      const char *ua, const char *ref)
+                      const struct vlc_http_resource_cbs *cbs,
+                      struct vlc_http_mgr *mgr,
+                      const char *uri, const char *ua, const char *ref)
 {
     vlc_url_t url;
     bool secure;
@@ -182,11 +213,18 @@ int vlc_http_res_init(struct vlc_http_resource *restrict res,
         goto error;
     }
 
+    res->cbs = cbs;
+    res->response = NULL;
     res->secure = secure;
     res->negotiate = true;
+    res->failure = false;
     res->host = strdup(url.psz_host);
     res->port = url.i_port;
     res->authority = vlc_http_authority(url.psz_host, url.i_port);
+    res->username = (url.psz_username != NULL) ? strdup(url.psz_username)
+                                               : NULL;
+    res->password = (url.psz_password != NULL) ? strdup(url.psz_password)
+                                               : NULL;
     res->agent = (ua != NULL) ? strdup(ua) : NULL;
     res->referrer = (ref != NULL) ? strdup(ref) : NULL;
 
@@ -217,23 +255,24 @@ error:
     return -1;
 }
 
-char *vlc_http_res_get_redirect(const struct vlc_http_resource *restrict res,
-                                const struct vlc_http_msg *resp)
+char *vlc_http_res_get_redirect(struct vlc_http_resource *restrict res)
 {
-    int status = vlc_http_msg_get_status(resp);
+    int status = vlc_http_res_get_status(res);
+    if (status < 0)
+        return NULL;
 
     if ((status / 100) == 2 && !res->secure)
     {
         char *url;
 
         /* HACK: Seems like an MMS server. Redirect to MMSH scheme. */
-        if (vlc_http_msg_get_token(resp, "Pragma", "features") != NULL
+        if (vlc_http_msg_get_token(res->response, "Pragma", "features") != NULL
          && asprintf(&url, "mmsh://%s%s", res->authority, res->path) >= 0)
             return url;
 
         /* HACK: Seems like an ICY server. Redirect to ICYX scheme. */
-        if ((vlc_http_msg_get_header(resp, "Icy-Name") != NULL
-          || vlc_http_msg_get_header(resp, "Icy-Genre") != NULL)
+        if ((vlc_http_msg_get_header(res->response, "Icy-Name") != NULL
+          || vlc_http_msg_get_header(res->response, "Icy-Genre") != NULL)
          && asprintf(&url, "icyx://%s%s", res->authority, res->path) >= 0)
             return url;
     }
@@ -248,45 +287,91 @@ char *vlc_http_res_get_redirect(const struct vlc_http_resource *restrict res,
      || status == 306 /* Switch Proxy (former) */)
         return NULL;
 
-    const char *location = vlc_http_msg_get_header(resp, "Location");
+    const char *location = vlc_http_msg_get_header(res->response, "Location");
     if (location == NULL)
         return NULL;
 
     /* TODO: if status is 3xx, check for Retry-After and wait */
 
-    /* NOTE: The anchor is discard if it is present as VLC does not support
+    char *base;
+
+    if (unlikely(asprintf(&base, "http%s://%s%s", res->secure ? "s" : "",
+                          res->authority, res->path) == -1))
+        return NULL;
+
+    char *fixed = vlc_uri_fixup(location);
+    if (fixed != NULL)
+        location = fixed;
+
+    char *abs = vlc_uri_resolve(base, location);
+
+    free(fixed);
+    free(base);
+
+    /* NOTE: The anchor is discarded if it is present as VLC does not support
      * HTML anchors so far. */
-    size_t len = strcspn(location, "#");
-
-    /* FIXME: resolve relative URL _correctly_ */
-    if (location[0] == '/')
-    {
-        char *url;
-
-        if (unlikely(asprintf(&url, "%s://%s%.*s",
-                              res->secure ? "https" : "http", res->authority,
-                              (int)len, location) < 0))
-            return NULL;
-        return url;
-    }
-    return strndup(location, len);
+    size_t len = strcspn(abs, "#");
+    abs[len] = '\0';
+    return abs;
 }
 
-char *vlc_http_res_get_type(const struct vlc_http_msg *resp)
+char *vlc_http_res_get_type(struct vlc_http_resource *res)
 {
-    int status = vlc_http_msg_get_status(resp);
+    int status = vlc_http_res_get_status(res);
     if (status < 200 || status >= 300)
         return NULL;
 
-    const char *type = vlc_http_msg_get_header(resp, "Content-Type");
+    const char *type = vlc_http_msg_get_header(res->response, "Content-Type");
     return (type != NULL) ? strdup(type) : NULL;
 }
 
-struct block_t *vlc_http_res_read(struct vlc_http_msg *resp)
+struct block_t *vlc_http_res_read(struct vlc_http_resource *res)
 {
-    int status = vlc_http_msg_get_status(resp);
+    int status = vlc_http_res_get_status(res);
     if (status < 200 || status >= 300)
         return NULL; /* do not "read" redirect or error message */
 
-    return vlc_http_msg_read(resp);
+    return vlc_http_msg_read(res->response);
+}
+
+int vlc_http_res_set_login(struct vlc_http_resource *res,
+                           const char *username, const char *password)
+{
+    char *user = NULL;
+    char *pass = NULL;
+
+    if (username != NULL)
+    {
+        user = strdup(username);
+        if (unlikely(user == NULL))
+            return -1;
+
+        pass = strdup((password != NULL) ? password : "");
+        if (unlikely(pass == NULL))
+        {
+            free(user);
+            return -1;
+        }
+    }
+
+    free(res->password);
+    free(res->username);
+    res->username = user;
+    res->password = pass;
+
+    if (res->response != NULL && vlc_http_msg_get_status(res->response) == 401)
+    {
+        vlc_http_msg_destroy(res->response);
+        res->response = NULL;
+    }
+
+    return 0;
+}
+
+char *vlc_http_res_get_basic_realm(struct vlc_http_resource *res)
+{
+    int status = vlc_http_res_get_status(res);
+    if (status != 401)
+        return NULL;
+    return vlc_http_msg_get_basic_realm(res->response);
 }

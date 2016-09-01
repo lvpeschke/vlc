@@ -124,34 +124,47 @@ namespace adaptive
     {
         public:
             virtual ~CommandsFactory() {}
-            virtual EsOutSendCommand * createEsOutSendCommand( FakeESOutID *, block_t * );
-            virtual EsOutDelCommand * createEsOutDelCommand( FakeESOutID * );
-            virtual EsOutAddCommand * createEsOutAddCommand( FakeESOutID * );
-            virtual EsOutControlPCRCommand * createEsOutControlPCRCommand( int, mtime_t );
-            virtual EsOutControlResetPCRCommand * creatEsOutControlResetPCRCommand();
-            virtual EsOutDestroyCommand * createEsOutDestroyCommand();
+            virtual EsOutSendCommand * createEsOutSendCommand( FakeESOutID *, block_t * ) const;
+            virtual EsOutDelCommand * createEsOutDelCommand( FakeESOutID * ) const;
+            virtual EsOutAddCommand * createEsOutAddCommand( FakeESOutID * ) const;
+            virtual EsOutControlPCRCommand * createEsOutControlPCRCommand( int, mtime_t ) const;
+            virtual EsOutControlResetPCRCommand * creatEsOutControlResetPCRCommand() const;
+            virtual EsOutDestroyCommand * createEsOutDestroyCommand() const;
     };
 
     /* Queuing for doing all the stuff in order */
     class CommandsQueue
     {
         public:
-            CommandsQueue();
+            CommandsQueue( CommandsFactory * );
             ~CommandsQueue();
+            const CommandsFactory * factory() const;
             void Schedule( AbstractCommand * );
             mtime_t Process( es_out_t *out, mtime_t );
             void Abort( bool b_reset );
             void Commit();
             bool isEmpty() const;
             void setDrop( bool );
+            void setFlush();
+            void setEOF();
+            bool isFlushing() const;
+            bool isEOF() const;
+            mtime_t getDemuxedAmount() const;
             mtime_t getBufferingLevel() const;
             mtime_t getFirstDTS() const;
+            mtime_t getPCR() const;
 
         private:
+            CommandsFactory *commandsFactory;
+            vlc_mutex_t lock;
+            void LockedCommit();
             std::list<AbstractCommand *> incoming;
             std::list<AbstractCommand *> commands;
             mtime_t bufferinglevel;
+            mtime_t pcr;
+            bool b_flushing;
             bool b_drop;
+            bool b_eof;
     };
 }
 

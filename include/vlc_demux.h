@@ -53,11 +53,29 @@ struct demux_t
     char        *psz_location;
     char        *psz_file;
 
-    /* input stream */
-    stream_t    *s;     /* NULL in case of a access+demux in one */
+    union {
+        /**
+         * Input stream
+         *
+         * Depending on the module capability:
+         * - "demux": input byte stream (not NULL)
+         * - "access_demux": a NULL pointer
+         * - "demux_filter": undefined
+         */
+        stream_t *s;
+        /**
+         * Input demuxer
+         *
+         * If the module capability is "demux_filter", this is the upstream
+         * demuxer or demux filter. Otherwise, this is undefined.
+         */
+        demux_t *p_next;
+    };
 
     /* es output */
     es_out_t    *out;   /* our p_es_out */
+
+    bool         b_preparsing; /* True if the demux is used to preparse */
 
     /* set by demuxer */
     int (*pf_demux)  ( demux_t * );   /* demux one frame only */
@@ -187,6 +205,31 @@ enum demux_query_e
      * arg1= int */
     DEMUX_SET_SEEKPOINT,        /* arg1= int            can fail */
 
+    /** Check which INPUT_UPDATE_XXX flag is set and reset the ones set.
+     *
+     * The unsigned* argument is set with the flags needed to be checked,
+     * on return it contains the values that were reset during the call 
+     *
+     * This can can fail, in which case flags from demux_t.info.i_update
+     * are read/reset
+     *
+     * arg1= unsigned * */
+    DEMUX_TEST_AND_CLEAR_FLAGS, /* arg1= unsigned*      can fail */
+
+    /** Read the title number currently playing
+     *
+     * Can fail, in which case demux_t.info.i_title is used
+     *
+     * arg1= int * */
+    DEMUX_GET_TITLE,            /* arg1= int*           can fail */
+
+    /* Read the seekpoint/chapter currently playing
+     *
+     * Can fail, in which case demux_t.info.i_seekpoint is used
+     *
+     * arg1= int * */
+    DEMUX_GET_SEEKPOINT,        /* arg1= int*           can fail */
+
     /* I. Common queries to access_demux and demux */
     /* POSITION double between 0.0 and 1.0 */
     DEMUX_GET_POSITION = 0x300, /* arg1= double *       res=    */
@@ -247,10 +290,10 @@ enum demux_query_e
 
     /* II. Specific access_demux queries */
 
-    /* DEMUX_CAN_CONTROL_RATE is called only if DEMUX_CAN_CONTROL_PACE has returned false.
-     * *pb_rate should be true when the rate can be changed (using DEMUX_SET_RATE)
-     * *pb_ts_rescale should be true when the timestamps (pts/dts/pcr) have to be rescaled */
-    DEMUX_CAN_CONTROL_RATE,     /* arg1= bool*pb_rate arg2= bool*pb_ts_rescale  can fail(assume false) */
+    /* DEMUX_CAN_CONTROL_RATE is called only if DEMUX_CAN_CONTROL_PACE has
+     *  returned false. *pb_rate should be true when the rate can be changed
+     * (using DEMUX_SET_RATE). */
+    DEMUX_CAN_CONTROL_RATE,     /* arg1= bool*pb_rate */
     /* DEMUX_SET_RATE is called only if DEMUX_CAN_CONTROL_RATE has returned true.
      * It should return the value really used in *pi_rate */
     DEMUX_SET_RATE,             /* arg1= int*pi_rate                                        can fail */
@@ -326,14 +369,15 @@ static inline void demux_UpdateTitleFromStream( demux_t *demux )
     stream_t *s = demux->s;
     unsigned title, seekpoint;
 
-    if( stream_Control( s, STREAM_GET_TITLE, &title ) == VLC_SUCCESS
+    if( vlc_stream_Control( s, STREAM_GET_TITLE, &title ) == VLC_SUCCESS
      && title != (unsigned)demux->info.i_title )
     {
         demux->info.i_title = title;
         demux->info.i_update |= INPUT_UPDATE_TITLE;
     }
 
-    if( stream_Control( s, STREAM_GET_SEEKPOINT, &seekpoint ) == VLC_SUCCESS
+    if( vlc_stream_Control( s, STREAM_GET_SEEKPOINT,
+                            &seekpoint ) == VLC_SUCCESS
      && seekpoint != (unsigned)demux->info.i_seekpoint )
     {
         demux->info.i_seekpoint = seekpoint;
@@ -396,6 +440,85 @@ VLC_API void demux_PacketizerDestroy( decoder_t *p_packetizer );
     p_demux->p_sys = calloc( 1, sizeof( demux_sys_t ) ); \
     if( !p_demux->p_sys ) return VLC_ENOMEM;\
     } while(0)
+
+/**
+ * \defgroup chained_demux Chained demultiplexer
+ * Demultiplexers wrapped by another demultiplexer
+ * @{
+ */
+
+typedef struct vlc_demux_chained_t vlc_demux_chained_t;
+
+/**
+ * Creates a chained demuxer.
+ *
+ * This creates a thread running a demuxer whose input stream is generated
+ * directly by the caller. This typically handles some sort of stream within a
+ * stream, e.g. MPEG-TS within something else.
+ *
+ * \note There are a number of limitations to this approach. The chained
+ * demuxer is run asynchronously in a separate thread. Most demuxer controls
+ * are synchronous and therefore unavailable in this case. Also the input
+ * stream is a simple FIFO, so the chained demuxer cannot perform seeks.
+ * Lastly, most errors cannot be detected.
+ *
+ * \param parent parent VLC object
+ * \param name chained demux module name (e.g. "ts")
+ * \param out elementary stream output for the chained demux
+ * \return a non-NULL pointer on success, NULL on failure.
+ */
+VLC_API vlc_demux_chained_t *vlc_demux_chained_New(vlc_object_t *parent,
+                                                   const char *name,
+                                                   es_out_t *out);
+
+/**
+ * Destroys a chained demuxer.
+ *
+ * Sends an end-of-stream to the chained demuxer, and releases all underlying
+ * allocated resources.
+ */
+VLC_API void vlc_demux_chained_Delete(vlc_demux_chained_t *);
+
+/**
+ * Sends data to a chained demuxer.
+ *
+ * This queues data for a chained demuxer to consume.
+ *
+ * \param block data block to queue
+ */
+VLC_API void vlc_demux_chained_Send(vlc_demux_chained_t *, block_t *block);
+
+/**
+ * Controls a chained demuxer.
+ *
+ * This performs a <b>demux</b> (i.e. DEMUX_...) control request on a chained
+ * demux.
+ *
+ * \note In most cases, vlc_demux_chained_Control() should be used instead.
+ * \warning As per vlc_demux_chained_New(), most demux controls are not, and
+ * cannot be, supported; VLC_EGENERIC is returned.
+ *
+ * \param query demux control (see \ref demux_query_e)
+ * \param args variable arguments (depending on the query)
+ */
+VLC_API int vlc_demux_chained_ControlVa(vlc_demux_chained_t *, int query,
+                                        va_list args);
+
+static inline int vlc_demux_chained_Control(vlc_demux_chained_t *dc, int query,
+                                            ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, query);
+    ret = vlc_demux_chained_ControlVa(dc, query, ap);
+    va_end(ap);
+    return ret;
+}
+
+/**
+ * @}
+ */
 
 /**
  * @}

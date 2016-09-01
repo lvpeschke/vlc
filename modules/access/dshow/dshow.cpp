@@ -57,7 +57,7 @@
 /*****************************************************************************
  * Access: local prototypes
  *****************************************************************************/
-static block_t *ReadCompressed( access_t * );
+static block_t *ReadCompressed( access_t *, bool * );
 static int AccessControl ( access_t *, int, va_list );
 
 static int Demux       ( demux_t * );
@@ -791,7 +791,6 @@ static int AccessOpen( vlc_object_t *p_this )
     p_access->pf_block = ReadCompressed;
     p_access->pf_control = AccessControl;
     p_access->pf_seek = NULL;
-    p_access->info.b_eof = false;
     p_access->p_sys = p_sys;
 
     /* Everything is ready. Let's rock baby */
@@ -828,7 +827,7 @@ static void CommonClose( vlc_object_t *p_this, access_sys_t *p_sys )
 static void AccessClose( vlc_object_t *p_this )
 {
     access_t     *p_access = (access_t *)p_this;
-    access_sys_t *p_sys    = p_access->p_sys;
+    access_sys_t *p_sys    = (access_sys_t *)p_access->p_sys;
 
     /* Stop capturing stuff */
     p_sys->p_control->Stop();
@@ -1749,13 +1748,10 @@ static size_t EnumDeviceCaps( vlc_object_t *p_this, IBaseFilter *p_filter,
 
 /*****************************************************************************
  * ReadCompressed: reads compressed (MPEG/DV) data from the device.
- *****************************************************************************
- * Returns -1 in case of error, 0 in case of EOF, otherwise the number of
- * bytes.
  *****************************************************************************/
-static block_t *ReadCompressed( access_t *p_access )
+static block_t *ReadCompressed( access_t *p_access, bool *eof )
 {
-    access_sys_t   *p_sys = p_access->p_sys;
+    access_sys_t   *p_sys = (access_sys_t *)p_access->p_sys;
     /* There must be only 1 elementary stream to produce a valid stream
      * of MPEG or DV data */
     dshow_stream_t *p_stream = p_sys->pp_streams[0];
@@ -1794,6 +1790,7 @@ static block_t *ReadCompressed( access_t *p_access )
     /* The caller got what he wanted */
 out:
     sample.p_sample->Release();
+    (void) eof;
     return p_block;
 }
 
@@ -1899,28 +1896,29 @@ static int Demux( demux_t *p_demux )
  *****************************************************************************/
 static int AccessControl( access_t *p_access, int i_query, va_list args )
 {
+    access_sys_t *sys = (access_sys_t *)p_access->p_sys;
     bool    *pb_bool;
     int64_t *pi_64;
 
     switch( i_query )
     {
-    case ACCESS_CAN_SEEK:
-    case ACCESS_CAN_FASTSEEK:
-    case ACCESS_CAN_PAUSE:
-    case ACCESS_CAN_CONTROL_PACE:
+    case STREAM_CAN_SEEK:
+    case STREAM_CAN_FASTSEEK:
+    case STREAM_CAN_PAUSE:
+    case STREAM_CAN_CONTROL_PACE:
         pb_bool = (bool*)va_arg( args, bool* );
         *pb_bool = false;
         break;
 
-    case ACCESS_GET_PTS_DELAY:
+    case STREAM_GET_PTS_DELAY:
         pi_64 = (int64_t*)va_arg( args, int64_t * );
         *pi_64 =
             INT64_C(1000) * var_InheritInteger( p_access, "live-caching" );
         break;
 
-    case ACCESS_GET_CONTENT_TYPE:
+    case STREAM_GET_CONTENT_TYPE:
     {
-        dshow_stream_t *p_stream = p_access->p_sys->pp_streams[0];
+        dshow_stream_t *p_stream = sys->pp_streams[0];
         char **type = va_arg( args, char ** );
 
         /* Check if we need to force demuxers */

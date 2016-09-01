@@ -35,7 +35,8 @@ using namespace adaptive;
 AbstractDemuxer::AbstractDemuxer()
 {
     b_startsfromzero = false;
-    b_reinitsonseek =true;
+    b_reinitsonseek = true;
+    b_candetectswitches = true;
 }
 
 AbstractDemuxer::~AbstractDemuxer()
@@ -48,7 +49,17 @@ bool AbstractDemuxer::alwaysStartsFromZero() const
     return b_startsfromzero;
 }
 
-bool AbstractDemuxer::reinitsOnSeek() const
+bool AbstractDemuxer::needsRestartOnSwitch() const
+{
+    return !b_candetectswitches;
+}
+
+void AbstractDemuxer::setCanDetectSwitches( bool b )
+{
+    b_candetectswitches = b;
+}
+
+bool AbstractDemuxer::needsRestartOnSeek() const
 {
     return b_reinitsonseek;
 }
@@ -72,33 +83,34 @@ Demuxer::Demuxer(demux_t *p_realdemux_, const std::string &name_, es_out_t *out,
 Demuxer::~Demuxer()
 {
     if(p_demux)
-    {
-        p_demux->s = NULL; // otherwise tries to delete below inner stream
         demux_Delete(p_demux);
-    }
 }
 
 bool Demuxer::create()
 {
+    stream_t *p_newstream = sourcestream->makeStream();
+    if(!p_newstream)
+        return false;
+
     p_demux = demux_New( VLC_OBJECT(p_realdemux), name.c_str(), "",
-                         sourcestream->getStream(), p_es_out );
+                         p_newstream, p_es_out );
     if(!p_demux)
     {
+        vlc_stream_Delete(p_newstream);
         b_eof = true;
         return false;
     }
     return true;
 }
 
-bool Demuxer::restart(CommandsQueue &queue)
+bool Demuxer::restart(CommandsQueue *queue)
 {
     if(p_demux)
     {
-        queue.setDrop(true);
-        p_demux->s = NULL; // otherwise tries to delete below inner stream
+        queue->setDrop(true);
         demux_Delete(p_demux);
         p_demux = NULL;
-        queue.setDrop(false);
+        queue->setDrop(false);
     }
     sourcestream->Reset();
     return create();

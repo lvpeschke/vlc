@@ -45,7 +45,7 @@ struct access_sys_t
 };
 
 static int AccessControl( access_t *p_access, int i_query, va_list args );
-static ssize_t AccessRead( access_t *, uint8_t *, size_t );
+static ssize_t AccessRead( access_t *, void *, size_t );
 static int AccessSeek( access_t *, uint64_t );
 static char *unescapeXml( const char *psz_text );
 
@@ -179,8 +179,6 @@ int AccessOpen( vlc_object_t *p_this )
     /* Set callback */
     ACCESS_SET_CALLBACKS( AccessRead, NULL, AccessControl, AccessSeek );
 
-    p_access->info.b_eof  = false;
-
     i_ret = VLC_SUCCESS;
 
 exit:
@@ -188,8 +186,8 @@ exit:
     {
         if( p_sys->zipFile )
         {
-            unzCloseCurrentFile( p_access->p_sys->zipFile );
-            unzClose( p_access->p_sys->zipFile );
+            unzCloseCurrentFile( p_sys->zipFile );
+            unzClose( p_sys->zipFile );
         }
         free( p_sys );
     }
@@ -219,39 +217,40 @@ void AccessClose( vlc_object_t *p_this )
  *****************************************************************************/
 static int AccessControl( access_t *p_access, int i_query, va_list args )
 {
+    access_sys_t *sys = p_access->p_sys;
     bool         *pb_bool;
     int64_t      *pi_64;
 
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_PAUSE:
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_PAUSE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;
             break;
 
-        case ACCESS_CAN_FASTSEEK:
+        case STREAM_CAN_FASTSEEK:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = false;
             break;
 
-        case ACCESS_GET_SIZE:
+        case STREAM_GET_SIZE:
         {
             unz_file_info z_info;
 
-            unzGetCurrentFileInfo( p_access->p_sys->zipFile, &z_info,
+            unzGetCurrentFileInfo( sys->zipFile, &z_info,
                                    NULL, 0, NULL, 0, NULL, 0 );
             *va_arg( args, uint64_t * ) = z_info.uncompressed_size;
             break;
         }
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg( args, int64_t * );
             *pi_64 = DEFAULT_PTS_DELAY;
             break;
 
-        case ACCESS_SET_PAUSE_STATE:
+        case STREAM_SET_PAUSE_STATE:
             /* Nothing to do */
             break;
 
@@ -266,7 +265,7 @@ static int AccessControl( access_t *p_access, int i_query, va_list args )
  * Reads current opened file in zip. This does not open the file in zip.
  * Return -1 if no data yet, 0 if no more data, else real data read
  *****************************************************************************/
-static ssize_t AccessRead( access_t *p_access, uint8_t *p_buffer, size_t sz )
+static ssize_t AccessRead( access_t *p_access, void *p_buffer, size_t sz )
 {
     access_sys_t *p_sys = p_access->p_sys;
     unzFile file = p_sys->zipFile;
@@ -316,7 +315,7 @@ static void* ZCALLBACK ZipIO_Open( void* opaque, const char* file, int mode )
         strcpy( fileUri, file );
     }
 
-    stream_t *s = stream_UrlNew( p_access, fileUri );
+    stream_t *s = vlc_stream_NewMRL( p_access, fileUri );
     free( fileUri );
     return s;
 }
@@ -330,7 +329,7 @@ static uLong ZCALLBACK ZipIO_Read( void* opaque, void* stream,
     (void)opaque;
     //access_t *p_access = (access_t*) opaque;
     //msg_Dbg(p_access, "read %d", size);
-    return stream_Read( (stream_t*) stream, buf, size );
+    return vlc_stream_Read( (stream_t*) stream, buf, size );
 }
 
 /** **************************************************************************
@@ -351,7 +350,7 @@ static uLong ZCALLBACK ZipIO_Write( void* opaque, void* stream,
 static long ZCALLBACK ZipIO_Tell( void* opaque, void* stream )
 {
     (void)opaque;
-    int64_t i64_tell = stream_Tell( (stream_t*) stream );
+    int64_t i64_tell = vlc_stream_Tell( (stream_t*) stream );
     //access_t *p_access = (access_t*) opaque;
     //msg_Dbg(p_access, "tell %" PRIu64, i64_tell);
     return (long)i64_tell;
@@ -368,7 +367,7 @@ static long ZCALLBACK ZipIO_Seek( void* opaque, void* stream,
     switch( origin )
     {
         case SEEK_CUR:
-            pos += stream_Tell( (stream_t*) stream );
+            pos += vlc_stream_Tell( (stream_t*) stream );
             break;
         case SEEK_SET:
             break;
@@ -380,7 +379,7 @@ static long ZCALLBACK ZipIO_Seek( void* opaque, void* stream,
     }
     if( pos < 0 )
         return -1;
-    stream_Seek( (stream_t*) stream, pos );
+    vlc_stream_Seek( (stream_t*) stream, pos );
     /* Note: in unzip.c, unzlocal_SearchCentralDir seeks to the end of
              the stream, which is doable but returns an error in VLC.
              That's why we always assume this was OK. FIXME */
@@ -393,7 +392,7 @@ static long ZCALLBACK ZipIO_Seek( void* opaque, void* stream,
 static int ZCALLBACK ZipIO_Close( void* opaque, void* stream )
 {
     (void)opaque;
-    stream_Delete( (stream_t*) stream );
+    vlc_stream_Delete( (stream_t*) stream );
     return 0;
 }
 

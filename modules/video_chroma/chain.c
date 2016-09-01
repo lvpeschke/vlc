@@ -41,7 +41,7 @@ static void      Destroy    ( vlc_object_t * );
 
 vlc_module_begin ()
     set_description( N_("Video filtering using a chain of video filter modules") )
-    set_capability( "video filter2", 1 )
+    set_capability( "video filter", 1 )
     set_callbacks( Activate, Destroy )
 vlc_module_end ()
 
@@ -63,6 +63,7 @@ static void EsFormatMergeSize( es_format_t *p_dst,
 static const vlc_fourcc_t pi_allowed_chromas[] = {
     VLC_CODEC_I420,
     VLC_CODEC_I422,
+    VLC_CODEC_I420_10L,
     VLC_CODEC_RGB32,
     VLC_CODEC_RGB24,
     0

@@ -94,8 +94,8 @@ vlc_module_begin ()
         add_integer( "adaptive-logic",  AbstractAdaptationLogic::Default,
                                           ADAPT_LOGIC_TEXT, NULL, false )
             change_integer_list( pi_logics, ppsz_logics )
-        add_integer( "adaptive-width",  480, ADAPT_WIDTH_TEXT,  ADAPT_WIDTH_TEXT,  true )
-        add_integer( "adaptive-height", 360, ADAPT_HEIGHT_TEXT, ADAPT_HEIGHT_TEXT, true )
+        add_integer( "adaptive-width",  0, ADAPT_WIDTH_TEXT,  ADAPT_WIDTH_TEXT,  true )
+        add_integer( "adaptive-height", 0, ADAPT_HEIGHT_TEXT, ADAPT_HEIGHT_TEXT, true )
         add_integer( "adaptive-bw",     250, ADAPT_BW_TEXT,     ADAPT_BW_LONGTEXT,     false )
         add_bool   ( "adaptive-use-access", false, ADAPT_ACCESS_TEXT, ADAPT_ACCESS_LONGTEXT, true );
         set_callbacks( Open, Close )
@@ -129,9 +129,7 @@ static int Open(vlc_object_t *p_obj)
     AbstractAdaptationLogic::LogicType logic =
             static_cast<AbstractAdaptationLogic::LogicType>(var_InheritInteger(p_obj, "adaptive-logic"));
 
-    std::string playlisturl(p_demux->psz_access);
-    playlisturl.append("://");
-    playlisturl.append(p_demux->psz_location);
+    std::string playlisturl(p_demux->s->psz_url);
 
     bool dashmime = DASHManager::mimeMatched(mimeType);
     bool smoothmime = SmoothManager::mimeMatched(mimeType);
@@ -165,10 +163,10 @@ static int Open(vlc_object_t *p_obj)
         {
             /* We need to probe content */
             const uint8_t *p_peek;
-            const ssize_t i_peek = stream_Peek(p_demux->s, &p_peek, 2048);
+            const ssize_t i_peek = vlc_stream_Peek(p_demux->s, &p_peek, 2048);
             if(i_peek > 0)
             {
-                stream_t *peekstream = stream_MemoryNew(p_demux, const_cast<uint8_t *>(p_peek), (size_t)i_peek, true);
+                stream_t *peekstream = vlc_stream_MemoryNew(p_demux, const_cast<uint8_t *>(p_peek), (size_t)i_peek, true);
                 if(peekstream)
                 {
                     if(xmlParser.reset(peekstream) && xmlParser.parse(false))
@@ -182,7 +180,7 @@ static int Open(vlc_object_t *p_obj)
                             p_manager = HandleSmooth(p_demux, xmlParser, playlisturl, logic);
                         }
                     }
-                    stream_Delete(peekstream);
+                    vlc_stream_Delete(peekstream);
                 }
             }
         }
@@ -211,6 +209,7 @@ static void Close(vlc_object_t *p_obj)
     demux_t         *p_demux       = (demux_t*) p_obj;
     PlaylistManager *p_manager  = reinterpret_cast<PlaylistManager *>(p_demux->p_sys);
 
+    p_manager->stop();
     delete p_manager;
 }
 

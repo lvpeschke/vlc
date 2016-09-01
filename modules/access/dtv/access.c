@@ -431,7 +431,7 @@ struct access_sys_t
     tuner_setup_t pf_setup;
 };
 
-static block_t *Read (access_t *);
+static block_t *Read (access_t *, bool *);
 static int Control (access_t *, int, va_list);
 static dtv_delivery_t GuessSystem (const char *, dvb_device_t *);
 static dtv_delivery_t GetDeliveryByScheme(const char *psz_scheme);
@@ -464,7 +464,7 @@ static int Open (vlc_object_t *obj)
     uint64_t freq = var_InheritFrequency (obj);
     if (freq != 0)
     {
-        dtv_delivery_t d = GuessSystem (access->psz_access, dev);
+        dtv_delivery_t d = GuessSystem (access->psz_name, dev);
         if(d != DTV_DELIVERY_NONE)
             sys->pf_setup = dtv_get_delivery_tuner_setup(d);
 
@@ -499,7 +499,7 @@ static void Close (vlc_object_t *obj)
     free (sys);
 }
 
-static block_t *Read (access_t *access)
+static block_t *Read (access_t *access, bool *restrict eof)
 {
 #define BUFSIZE (20*188)
     block_t *block = block_Alloc (BUFSIZE);
@@ -512,7 +512,7 @@ static block_t *Read (access_t *access)
     if (val <= 0)
     {
         if (val == 0)
-            access->info.b_eof = true;
+            *eof = true;
         block_Release (block);
         return NULL;
     }
@@ -529,25 +529,25 @@ static int Control (access_t *access, int query, va_list args)
 
     switch (query)
     {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_FASTSEEK:
-        case ACCESS_CAN_PAUSE:
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_FASTSEEK:
+        case STREAM_CAN_PAUSE:
+        case STREAM_CAN_CONTROL_PACE:
             *va_arg (args, bool *) = false;
             break;
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
         {
             int64_t *v = va_arg (args, int64_t *);
             *v = var_InheritInteger (access, "live-caching") * INT64_C(1000);
             break;
         }
 
-        case ACCESS_GET_CONTENT_TYPE:
+        case STREAM_GET_CONTENT_TYPE:
             *va_arg (args, char **) = strdup ("video/MP2T");
             break;
 
-        case ACCESS_GET_SIGNAL:
+        case STREAM_GET_SIGNAL:
             /* Fetch the signal levels only every so often to avoid stressing
              * the device bus. */
             if ((sys->signal_poll++))
@@ -557,7 +557,7 @@ static int Control (access_t *access, int query, va_list args)
             *va_arg (args, double *) = dvb_get_signal_strength (dev);
             return VLC_SUCCESS;
 
-        case ACCESS_SET_PRIVATE_ID_STATE:
+        case STREAM_SET_PRIVATE_ID_STATE:
         {
             unsigned pid = va_arg (args, int);
             bool add = va_arg (args, int);
@@ -574,7 +574,7 @@ static int Control (access_t *access, int query, va_list args)
             break;
         }
 
-        case ACCESS_SET_PRIVATE_ID_CA:
+        case STREAM_SET_PRIVATE_ID_CA:
         {
             en50221_capmt_info_t *pmt = va_arg (args, en50221_capmt_info_t *);
 
@@ -583,7 +583,7 @@ static int Control (access_t *access, int query, va_list args)
             break;
         }
 
-        case ACCESS_GET_PRIVATE_ID_STATE:
+        case STREAM_GET_PRIVATE_ID_STATE:
         {
             unsigned pid = va_arg (args, int);
             bool *on = va_arg (args, bool *);

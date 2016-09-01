@@ -166,7 +166,7 @@ int OpenDemux( vlc_object_t *p_this )
     int           error;
 
     /* Init Probe data */
-    pd.buf_size = stream_Peek( p_demux->s, &peek, 2048 + 213 );
+    pd.buf_size = vlc_stream_Peek( p_demux->s, &peek, 2048 + 213 );
     if( pd.buf_size <= 0 )
     {
         msg_Warn( p_demux, "cannot peek" );
@@ -194,7 +194,7 @@ int OpenDemux( vlc_object_t *p_this )
 
     pd.filename = psz_url;
 
-    stream_Control( p_demux->s, STREAM_CAN_SEEK, &b_can_seek );
+    vlc_stream_Control( p_demux->s, STREAM_CAN_SEEK, &b_can_seek );
 
     vlc_init_avformat(p_this);
 
@@ -219,7 +219,7 @@ int OpenDemux( vlc_object_t *p_this )
         return VLC_EGENERIC;
     }
 
-    if( !p_demux->b_force )
+    if( !p_demux->obj.force )
     {
         static const char ppsz_blacklist[][16] = {
             /* Don't handle MPEG unless forced */
@@ -229,7 +229,7 @@ int OpenDemux( vlc_object_t *p_this )
             /* Don't handle subtitles format */
             "ass", "srt", "microdvd",
             /* No timestamps at all */
-            "hevc",
+            "hevc", "h264",
             ""
         };
 
@@ -244,7 +244,7 @@ int OpenDemux( vlc_object_t *p_this )
     }
 
     /* Don't trigger false alarms on bin files */
-    if( !p_demux->b_force && !strcmp( fmt->name, "psxstr" ) )
+    if( !p_demux->obj.force && !strcmp( fmt->name, "psxstr" ) )
     {
         int i_len;
 
@@ -336,13 +336,13 @@ int OpenDemux( vlc_object_t *p_this )
     unsigned int nb_streams = p_sys->ic->nb_streams;
     for (unsigned i = 1; i < nb_streams; i++)
         options[i] = NULL;
-    if (psz_opts && *psz_opts) {
+    if (psz_opts) {
         options[0] = vlc_av_get_options(psz_opts);
         for (unsigned i = 1; i < nb_streams; i++) {
             av_dict_copy(&options[i], options[0], 0);
         }
+        free(psz_opts);
     }
-    free(psz_opts);
     vlc_avcodec_lock(); /* avformat calls avcodec behind our back!!! */
     error = avformat_find_stream_info( p_sys->ic, options );
     /* FIXME: what if nb_streams change after that call? */
@@ -935,7 +935,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
             i64 = stream_Size( p_demux->s );
             if( i64 > 0 )
             {
-                double current = stream_Tell( p_demux->s );
+                double current = vlc_stream_Tell( p_demux->s );
                 *pf = current / (double)i64;
             }
 
@@ -1118,7 +1118,7 @@ static int IORead( void *opaque, uint8_t *buf, int buf_size )
 {
     demux_t *p_demux = opaque;
     if( buf_size < 0 ) return -1;
-    int i_ret = stream_Read( p_demux->s, buf, buf_size );
+    int i_ret = vlc_stream_Read( p_demux->s, buf, buf_size );
     return i_ret ? i_ret : -1;
 }
 
@@ -1142,7 +1142,7 @@ static int64_t IOSeek( void *opaque, int64_t offset, int whence )
             i_absolute = (int64_t)offset;
             break;
         case SEEK_CUR:
-            i_absolute = stream_Tell( p_demux->s ) + (int64_t)offset;
+            i_absolute = vlc_stream_Tell( p_demux->s ) + (int64_t)offset;
             break;
         case SEEK_END:
             i_absolute = i_size + (int64_t)offset;
@@ -1164,11 +1164,11 @@ static int64_t IOSeek( void *opaque, int64_t offset, int whence )
         return -1;
     }
 
-    if( stream_Seek( p_demux->s, i_absolute ) )
+    if( vlc_stream_Seek( p_demux->s, i_absolute ) )
     {
         msg_Warn( p_demux, "we were not allowed to seek, or EOF " );
         return -1;
     }
 
-    return stream_Tell( p_demux->s );
+    return vlc_stream_Tell( p_demux->s );
 }

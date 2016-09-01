@@ -7,7 +7,7 @@ PKGS += upnp
 endif
 
 $(TARBALLS)/libupnp-$(UPNP_VERSION).tar.bz2:
-	$(call download,$(UPNP_URL))
+	$(call download_pkg,$(UPNP_URL),upnp)
 
 .sum-upnp: libupnp-$(UPNP_VERSION).tar.bz2
 
@@ -19,6 +19,9 @@ ifdef HAVE_WINSTORE
 CONFIGURE_ARGS=--disable-ipv6 --enable-unspecified_server
 else
 CONFIGURE_ARGS=--enable-ipv6
+endif
+ifndef WITH_OPTIMIZATION
+CONFIGURE_ARGS += --enable-debug
 endif
 
 upnp: libupnp-$(UPNP_VERSION).tar.bz2 .sum-upnp
@@ -34,18 +37,18 @@ ifdef HAVE_WINSTORE
 	$(APPLY) $(SRC)/upnp/winrt-inet.patch
 endif
 endif
+	$(APPLY) $(SRC)/upnp/libpthread.patch
 	$(APPLY) $(SRC)/upnp/libupnp-ipv6.patch
 	$(APPLY) $(SRC)/upnp/miniserver.patch
 	$(APPLY) $(SRC)/upnp/missing_win32.patch
 	$(APPLY) $(SRC)/upnp/fix_infinite_loop.patch
 	$(APPLY) $(SRC)/upnp/dont_use_down_intf.patch
+	$(APPLY) $(SRC)/upnp/upnp-no-debugfile.patch
 	$(UPDATE_AUTOCONFIG) && cd $(UNPACK_DIR) && mv config.guess config.sub build-aux/
 	$(MOVE)
 
 .upnp: upnp
-ifdef HAVE_WIN32
 	$(RECONF)
-endif
 	cd $< && $(HOSTVARS) CFLAGS="$(CFLAGS) -DUPNP_STATIC_LIB $(LIBUPNP_ECFLAGS)" ./configure --disable-samples --without-documentation $(CONFIGURE_ARGS) $(HOSTCONF)
 	cd $< && $(MAKE) install
 	touch $@

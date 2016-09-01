@@ -285,6 +285,7 @@ fi
     --disable-vncclient \
     --disable-gnutls \
     --disable-lua \
+    --disable-luac \
     --disable-protobuf \
     --disable-aribb24 \
     --disable-aribb25 \
@@ -357,7 +358,6 @@ ${VLCROOT}/configure \
     --disable-macosx-avfoundation \
     --disable-audioqueue \
     --disable-shared \
-    --enable-macosx-quartztext \
     --enable-mkv \
     --enable-opus \
     --disable-faad \

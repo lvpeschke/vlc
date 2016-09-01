@@ -77,7 +77,7 @@ static picture_t *Filter( filter_t *, picture_t * );
 vlc_module_begin ()
     set_shortname( N_("Croppadd") )
     set_description( N_("Video cropping filter") )
-    set_capability( "video filter2", 0 )
+    set_capability( "video filter", 0 )
     set_callbacks( OpenFilter, CloseFilter )
 
     set_category( CAT_VIDEO )
@@ -147,7 +147,11 @@ static int OpenFilter( vlc_object_t *p_this )
     const vlc_chroma_description_t *p_chroma =
         vlc_fourcc_GetChromaDescription( p_filter->fmt_in.video.i_chroma );
     if( p_chroma == NULL || p_chroma->plane_count == 0 )
+    {
+        msg_Err( p_filter, "Unknown input chroma %4.4s", p_filter->fmt_in.video.i_chroma?
+                     (const char*)&p_filter->fmt_in.video.i_chroma : "xxxx" );
         return VLC_EGENERIC;
+    }
 
     p_filter->p_sys = (filter_sys_t *)malloc( sizeof( filter_sys_t ) );
     if( !p_filter->p_sys ) return VLC_ENOMEM;

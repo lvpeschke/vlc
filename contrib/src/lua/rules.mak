@@ -1,7 +1,6 @@
-# Lua 5.3
+# Lua 5.1
 
-LUA_VERSION := 5.3.2
-LUA_VERSION_MAJOR := 5.3
+LUA_VERSION := 5.1.4
 LUA_URL := http://www.lua.org/ftp/lua-$(LUA_VERSION).tar.gz
 
 # Reverse priority order
@@ -26,15 +25,13 @@ LUA_TARGET := solaris
 endif
 
 # Feel free to add autodetection if you need to...
-PKGS += lua
-ifeq ($(call need_pkg,"lua5.3"),)
-PKGS_FOUND += lua
-endif
+PKGS += lua luac
+PKGS_ALL += luac
 ifeq ($(call need_pkg,"lua5.2"),)
-PKGS_FOUND += lua
+PKGS_FOUND += lua luac
 endif
 ifeq ($(call need_pkg,"lua5.1"),)
-PKGS_FOUND += lua
+PKGS_FOUND += lua luac
 endif
 
 $(TARBALLS)/lua-$(LUA_VERSION).tar.gz:
@@ -46,11 +43,11 @@ lua: lua-$(LUA_VERSION).tar.gz .sum-lua
 	$(UNPACK)
 	$(APPLY) $(SRC)/lua/lua-noreadline.patch
 	$(APPLY) $(SRC)/lua/no-dylibs.patch
+	$(APPLY) $(SRC)/lua/luac-32bits.patch
 	$(APPLY) $(SRC)/lua/no-localeconv.patch
-	$(APPLY) $(SRC)/lua/lua-android-log2.patch
+	$(APPLY) $(SRC)/lua/lua-ios-support.patch
 ifdef HAVE_WINSTORE
-	$(APPLY) $(SRC)/lua/winrt-nopopen.patch
-	$(APPLY) $(SRC)/lua/winrt-nosystem.patch
+	$(APPLY) $(SRC)/lua/lua-winrt.patch
 endif
 ifdef HAVE_DARWIN_OS
 	(cd $(UNPACK_DIR) && \
@@ -79,13 +76,32 @@ ifdef HAVE_WIN32
 	cd $</src && $(HOSTVARS) $(MAKE) liblua.a
 endif
 	cd $< && $(HOSTVARS) $(MAKE) install INSTALL_TOP="$(PREFIX)"
-	mkdir -p -- "$(PREFIX)/lib/pkgconfig"
-	sed -e 's/@VERSION_MAJOR@/$(LUA_VERSION_MAJOR)/g' -e 's/@VERSION@/$(LUA_VERSION)/g' <  $(SRC)/lua/lua.pc.in > "$(PREFIX)/lib/pkgconfig/lua.pc"
 ifdef HAVE_WIN32
 	cd $< && $(RANLIB) "$(PREFIX)/lib/liblua.a"
+	mkdir -p -- "$(PREFIX)/lib/pkgconfig"
+	cp $</etc/lua.pc "$(PREFIX)/lib/pkgconfig/"
 endif
-ifdef HAVE_CROSS_COMPILE
-	cd $</src && $(MAKE) clean && $(MAKE) liblua.a && ranlib liblua.a && $(MAKE) luac
-	cp $</src/luac $(PREFIX)/bin
+	touch $@
+
+.sum-luac: .sum-lua
+	touch $@
+
+ifdef HAVE_WIN32
+ifndef HAVE_CROSS_COMPILE
+LUACVARS=CPPFLAGS="-DLUA_DL_DLL"
 endif
+endif
+
+luac: lua-$(LUA_VERSION).tar.gz .sum-luac
+	# DO NOT use the same intermediate directory as the lua target
+	rm -Rf -- $@-$(LUA_VERSION) $@
+	mkdir -- $@-$(LUA_VERSION)
+	tar -x -v -z -C $@-$(LUA_VERSION) --strip-components=1 -f $<
+	(cd luac-$(LUA_VERSION) && patch -p1) < $(SRC)/lua/luac-32bits.patch
+	mv luac-$(LUA_VERSION) luac
+
+.luac: luac
+	cd $< && $(LUACVARS) $(MAKE) generic
+	mkdir -p -- $(BUILDBINDIR)
+	install -m 0755 -s -- $</src/luac $(BUILDBINDIR)/$(HOST)-luac
 	touch $@

@@ -1,7 +1,7 @@
 # mad
 
 MAD_VERSION := 0.15.1b
-MAD_URL := $(CONTRIB_VIDEOLAN)/libmad-$(MAD_VERSION).tar.gz
+MAD_URL := $(CONTRIB_VIDEOLAN)/mad/libmad-$(MAD_VERSION).tar.gz
 
 ifdef GPL
 PKGS += mad
@@ -30,6 +30,7 @@ endif
 	$(APPLY) $(SRC)/mad/Provide-Thumb-2-alternative-code-for-MAD_F_MLN.diff
 	$(APPLY) $(SRC)/mad/mad-mips-h-constraint-removal.patch
 	$(APPLY) $(SRC)/mad/mad-foreign.patch
+	$(APPLY) $(SRC)/mad/check-bitstream-length.patch
 	$(MOVE)
 
 .mad: libmad

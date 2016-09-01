@@ -95,7 +95,7 @@
 vlc_module_begin ()
     set_description( N_("Deinterlacing video filter") )
     set_shortname( N_("Deinterlace" ))
-    set_capability( "video filter2", 0 )
+    set_capability( "video filter", 0 )
     set_category( CAT_VIDEO )
     set_subcategory( SUBCAT_VIDEO_VFILTER )
 
@@ -269,7 +269,7 @@ static void GetOutputFormat( filter_t *p_filter,
 }
 
 /*****************************************************************************
- * video filter2 functions
+ * video filter functions
  *****************************************************************************/
 
 #define DEINTERLACE_DST_SIZE 3
@@ -698,6 +698,11 @@ notsupp:
     else
     if( vlc_CPU_ARMv6() )
         p_sys->pf_merge = pixel_size == 1 ? merge8_armv6 : merge16_armv6;
+    else
+#endif
+#if defined(CAN_COMPILE_ARM64)
+    if( vlc_CPU_ARM64_NEON() )
+        p_sys->pf_merge = pixel_size == 1 ? merge8_arm64_neon : merge16_arm64_neon;
     else
 #endif
     {

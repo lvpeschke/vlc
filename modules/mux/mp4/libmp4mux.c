@@ -55,13 +55,16 @@ bool mp4mux_trackinfo_Init(mp4mux_trackinfo_t *p_stream)
 
     p_stream->i_read_duration = 0;
     p_stream->i_timescale     = CLOCK_FREQ;
-    p_stream->i_starttime     = 0;
+    p_stream->i_firstdts     = 0;
     p_stream->b_hasbframes    = false;
 
     p_stream->i_stco_pos = 0;
 
     p_stream->i_trex_default_length = 0;
     p_stream->i_trex_default_size = 0;
+
+    p_stream->i_edits_count = 0;
+    p_stream->p_edits = NULL;
     return true;
 }
 
@@ -71,6 +74,7 @@ void mp4mux_trackinfo_Clear(mp4mux_trackinfo_t *p_stream)
     if (p_stream->a52_frame)
         block_Release(p_stream->a52_frame);
     free(p_stream->entry);
+    free(p_stream->p_edits);
 }
 
 
@@ -116,7 +120,8 @@ void box_gather (bo_t *box, bo_t *box2)
         box_fix(box2, box2->b->i_buffer);
         size_t i_offset = box->b->i_buffer;
         box->b = block_Realloc(box->b, 0, box->b->i_buffer + box2->b->i_buffer);
-        memcpy(&box->b->p_buffer[i_offset], box2->b->p_buffer, box2->b->i_buffer);
+        if(likely(box->b))
+            memcpy(&box->b->p_buffer[i_offset], box2->b->p_buffer, box2->b->i_buffer);
     }
     bo_free(box2);
 }
@@ -162,6 +167,70 @@ static void matrix_apply_rotation(es_format_t *fmt, uint32_t mvhd_matrix[9])
 
     mvhd_matrix[3] = mvhd_matrix[0] ? 0 : 0x10000;
     mvhd_matrix[4] = mvhd_matrix[1] ? 0 : 0x10000;
+}
+
+static void AddEdit(bo_t *elst,
+                    int64_t i_movie_scaled_duration,
+                    int64_t i_media_scaled_time,
+                    bool b_64_ext)
+{
+    if(b_64_ext)
+    {
+        bo_add_64be(elst, i_movie_scaled_duration);
+        bo_add_64be(elst, i_media_scaled_time);
+    }
+    else
+    {
+        bo_add_32be(elst, i_movie_scaled_duration);
+        bo_add_32be(elst, i_media_scaled_time);
+    }
+    bo_add_16be(elst, 1);
+    bo_add_16be(elst, 0);
+}
+
+static bo_t *GetEDTS( mp4mux_trackinfo_t *p_track, uint32_t i_movietimescale, bool b_64_ext)
+{
+    if(p_track->i_edits_count == 0)
+        return NULL;
+
+    bo_t *edts = box_new("edts");
+    bo_t *elst = box_full_new("elst", b_64_ext ? 1 : 0, 0);
+    if(!elst || !edts)
+    {
+        bo_free(elst);
+        bo_free(edts);
+        return NULL;
+    }
+
+    uint32_t i_total_edits = p_track->i_edits_count;
+    for(unsigned i=0; i<p_track->i_edits_count; i++)
+    {
+        /* !WARN! media time must start sample time 0, we need a -1 edit for start offsets */
+        if(p_track->p_edits[i].i_start_offset)
+            i_total_edits++;
+    }
+
+    bo_add_32be(elst, i_total_edits);
+
+    for(unsigned i=0; i<p_track->i_edits_count; i++)
+    {
+        if(p_track->p_edits[i].i_start_offset)
+        {
+            AddEdit(elst,
+                    p_track->p_edits[i].i_start_offset * i_movietimescale / CLOCK_FREQ,
+                    -1,
+                    b_64_ext);
+        }
+
+        /* !WARN AGAIN! Uses different Timescales ! */
+        AddEdit(elst,
+                p_track->p_edits[i].i_duration * i_movietimescale / CLOCK_FREQ,
+                p_track->p_edits[i].i_start_time * p_track->i_timescale / CLOCK_FREQ,
+                b_64_ext);
+    }
+
+    box_gather(edts, elst);
+    return edts;
 }
 
 static bo_t *GetESDS(mp4mux_trackinfo_t *p_track)
@@ -805,22 +874,26 @@ static bo_t *GetAvcCTag(es_format_t *p_fmt)
     bo_t    *avcC = box_new("avcC");/* FIXME use better value */
     if(!avcC)
         return NULL;
-    uint8_t *p_sps = NULL;
-    uint8_t *p_pps = NULL;
-    size_t   i_sps_size = 0;
-    size_t   i_pps_size = 0;
+    uint8_t *p_sps, *p_pps, *p_ext;
+    size_t i_sps_size, i_pps_size, i_ext_size;
 
     if( h264_get_spspps(p_fmt->p_extra, p_fmt->i_extra,
-                        &p_sps, &i_sps_size, &p_pps, &i_pps_size) != 0 || !p_sps || !p_pps )
+                        &p_sps, &i_sps_size,
+                        &p_pps, &i_pps_size,
+                        &p_ext, &i_ext_size ) != 0 )
     {
-        bo_free(avcC);
-        return NULL;
+        p_sps = p_pps = p_ext = NULL;
+        i_sps_size = i_pps_size = i_ext_size = 0;
     }
 
+    (void) hxxx_strip_AnnexB_startcode( (const uint8_t **) &p_sps, &i_sps_size );
+    (void) hxxx_strip_AnnexB_startcode( (const uint8_t **) &p_sps, &i_sps_size );
+    (void) hxxx_strip_AnnexB_startcode( (const uint8_t **) &p_ext, &i_ext_size );
+
     bo_add_8(avcC, 1);      /* configuration version */
-    bo_add_8(avcC, i_sps_size ? p_sps[1] : PROFILE_H264_MAIN);
-    bo_add_8(avcC, i_sps_size ? p_sps[2] : 64);
-    bo_add_8(avcC, i_sps_size ? p_sps[3] : 30);       /* level, 5.1 */
+    bo_add_8(avcC, i_sps_size > 3 ? p_sps[1] : PROFILE_H264_MAIN);
+    bo_add_8(avcC, i_sps_size > 3 ? p_sps[2] : 64);
+    bo_add_8(avcC, i_sps_size > 3 ? p_sps[3] : 30);       /* level, 5.1 */
     bo_add_8(avcC, 0xff);   /* 0b11111100 | lengthsize = 0x11 */
 
     bo_add_8(avcC, 0xe0 | (i_sps_size > 0 ? 1 : 0));   /* 0b11100000 | sps_count */
@@ -833,6 +906,32 @@ static bo_t *GetAvcCTag(es_format_t *p_fmt)
     if (i_pps_size > 0) {
         bo_add_16be(avcC, i_pps_size);
         bo_add_mem(avcC, i_pps_size, p_pps);
+    }
+
+    if( i_sps_size > 3 &&
+       (p_sps[1] == PROFILE_H264_HIGH ||
+        p_sps[1] == PROFILE_H264_HIGH_10 ||
+        p_sps[1] == PROFILE_H264_HIGH_422 ||
+        p_sps[1] == PROFILE_H264_HIGH_444 ||
+        p_sps[1] == PROFILE_H264_HIGH_444_PREDICTIVE) )
+    {
+        h264_sequence_parameter_set_t *p_spsdata = h264_decode_sps( p_sps, i_sps_size, true );
+        if( p_spsdata )
+        {
+            uint8_t data[3];
+            if( h264_get_chroma_luma( p_spsdata, &data[0], &data[1], &data[2]) )
+            {
+                bo_add_8(avcC, 0xFC | data[0]);
+                bo_add_8(avcC, 0xF8 | (data[1] - 8));
+                bo_add_8(avcC, 0xF8 | (data[2] - 8));
+                bo_add_8(avcC, (i_ext_size > 0 ? 1 : 0));
+                if (i_ext_size > 0) {
+                    bo_add_16be(avcC, i_ext_size);
+                    bo_add_mem(avcC, i_ext_size, p_ext);
+                }
+            }
+            h264_release_sps( p_spsdata );
+        }
     }
 
     return avcC;
@@ -1138,6 +1237,20 @@ static bo_t *GetTextBox(void)
     return text;
 }
 
+static int64_t GetScaledEntryDuration( const mp4mux_entry_t *p_entry, uint32_t i_timescale,
+                                       mtime_t *pi_total_mtime, int64_t *pi_total_scaled )
+{
+    const mtime_t i_totalscaledtototalmtime = *pi_total_scaled * CLOCK_FREQ / i_timescale;
+    const mtime_t i_diff = *pi_total_mtime - i_totalscaledtototalmtime;
+
+    /* Ensure to compensate the drift due to loss from time, and from scale, conversions */
+    int64_t i_scaled = (p_entry->i_length + i_diff) * i_timescale / CLOCK_FREQ;
+    *pi_total_mtime += p_entry->i_length;
+    *pi_total_scaled += i_scaled;
+
+    return i_scaled;
+}
+
 static bo_t *GetStblBox(vlc_object_t *p_obj, mp4mux_trackinfo_t *p_track, bool b_mov, bool b_stco64)
 {
     /* sample description */
@@ -1226,19 +1339,35 @@ static bo_t *GetStblBox(vlc_object_t *p_obj, mp4mux_trackinfo_t *p_track, bool b
     }
     bo_add_32be(stts, 0);     // entry-count (fixed latter)
 
+    mtime_t i_total_mtime = 0;
+    int64_t i_total_scaled = 0;
     unsigned i_index = 0;
     for (unsigned i = 0; i < p_track->i_entry_count; i_index++) {
         int     i_first = i;
-        mtime_t i_delta = p_track->entry[i].i_length;
 
-        for (; i < p_track->i_entry_count; ++i)
-            if (i == p_track->i_entry_count || p_track->entry[i].i_length != i_delta)
+        int64_t i_scaled = GetScaledEntryDuration(&p_track->entry[i], p_track->i_timescale,
+                                                  &i_total_mtime, &i_total_scaled);
+        for (unsigned j=i+1; j < p_track->i_entry_count; j++)
+        {
+            mtime_t i_total_mtime_next = i_total_mtime;
+            int64_t i_total_scaled_next = i_total_scaled;
+            int64_t i_scalednext = GetScaledEntryDuration(&p_track->entry[j], p_track->i_timescale,
+                                                          &i_total_mtime_next, &i_total_scaled_next);
+            if( i_scalednext != i_scaled )
                 break;
 
-        bo_add_32be(stts, i - i_first); // sample-count
-        bo_add_32be(stts, (uint64_t)i_delta  * p_track->i_timescale / CLOCK_FREQ); // sample-delta
+            i_total_mtime = i_total_mtime_next;
+            i_total_scaled = i_total_scaled_next;
+            i = j;
+        }
+
+        bo_add_32be(stts, ++i - i_first); // sample-count
+        bo_add_32be(stts, i_scaled); // sample-delta
     }
     bo_swap_32be(stts, 12, i_index);
+
+    //msg_Dbg(p_obj, "total sout duration %"PRId64" reconverted from scaled %"PRId64,
+    //                i_total_mtime, i_total_scaled * CLOCK_FREQ / p_track->i_timescale );
 
     /* composition time handling */
     bo_t *ctts = NULL;
@@ -1346,20 +1475,20 @@ static bo_t *GetStblBox(vlc_object_t *p_obj, mp4mux_trackinfo_t *p_track, bool b
     return stbl;
 }
 
-bo_t * GetMoovBox(vlc_object_t *p_obj, mp4mux_trackinfo_t **pp_tracks, unsigned int i_tracks,
-                  bool b_fragmented, bool b_mov, bool b_64_ext, bool b_stco64)
+bo_t * mp4mux_GetMoovBox(vlc_object_t *p_obj, mp4mux_trackinfo_t **pp_tracks, unsigned int i_tracks,
+                         int64_t i_movie_duration,
+                         bool b_fragmented, bool b_mov, bool b_64_ext, bool b_stco64 )
 {
     bo_t            *moov, *mvhd;
 
     uint32_t        i_movie_timescale = 90000;
-    int64_t         i_movie_duration  = 0;
     int64_t         i_timestamp = get_timestamp();
 
     moov = box_new("moov");
     if(!moov)
         return NULL;
     /* Create general info */
-    if ( !b_fragmented )
+    if( i_movie_duration == 0 && !b_fragmented )
     {
         for (unsigned int i = 0; i < i_tracks; i++) {
             mp4mux_trackinfo_t *p_stream = pp_tracks[i];
@@ -1370,8 +1499,6 @@ bo_t * GetMoovBox(vlc_object_t *p_obj, mp4mux_trackinfo_t **pp_tracks, unsigned 
 
         i_movie_duration = i_movie_duration * i_movie_timescale / CLOCK_FREQ;
     }
-    else
-        i_movie_duration = 0;
 
     /* *** add /moov/mvhd *** */
     if (!b_64_ext) {
@@ -1511,49 +1638,9 @@ bo_t * GetMoovBox(vlc_object_t *p_obj, mp4mux_trackinfo_t **pp_tracks, unsigned 
         box_gather(trak, tkhd);
 
         /* *** add /moov/trak/edts and elst */
-        if ( !b_fragmented )
-        {
-            bo_t *elst = box_full_new("elst", b_64_ext ? 1 : 0, 0);
-            if(elst)
-            {
-                if (p_stream->i_starttime > 0) {
-                    bo_add_32be(elst, 2);
-
-                    if (b_64_ext) {
-                        bo_add_64be(elst, p_stream->i_starttime *
-                                    i_movie_timescale / CLOCK_FREQ);
-                        bo_add_64be(elst, -1);
-                    } else {
-                        bo_add_32be(elst, p_stream->i_starttime *
-                                    i_movie_timescale / CLOCK_FREQ);
-                        bo_add_32be(elst, -1);
-                    }
-                    bo_add_16be(elst, 1);
-                    bo_add_16be(elst, 0);
-                } else {
-                    bo_add_32be(elst, 1);
-                }
-                if (b_64_ext) {
-                    bo_add_64be(elst, p_stream->i_read_duration *
-                                i_movie_timescale / CLOCK_FREQ);
-                    bo_add_64be(elst, 0);
-                } else {
-                    bo_add_32be(elst, p_stream->i_read_duration *
-                                i_movie_timescale / CLOCK_FREQ);
-                    bo_add_32be(elst, 0);
-                }
-                bo_add_16be(elst, 1);
-                bo_add_16be(elst, 0);
-
-                bo_t *edts = box_new("edts");
-                if(edts)
-                {
-                    box_gather(edts, elst);
-                    box_gather(trak, edts);
-                }
-                else bo_free(elst);
-            }
-        }
+        bo_t *edts = GetEDTS(p_stream, i_movie_timescale, b_64_ext);
+        if(edts)
+            box_gather(trak, edts);
 
         /* *** add /moov/trak/mdia *** */
         bo_t *mdia = box_new("mdia");
@@ -1758,28 +1845,43 @@ bo_t * GetMoovBox(vlc_object_t *p_obj, mp4mux_trackinfo_t **pp_tracks, unsigned 
     if ( b_fragmented )
     {
         bo_t *mvex = box_new("mvex");
-        for (unsigned int i_trak = 0; mvex && i_trak < i_tracks; i_trak++)
+        if( mvex )
         {
-            mp4mux_trackinfo_t *p_stream = pp_tracks[i_trak];
-
-            /* Try to find some defaults */
-            if ( p_stream->i_entry_count )
+            if( i_movie_duration )
             {
-                // FIXME: find highest occurence
-                p_stream->i_trex_default_length = p_stream->entry[0].i_length;
-                p_stream->i_trex_default_size = p_stream->entry[0].i_size;
+                bo_t *mehd = box_full_new("mehd", b_64_ext ? 1 : 0, 0);
+                if(mehd)
+                {
+                    if(b_64_ext)
+                        bo_add_64be(mehd, i_movie_duration * i_movie_timescale / CLOCK_FREQ);
+                    else
+                        bo_add_32be(mehd, i_movie_duration * i_movie_timescale / CLOCK_FREQ);
+                    box_gather(mvex, mehd);
+                }
             }
+            for (unsigned int i_trak = 0; mvex && i_trak < i_tracks; i_trak++)
+            {
+                mp4mux_trackinfo_t *p_stream = pp_tracks[i_trak];
 
-            /* *** add /mvex/trex *** */
-            bo_t *trex = box_full_new("trex", 0, 0);
-            bo_add_32be(trex, p_stream->i_track_id);
-            bo_add_32be(trex, 1); // sample desc index
-            bo_add_32be(trex, (uint64_t)p_stream->i_trex_default_length * p_stream->i_timescale / CLOCK_FREQ); // sample duration
-            bo_add_32be(trex, p_stream->i_trex_default_size); // sample size
-            bo_add_32be(trex, 0); // sample flags
-            box_gather(mvex, trex);
+                /* Try to find some defaults */
+                if ( p_stream->i_entry_count )
+                {
+                    // FIXME: find highest occurence
+                    p_stream->i_trex_default_length = p_stream->entry[0].i_length;
+                    p_stream->i_trex_default_size = p_stream->entry[0].i_size;
+                }
+
+                /* *** add /mvex/trex *** */
+                bo_t *trex = box_full_new("trex", 0, 0);
+                bo_add_32be(trex, p_stream->i_track_id);
+                bo_add_32be(trex, 1); // sample desc index
+                bo_add_32be(trex, (uint64_t)p_stream->i_trex_default_length * p_stream->i_timescale / CLOCK_FREQ); // sample duration
+                bo_add_32be(trex, p_stream->i_trex_default_size); // sample size
+                bo_add_32be(trex, 0); // sample flags
+                box_gather(mvex, trex);
+            }
+            box_gather(moov, mvex);
         }
-        box_gather(moov, mvex);
     }
 
     if(moov->b)
@@ -1787,7 +1889,7 @@ bo_t * GetMoovBox(vlc_object_t *p_obj, mp4mux_trackinfo_t **pp_tracks, unsigned 
     return moov;
 }
 
-bo_t *GetFtyp(vlc_fourcc_t major, uint32_t minor, vlc_fourcc_t extra[], size_t i_fourcc)
+bo_t *mp4mux_GetFtyp(vlc_fourcc_t major, uint32_t minor, vlc_fourcc_t extra[], size_t i_fourcc)
 {
     bo_t *box = box_new("ftyp");
     if(box)
@@ -1804,4 +1906,48 @@ bo_t *GetFtyp(vlc_fourcc_t major, uint32_t minor, vlc_fourcc_t extra[], size_t i
         box_fix(box, box->b->i_buffer);
     }
     return box;
+}
+
+bool mp4mux_CanMux(vlc_object_t *p_obj, const es_format_t *p_fmt)
+{
+    switch(p_fmt->i_codec)
+    {
+    case VLC_CODEC_A52:
+    case VLC_CODEC_DTS:
+    case VLC_CODEC_EAC3:
+    case VLC_CODEC_MP4A:
+    case VLC_CODEC_MP4V:
+    case VLC_CODEC_MPGA:
+    case VLC_CODEC_MP3:
+    case VLC_CODEC_MPGV:
+    case VLC_CODEC_MP2V:
+    case VLC_CODEC_MP1V:
+    case VLC_CODEC_MJPG:
+    case VLC_CODEC_MJPGB:
+    case VLC_CODEC_SVQ1:
+    case VLC_CODEC_SVQ3:
+    case VLC_CODEC_H263:
+    case VLC_CODEC_AMR_NB:
+    case VLC_CODEC_AMR_WB:
+    case VLC_CODEC_YV12:
+    case VLC_CODEC_YUYV:
+    case VLC_CODEC_VC1:
+    case VLC_CODEC_WMAP:
+        break;
+    case VLC_CODEC_H264:
+        if(!p_fmt->i_extra && p_obj)
+            msg_Warn(p_obj, "H264 muxing from AnnexB source will set an incorrect default profile");
+        break;
+    case VLC_CODEC_HEVC:
+        if(!p_fmt->i_extra && p_obj)
+            msg_Err(p_obj, "HEVC muxing from AnnexB source is unsupported");
+        return false;
+    case VLC_CODEC_SUBT:
+        if(p_obj)
+            msg_Warn(p_obj, "subtitle track added like in .mov (even when creating .mp4)");
+        break;
+    default:
+        return false;
+    }
+    return true;
 }

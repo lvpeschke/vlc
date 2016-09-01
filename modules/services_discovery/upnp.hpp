@@ -1,7 +1,7 @@
 /*****************************************************************************
  * upnp.hpp :  UPnP discovery module (libupnp) header
  *****************************************************************************
- * Copyright (C) 2004-2010 the VideoLAN team
+ * Copyright (C) 2004-2016 VLC authors and VideoLAN
  * $Id$
  *
  * Authors: Rémi Denis-Courmont <rem # videolan.org> (original plugin)
@@ -9,21 +9,19 @@
  *          Mirsal Ennaime <mirsal dot ennaime at gmail dot com>
  *          Hugo Beauzée-Luyssen <hugo@beauzee.fr>
  *
- * UPnP Plugin using the Intel SDK (libupnp) instead of CyberLink
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
 #ifdef HAVE_CONFIG_H
@@ -58,9 +56,11 @@ class UpnpInstanceWrapper
 {
 public:
     // This increases the refcount before returning the instance
-    static UpnpInstanceWrapper* get(vlc_object_t* p_obj, Upnp_FunPtr callback, SD::MediaServerList *opaque);
+    static UpnpInstanceWrapper* get(vlc_object_t* p_obj, services_discovery_t *p_sd);
     void release(bool isSd);
     UpnpClient_Handle handle() const;
+    static SD::MediaServerList *lockMediaServerList();
+    static void unlockMediaServerList();
 
 private:
     static int Callback( Upnp_EventType event_type, void* p_event, void* p_user_data );
@@ -71,11 +71,9 @@ private:
 private:
     static UpnpInstanceWrapper* s_instance;
     static vlc_mutex_t s_lock;
-    UpnpClient_Handle handle_;
-    vlc_mutex_t callback_lock_; // protect opaque_ and callback_
-    SD::MediaServerList* opaque_;
-    Upnp_FunPtr callback_;
-    int refcount_;
+    UpnpClient_Handle m_handle;
+    static SD::MediaServerList* p_server_list;
+    int m_refcount;
 };
 
 namespace SD
@@ -105,16 +103,15 @@ public:
     bool addServer(MediaServerDesc *desc );
     void removeServer(const std::string &udn );
     MediaServerDesc* getServer( const std::string& udn );
-    static int Callback( Upnp_EventType event_type, void* p_event, void* p_user_data );
+    static int Callback( Upnp_EventType event_type, void* p_event );
 
 private:
     void parseNewServer( IXML_Document* doc, const std::string& location );
     std::string getIconURL( IXML_Element* p_device_elem , const char* psz_base_url );
 
 private:
-    services_discovery_t* p_sd_;
-    std::vector<MediaServerDesc*> list_;
-    vlc_mutex_t lock_;
+    services_discovery_t* const m_sd;
+    std::vector<MediaServerDesc*> m_list;
 };
 
 }
@@ -131,11 +128,11 @@ public:
     static int run( Upnp_EventType, void *, void *);
 
 private:
-    vlc_sem_t       sem_;
-    vlc_mutex_t     lock_;
-    int             refCount_;
-    Upnp_FunPtr     callback_;
-    void*           cookie_;
+    vlc_sem_t       m_sem;
+    vlc_mutex_t     m_lock;
+    int             m_refCount;
+    Upnp_FunPtr     m_callback;
+    void*           m_cookie;
 };
 
 class MediaServer
@@ -157,10 +154,10 @@ private:
     static int sendActionCb( Upnp_EventType, void *, void *);
 
 private:
-    char* psz_root_;
-    char* psz_objectId_;
-    access_t* access_;
-    input_item_node_t* node_;
+    char* m_psz_root;
+    char* m_psz_objectId;
+    access_t* m_access;
+    input_item_node_t* m_node;
 };
 
 }

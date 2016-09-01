@@ -117,6 +117,17 @@ LIBVLC_DEPRECATED LIBVLC_API libvlc_track_description_t *
 LIBVLC_DEPRECATED LIBVLC_API libvlc_track_description_t *
         libvlc_video_get_chapter_description( libvlc_media_player_t *p_mi, int i_title );
 
+/**
+ * Set new video subtitle file.
+ * \deprecated Use libvlc_media_player_add_slave() instead.
+ *
+ * \param p_mi the media player
+ * \param psz_subtitle new video subtitle file
+ * \return the success status (boolean)
+ */
+LIBVLC_DEPRECATED LIBVLC_API int
+libvlc_video_set_subtitle_file( libvlc_media_player_t *p_mi, const char *psz_subtitle );
+
 /** @}*/
 
 /**
@@ -253,6 +264,30 @@ LIBVLC_DEPRECATED int
 LIBVLC_DEPRECATED LIBVLC_API libvlc_media_discoverer_t *
 libvlc_media_discoverer_new_from_name( libvlc_instance_t * p_inst,
                                        const char * psz_name );
+
+/**
+ * Get media service discover object its localized name.
+ *
+ * \deprecated Useless, use libvlc_media_discoverer_list_get() to get the
+ * longname of the service discovery.
+ *
+ * \param p_mdis media discover object
+ * \return localized name or NULL if the media_discoverer is not started
+ */
+LIBVLC_DEPRECATED LIBVLC_API char *
+libvlc_media_discoverer_localized_name( libvlc_media_discoverer_t * p_mdis );
+
+/**
+ * Get event manager from media service discover object.
+ *
+ * \deprecated Useless, media_discoverer events are only triggered when calling
+ * libvlc_media_discoverer_start() and libvlc_media_discoverer_stop().
+ *
+ * \param p_mdis media service discover object
+ * \return event manager object.
+ */
+LIBVLC_DEPRECATED LIBVLC_API libvlc_event_manager_t *
+libvlc_media_discoverer_event_manager( libvlc_media_discoverer_t * p_mdis );
 
 /** @}*/
 

@@ -100,12 +100,9 @@ void AbstractController::setupButton( QAbstractButton *aButton )
     sizePolicy.setHorizontalStretch( 0 );
     sizePolicy.setVerticalStretch( 0 );
 
-    qreal scalingFactorX = static_cast<qreal>(aButton->logicalDpiX()) / DPI_REF_VALUE;
-    qreal scalingFactorY = static_cast<qreal>(aButton->logicalDpiY()) / DPI_REF_VALUE;
-
     aButton->setSizePolicy( sizePolicy );
-    aButton->setFixedSize( QSize( 26.0*scalingFactorX, 26.0*scalingFactorY ) );
-    aButton->setIconSize( QSize( 20.0*scalingFactorX, 20.0*scalingFactorY ) );
+    aButton->setFixedSize( QSize( 26, 26 ) );
+    aButton->setIconSize( QSize( 20, 20 ) );
     aButton->setFocusPolicy( Qt::NoFocus );
 }
 
@@ -167,15 +164,14 @@ void AbstractController::createAndAddWidget( QBoxLayout *controlLayout_,
         buttonGroupLayout = NULL;
     }
 
-    qreal scalingFactorX = static_cast<qreal>(logicalDpiX())/DPI_REF_VALUE;
     /* Special case for SPACERS, who aren't QWidgets */
     if( i_type == WIDGET_SPACER )
     {
-        controlLayout_->addSpacing( static_cast<int>(12*scalingFactorX) );
+        controlLayout_->addSpacing( 12 );
     }
     else if(  i_type == WIDGET_SPACER_EXTEND )
     {
-        controlLayout_->addStretch( static_cast<int>(12*scalingFactorX) );
+        controlLayout_->addStretch( 12 );
     }
     else
     {
@@ -448,8 +444,13 @@ QWidget *AbstractController::createWidget( buttonType_e button, int options )
         setupButton( loopButton );
         loopButton->setToolTip( qtr( "Click to toggle between loop all, loop one and no loop") );
         loopButton->setCheckable( true );
-        int i_state = 2 * var_GetBool( THEPL, "loop" ) + var_GetBool( THEPL, "repeat" );
-        loopButton->updateButtonIcons( i_state );
+        {
+            int i_state = NORMAL;
+            if( var_GetBool( THEPL, "loop" ) )   i_state = REPEAT_ALL;
+            if( var_GetBool( THEPL, "repeat" ) ) i_state = REPEAT_ONE;
+            loopButton->updateButtonIcons( i_state );
+        }
+
         CONNECT( THEMIM, repeatLoopChanged( int ), loopButton, updateButtonIcons( int ) );
         CONNECT( loopButton, clicked(), THEMIM, loopRepeatLoopStatus() );
         widget = loopButton;
@@ -520,12 +521,8 @@ void AbstractController::applyAttributes( QToolButton *tmpButton, bool b_flat, b
             tmpButton->setAutoRaise( b_flat );
         if( b_big )
         {
-
-            qreal scalingFactorX = static_cast<qreal>(tmpButton->logicalDpiX()) / DPI_REF_VALUE;
-            qreal scalingFactorY = static_cast<qreal>(tmpButton->logicalDpiY()) / DPI_REF_VALUE;
-
-            tmpButton->setFixedSize( QSize( 32.0*scalingFactorX, 32.0*scalingFactorY ) );
-            tmpButton->setIconSize( QSize( 26.0*scalingFactorX, 26.0*scalingFactorY ) );
+            tmpButton->setFixedSize( QSize( 32, 32 ) );
+            tmpButton->setIconSize( QSize( 26, 26 ) );
         }
     }
 }
@@ -1111,13 +1108,10 @@ void FullscreenControllerWidget::keyPressEvent( QKeyEvent *event )
 }
 
 /* */
-static int FullscreenControllerWidgetFullscreenChanged( vlc_object_t *vlc_object,
-                const char *variable, vlc_value_t old_val,
-                vlc_value_t new_val,  void *data )
+static int FullscreenControllerWidgetFullscreenChanged( vlc_object_t *obj,
+        const char *, vlc_value_t, vlc_value_t new_val, void *data )
 {
-    VLC_UNUSED( variable ); VLC_UNUSED( old_val );
-
-    vout_thread_t *p_vout = (vout_thread_t *) vlc_object;
+    vout_thread_t *p_vout = (vout_thread_t *) obj;
 
     msg_Dbg( p_vout, "Qt: Fullscreen state changed" );
     FullscreenControllerWidget *p_fs = (FullscreenControllerWidget *)data;
@@ -1127,13 +1121,10 @@ static int FullscreenControllerWidgetFullscreenChanged( vlc_object_t *vlc_object
     return VLC_SUCCESS;
 }
 /* */
-static int FullscreenControllerWidgetMouseMoved( vlc_object_t *vlc_object, const char *variable,
-                                                 vlc_value_t old_val, vlc_value_t new_val,
-                                                 void *data )
+static int FullscreenControllerWidgetMouseMoved( vlc_object_t *obj,
+        const char *, vlc_value_t, vlc_value_t new_val, void *data )
 {
-    VLC_UNUSED( variable ); VLC_UNUSED( old_val );
-
-    vout_thread_t *p_vout = (vout_thread_t *)vlc_object;
+    vout_thread_t *p_vout = (vout_thread_t *) obj;
     FullscreenControllerWidget *p_fs = (FullscreenControllerWidget *)data;
 
     /* Get the value from the Vout - Trust the vout more than Qt */

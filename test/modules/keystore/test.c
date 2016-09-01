@@ -148,10 +148,17 @@ test_module(const char *psz_module, bool b_test_all, bool b_persistent,
     VALUES_INSERT(KEY_PATH, "/example/example.mkv");
     VALUES_INSERT(KEY_PORT, "88");
     VALUES_INSERT(KEY_USER, "user1");
+    VALUES_INSERT(KEY_AUTHTYPE, "Basic");
     KS_FIND();
     assert(i_entries == 0);
 
     printf("testing adding an entry\n");
+    KS_STORE();
+    KS_FIND();
+    assert(i_entries == 1);
+
+    printf("testing that we can override the secret of a previous entry\n");
+    psz_secret = "libvlc test secret NEW";
     KS_STORE();
     KS_FIND();
     assert(i_entries == 1);
@@ -324,11 +331,6 @@ main(int i_argc, char *ppsz_argv[])
                 assert(asprintf(&ppsz_vlc_argv[1],
                        "--keystore-file=%s", psz_tmp_path) != -1);
                 i_vlc_argc++;
-            }
-            else if (strcmp(psz_module, "kwallet") == 0)
-            {
-                /* See TODO in kwallet.cpp, VLCKWallet::connect() */
-                assert(libvlc_InternalAddIntf(p_libvlc->p_libvlc_int, "qt") == VLC_SUCCESS);
             }
 
             test_module(psz_module, b_test_all, keystore_args[i].b_persistent,

@@ -300,7 +300,6 @@ void vout_IntfInit( vout_thread_t *p_vout )
     var_Create( p_vout, "mouse-button-down", VLC_VAR_INTEGER );
     var_Create( p_vout, "mouse-moved", VLC_VAR_COORDS );
     var_Create( p_vout, "mouse-clicked", VLC_VAR_COORDS );
-    var_Create( p_vout, "mouse-object", VLC_VAR_BOOL );
 
     vout_IntfReinit( p_vout );
 }
@@ -417,7 +416,7 @@ static void VoutSaveSnapshot( vout_thread_t *p_vout )
     VoutOsdSnapshot( p_vout, p_picture, psz_filename );
 
     /* signal creation of a new snapshot file */
-    var_SetString( p_vout->p_libvlc, "snapshot-file", psz_filename );
+    var_SetString( p_vout->obj.libvlc, "snapshot-file", psz_filename );
 
     free( psz_filename );
 
@@ -449,7 +448,7 @@ void vout_EnableFilter( vout_thread_t *p_vout, const char *psz_name,
         return;
     }
 
-    if( module_provides( p_obj, "video filter2" ) )
+    if( module_provides( p_obj, "video filter" ) )
     {
         psz_filter_type = "video-filter";
     }

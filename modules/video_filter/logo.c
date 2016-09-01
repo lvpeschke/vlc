@@ -106,7 +106,7 @@ vlc_module_begin ()
 
     /* video output filter submodule */
     add_submodule ()
-    set_capability( "video filter2", 0 )
+    set_capability( "video filter", 0 )
     set_callbacks( OpenVideo, Close )
     set_description( N_("Logo video filter") )
     add_shortcut( "logo" )
@@ -544,14 +544,6 @@ static int Mouse( filter_t *p_filter, vlc_mouse_t *p_mouse,
                                     p_filter->fmt_in.video.i_width  - i_logo_w );
             p_sys->i_pos_y = VLC_CLIP( p_sys->i_pos_y + i_dy, 0,
                                     p_filter->fmt_in.video.i_height - i_logo_h );
-
-            /* object under mouse has moved */
-            var_SetBool( p_filter->p_parent, "mouse-object", true );
-        }
-        else if( b_over )
-        {
-            /* object under mouse stoped moving */
-            var_SetBool( p_filter->p_parent, "mouse-object", false );
         }
 
         if( p_sys->b_mouse_grab || b_over )
@@ -653,8 +645,9 @@ static void LogoListLoad( vlc_object_t *p_this, logo_list_t *p_logo_list,
     p_logo_list->i_next_pic = 0;
 
     psz_original = psz_list = strdup( psz_filename );
+
     if( !psz_list )
-        abort();
+        return;
 
     /* Count the number logos == number of ';' + 1 */
     p_logo_list->i_count = 1;
@@ -666,8 +659,12 @@ static void LogoListLoad( vlc_object_t *p_this, logo_list_t *p_logo_list,
 
     p_logo_list->p_logo =
     p_logo              = calloc( p_logo_list->i_count, sizeof(*p_logo) );
+
     if( !p_logo )
-        abort();
+    {
+        free( psz_list );
+        return;
+    }
 
     /* Fill the data */
     for( unsigned i = 0; i < p_logo_list->i_count; i++ )

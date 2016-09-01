@@ -892,9 +892,10 @@ int OpenEncoder( vlc_object_t *p_this )
     int ret;
     char *psz_opts = var_InheritString(p_enc, ENC_CFG_PREFIX "options");
     AVDictionary *options = NULL;
-    if (psz_opts && *psz_opts)
+    if (psz_opts) {
         options = vlc_av_get_options(psz_opts);
-    free(psz_opts);
+        free(psz_opts);
+    }
 
     vlc_avcodec_lock();
     ret = avcodec_open2( p_context, p_codec, options ? &options : NULL );
@@ -1282,6 +1283,10 @@ static block_t *encode_audio_buffer( encoder_t *p_enc, encoder_sys_t *p_sys,  AV
         p_block->i_dts = p_block->i_pts = packet.pts;
     else
         p_block->i_dts = p_block->i_pts = VLC_TS_INVALID;
+    if ( packet.flags & AV_PKT_FLAG_KEY )
+        p_block->i_flags |= BLOCK_FLAG_TYPE_I;
+    if ( packet.flags & AV_PKT_FLAG_CORRUPT )
+        p_block->i_flags |= BLOCK_FLAG_CORRUPTED;
     return p_block;
 }
 

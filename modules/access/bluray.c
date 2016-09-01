@@ -29,13 +29,12 @@
 
 #if defined (HAVE_MNTENT_H) && defined(HAVE_SYS_STAT_H)
 # include <mntent.h>
-# include <sys/stat.h>
 #endif
 #include <fcntl.h>      /* O_* */
 #include <unistd.h>     /* close() */
+#include <sys/stat.h>
 
 #ifdef __APPLE__
-# include <sys/stat.h>
 # include <sys/param.h>
 # include <sys/ucred.h>
 # include <sys/mount.h>
@@ -185,7 +184,7 @@ struct  demux_sys_t
     int                 i_spu_stream_idx;   /* Selected subtitle stream. -1 if default */
     bool                b_spu_enable;       /* enabled / disabled */
     int                 i_video_stream;
-    stream_t            *p_parser;
+    vlc_demux_chained_t *p_parser;
     bool                b_flushed;
     bool                b_pl_playing;       /* true when playing playlist */
 
@@ -490,7 +489,7 @@ static int probeStream(demux_t *p_demux)
 {
     /* input must be seekable */
     bool b_canseek = false;
-    stream_Control( p_demux->s, STREAM_CAN_SEEK, &b_canseek );
+    vlc_stream_Control( p_demux->s, STREAM_CAN_SEEK, &b_canseek );
     if (!b_canseek) {
         return VLC_EGENERIC;
     }
@@ -498,7 +497,7 @@ static int probeStream(demux_t *p_demux)
     /* first sector(s) should be filled with zeros */
     size_t i_peek;
     const uint8_t *p_peek;
-    i_peek = stream_Peek( p_demux->s, &p_peek, 2048 );
+    i_peek = vlc_stream_Peek( p_demux->s, &p_peek, 2048 );
     if( i_peek != 2048 ) {
         return VLC_EGENERIC;
     }
@@ -522,11 +521,11 @@ static int blurayReadBlock(void *object, void *buf, int lba, int num_blocks)
 
     vlc_mutex_lock(&p_sys->read_block_lock);
 
-    if (stream_Seek( p_demux->s, lba * INT64_C(2048) ) == VLC_SUCCESS) {
+    if (vlc_stream_Seek( p_demux->s, lba * INT64_C(2048) ) == VLC_SUCCESS) {
         size_t  req = (size_t)2048 * num_blocks;
         ssize_t got;
 
-        got = stream_Read( p_demux->s, buf, req);
+        got = vlc_stream_Read( p_demux->s, buf, req);
         if (got < 0) {
             msg_Err(p_demux, "read from lba %d failed", lba);
         } else {
@@ -676,7 +675,7 @@ static int blurayOpen(vlc_object_t *object)
     /* Open BluRay */
 #ifdef BLURAY_DEMUX
     if (p_demux->s) {
-        i_init_pos = stream_Tell(p_demux->s);
+        i_init_pos = vlc_stream_Tell(p_demux->s);
 
         p_sys->bluray = bd_init();
         if (!bd_open_stream(p_sys->bluray, p_demux, blurayReadBlock)) {
@@ -848,7 +847,7 @@ error:
 
     if (p_demux->s != NULL) {
         /* restore stream position */
-        if (stream_Seek(p_demux->s, i_init_pos) != VLC_SUCCESS) {
+        if (vlc_stream_Seek(p_demux->s, i_init_pos) != VLC_SUCCESS) {
             msg_Err(p_demux, "Failed to seek back to stream start");
             return VLC_ETIMEOUT;
         }
@@ -883,7 +882,7 @@ static void blurayClose(vlc_object_t *object)
     blurayReleaseVout(p_demux);
 
     if (p_sys->p_parser)
-        stream_Delete(p_sys->p_parser);
+        vlc_demux_chained_Delete(p_sys->p_parser);
     if (p_sys->p_out != NULL)
         es_out_Delete(p_sys->p_out);
     assert(vlc_array_count(&p_sys->es) == 0);
@@ -1698,9 +1697,9 @@ static void blurayResetParser(demux_t *p_demux)
      */
     demux_sys_t *p_sys = p_demux->p_sys;
     if (p_sys->p_parser)
-        stream_Delete(p_sys->p_parser);
+        vlc_demux_chained_Delete(p_sys->p_parser);
 
-    p_sys->p_parser = stream_DemuxNew(p_demux, "ts", p_sys->p_out);
+    p_sys->p_parser = vlc_demux_chained_New(p_demux, "ts", p_sys->p_out);
 
     if (!p_sys->p_parser)
         msg_Err(p_demux, "Failed to create TS demuxer");
@@ -1837,7 +1836,7 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
     {
         int i_chapter = (int)va_arg(args, int);
         bd_seek_chapter(p_sys->bluray, i_chapter);
-        p_demux->info.i_update = INPUT_UPDATE_SEEKPOINT;
+        p_demux->info.i_update |= INPUT_UPDATE_SEEKPOINT;
         break;
     }
 
@@ -2037,7 +2036,7 @@ static void streamFlush( demux_sys_t *p_sys )
     }
     vlc_mutex_unlock(&p_sys->pl_info_lock);
 
-    stream_DemuxSend(p_sys->p_parser, p_block);
+    vlc_demux_chained_Send(p_sys->p_parser, p_block);
     p_sys->b_flushed = true;
 }
 
@@ -2407,7 +2406,7 @@ static int blurayDemux(demux_t *p_demux)
 
     stopBackground(p_demux);
 
-    stream_DemuxSend(p_sys->p_parser, p_block);
+    vlc_demux_chained_Send(p_sys->p_parser, p_block);
 
     p_sys->b_flushed = false;
 

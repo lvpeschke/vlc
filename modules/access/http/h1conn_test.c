@@ -116,11 +116,11 @@ int main(void)
     m = vlc_http_stream_read_headers(s);
     assert(m == NULL);
     b = vlc_http_stream_read(s);
-    assert(b == NULL);
+    assert(b == vlc_http_error);
     m = vlc_http_stream_read_headers(s);
     assert(m == NULL);
     b = vlc_http_stream_read(s);
-    assert(b == NULL);
+    assert(b == vlc_http_error);
     m = vlc_http_msg_get_initial(s);
     assert(m == NULL);
 
@@ -138,7 +138,7 @@ int main(void)
     m = vlc_http_stream_read_headers(s);
     assert(m == NULL);
     b = vlc_http_stream_read(s);
-    assert(b == NULL);
+    assert(b == vlc_http_error);
     conn_destroy();
     vlc_http_stream_close(s, false);
 
@@ -218,6 +218,26 @@ int main(void)
     block_Release(b);
     b = vlc_http_msg_read(m);
     assert(b == NULL);
+    vlc_http_msg_destroy(m);
+    conn_destroy();
+
+    /* Test HTTP/1.1 with content length, shortened by error */
+    conn_create();
+    s = stream_open();
+    assert(s != NULL);
+    conn_send("HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n");
+    m = vlc_http_msg_get_initial(s);
+    assert(m != NULL);
+
+    conn_send("Hello ");
+    b = vlc_http_msg_read(m);
+    assert(b != NULL);
+    assert(b->i_buffer == 6);
+    assert(!memcmp(b->p_buffer, "Hello ", 6));
+    block_Release(b);
+    conn_shutdown(SHUT_RDWR);
+    b = vlc_http_msg_read(m);
+    assert(b == vlc_http_error);
     vlc_http_msg_destroy(m);
     conn_destroy();
 

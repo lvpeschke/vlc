@@ -33,6 +33,9 @@ typedef struct
     const char   *name;
     DXGI_FORMAT  formatTexture;
     vlc_fourcc_t fourcc;
+    uint8_t      bitsPerChannel;
+    uint8_t      widthDenominator;
+    uint8_t      heightDenominator;
     DXGI_FORMAT  formatY;
     DXGI_FORMAT  formatUV;
 } d3d_format_t;

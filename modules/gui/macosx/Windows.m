@@ -23,10 +23,10 @@
  *****************************************************************************/
 
 #import "Windows.h"
-#import "intf.h"
-#import "CoreInteraction.h"
-#import "ControlsBar.h"
-#import "VideoView.h"
+#import "VLCMain.h"
+#import "VLCCoreInteraction.h"
+#import "VLCControlsBarCommon.h"
+#import "VLCVoutView.h"
 #import "CompatibilityFixes.h"
 
 /*****************************************************************************
@@ -334,7 +334,7 @@
 
     if (b_nativeFullscreenMode) {
         [self setCollectionBehavior: NSWindowCollectionBehaviorFullScreenPrimary];
-    } else if (OSX_EL_CAPITAN) {
+    } else if (OSX_EL_CAPITAN || OSX_SIERRA) {
         // Native fullscreen seems to be default on El Capitan, this disables it explicitely
         [self setCollectionBehavior: NSWindowCollectionBehaviorFullScreenAuxiliary];
     }

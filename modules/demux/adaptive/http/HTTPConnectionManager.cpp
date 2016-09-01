@@ -123,6 +123,11 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
         msg_Dbg(p_object, "LVP entered HTTPConnectionManager::getConnection --> create new");
 
         conn = factory->createConnection(p_object, params);
+        if(!conn)
+        {
+            vlc_mutex_unlock(&lock);
+            return NULL;
+        }
 
         connectionPool.push_back(conn);
 

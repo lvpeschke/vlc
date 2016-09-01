@@ -54,6 +54,7 @@ struct access_sys_t
 
     /* Scan */
     struct scan_t *scan;
+    bool done;
 };
 
 /*****************************************************************************
@@ -104,7 +105,7 @@ vlc_module_end ()
  *****************************************************************************/
 static int Control( access_t *, int, va_list );
 
-static block_t *BlockScan( access_t * );
+static block_t *BlockScan( access_t *, bool * );
 
 #define DVB_SCAN_MAX_LOCK_TIME (2*CLOCK_FREQ)
 
@@ -126,6 +127,9 @@ static int Open( vlc_object_t *p_this )
 {
     access_t     *p_access = (access_t*)p_this;
     access_sys_t *p_sys;
+
+    if( p_access->b_preparsing )
+        return VLC_EGENERIC;
 
     p_access->p_sys = p_sys = calloc( 1, sizeof( access_sys_t ) );
     if( !p_sys )
@@ -151,7 +155,7 @@ static int Open( vlc_object_t *p_this )
         return VLC_EGENERIC; /* let the DTV plugin do the work */
 
     /* Getting frontend info */
-    if( FrontendOpen( p_this, &p_sys->dvb, p_access->psz_access ) )
+    if( FrontendOpen( p_this, &p_sys->dvb, p_access->psz_name ) )
     {
         free( p_sys );
         return VLC_EGENERIC;
@@ -191,7 +195,6 @@ static int Open( vlc_object_t *p_this )
 
     /* Set up access */
     p_access->pf_control = Control;
-    access_InitFields( p_access );
 
     return VLC_SUCCESS;
 }
@@ -217,6 +220,7 @@ static int ScanFrontendTuningHandler( scan_t *p_scan, void *p_privdata,
                                       const scan_tuner_config_t *p_cfg )
 {
     access_t *p_access = (access_t *) p_privdata;
+    access_sys_t *sys = p_access->p_sys;
     VLC_UNUSED(p_scan);
 
     var_SetInteger( p_access, "dvb-frequency", p_cfg->i_frequency );
@@ -232,7 +236,7 @@ static int ScanFrontendTuningHandler( scan_t *p_scan, void *p_privdata,
     msg_Dbg( p_access, " bandwidth %d", p_cfg->i_bandwidth );
 
     /* Setting frontend parameters for tuning the hardware */
-    if( FrontendSet( VLC_OBJECT(p_access), &p_access->p_sys->dvb ) < 0 )
+    if( FrontendSet( VLC_OBJECT(p_access), &sys->dvb ) < 0 )
     {
         msg_Err( p_access, "Failed to tune the frontend" );
         return VLC_EGENERIC;
@@ -244,10 +248,11 @@ static int ScanFrontendTuningHandler( scan_t *p_scan, void *p_privdata,
 static int ScanStatsCallback( scan_t *p_scan, void *p_privdata, int *pi_snr )
 {
     access_t *p_access = (access_t *) p_privdata;
+    access_sys_t *sys = p_access->p_sys;
     VLC_UNUSED(p_scan);
 
     frontend_statistic_t stat;
-    if( !FrontendGetStatistic( &p_access->p_sys->dvb, &stat ) )
+    if( !FrontendGetStatistic( &sys->dvb, &stat ) )
     {
         *pi_snr = stat.i_snr;
         return VLC_SUCCESS;
@@ -353,7 +358,7 @@ static int ScanReadCallback( scan_t *p_scan, void *p_privdata,
 /*****************************************************************************
  * BlockScan:
  *****************************************************************************/
-static block_t *BlockScan( access_t *p_access )
+static block_t *BlockScan( access_t *p_access, bool *restrict eof )
 {
     access_sys_t *p_sys = p_access->p_sys;
     scan_t *p_scan = p_sys->scan;
@@ -361,12 +366,13 @@ static block_t *BlockScan( access_t *p_access )
 
     if( scan_Run( p_scan ) != VLC_SUCCESS )
     {
-        if( !p_access->info.b_eof )
+        if( !p_sys->done )
         {
-             msg_Warn( p_access, "Scanning finished" );
+             msg_Info( p_access, "Scanning finished" );
+             p_sys->done = true;
              p_block = scan_GetM3U( p_scan );
         }
-        p_access->info.b_eof = true;
+        *eof = true;
     }
 
     return p_block;
@@ -377,6 +383,7 @@ static block_t *BlockScan( access_t *p_access )
  *****************************************************************************/
 static int Control( access_t *p_access, int i_query, va_list args )
 {
+    access_sys_t *sys = p_access->p_sys;
     bool         *pb_bool;
     int64_t      *pi_64;
     double       *pf1, *pf2;
@@ -384,29 +391,29 @@ static int Control( access_t *p_access, int i_query, va_list args )
 
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_FASTSEEK:
-        case ACCESS_CAN_PAUSE:
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_FASTSEEK:
+        case STREAM_CAN_PAUSE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = false;
             break;
 
-        case ACCESS_GET_CONTENT_TYPE:
+        case STREAM_GET_CONTENT_TYPE:
             *va_arg( args, char** ) = strdup("application/vnd.apple.mpegurl"); // m3u8
             return VLC_SUCCESS;
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg( args, int64_t * );
             *pi_64 = DEFAULT_PTS_DELAY;
             break;
 
-        case ACCESS_GET_SIGNAL:
+        case STREAM_GET_SIGNAL:
             pf1 = (double*)va_arg( args, double * );
             pf2 = (double*)va_arg( args, double * );
 
             *pf1 = *pf2 = 0;
-            if( !FrontendGetStatistic( &p_access->p_sys->dvb, &stat ) )
+            if( !FrontendGetStatistic( &sys->dvb, &stat ) )
             {
                 *pf1 = (double)stat.i_snr / 65535.0;
                 *pf2 = (double)stat.i_signal_strenth / 65535.0;

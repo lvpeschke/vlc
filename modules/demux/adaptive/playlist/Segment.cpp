@@ -63,40 +63,32 @@ ISegment::~ISegment()
     assert(chunksuse.Get() == 0);
 }
 
-SegmentChunk * ISegment::getChunk(const std::string &url, HTTPConnectionManager *connManager)
-{
-    HTTPChunkBufferedSource *source = new HTTPChunkBufferedSource(url, connManager);
-    if(startByte != endByte)
-        source->setBytesRange(BytesRange(startByte, endByte));
-    connManager->downloader->schedule(source);
-    return new (std::nothrow) SegmentChunk(this, source);
-}
-
 void ISegment::onChunkDownload(block_t **, SegmentChunk *, BaseRepresentation *)
 {
 
 }
 
-SegmentChunk* ISegment::toChunk(size_t index, BaseRepresentation *ctxrep, HTTPConnectionManager *connManager)
+SegmentChunk* ISegment::toChunk(size_t index, BaseRepresentation *rep, HTTPConnectionManager *connManager)
 {
-    SegmentChunk *chunk;
-    try
+    const std::string url = getUrlSegment().toString(index, rep);
+    HTTPChunkBufferedSource *source = new (std::nothrow) HTTPChunkBufferedSource(url, connManager);
+    if( source )
     {
-        chunk = getChunk(getUrlSegment().toString(index, ctxrep), connManager);
-        if (!chunk)
-            return NULL;
+        if(startByte != endByte)
+            source->setBytesRange(BytesRange(startByte, endByte));
+
+        SegmentChunk *chunk = new (std::nothrow) SegmentChunk(this, source, rep);
+        if( chunk )
+        {
+            connManager->downloader->schedule(source);
+            return chunk;
+        }
+        else
+        {
+            delete source;
+        }
     }
-    catch (int)
-    {
-        return NULL;
-    };
-
-    chunk->setRepresentation(ctxrep);
-
-    ///* LVP added, TFE */
-    //std::cerr << "TFE segment toChunk duration and startTime, " << mdate() << ", " << this->duration.Get() << ", " << this->startTime.Get() << std::endl;
-
-    return chunk;
+    return NULL;
 }
 
 bool ISegment::isTemplate() const
@@ -135,6 +127,7 @@ void ISegment::debug(vlc_object_t *obj, int indent) const
         ss << " @" << startByte << ".." << endByte;
     if(startTime.Get() > 0)
     	 ss << " stime " << startTime.Get();
+    ss << " duration " << duration.Get();
     msg_Dbg(obj, "%s", ss.str().c_str());
 }
 

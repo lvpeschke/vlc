@@ -25,7 +25,7 @@
 #endif
 
 #include <vlc_common.h>
-#include <vlc_stream.h>                               /* stream_Peek*/
+#include <vlc_stream.h>                               /* vlc_stream_Peek*/
 
 #ifdef HAVE_ZLIB_H
 #   include <zlib.h>                                  /* for compressed moov */
@@ -74,20 +74,20 @@ static void MP4_ConvertDate2Str( char *psz, uint64_t i_date, bool b_relative )
 static MP4_Box_t *MP4_ReadBox( stream_t *p_stream, MP4_Box_t *p_father );
 static int MP4_Box_Read_Specific( stream_t *p_stream, MP4_Box_t *p_box, MP4_Box_t *p_father );
 static void MP4_Box_Clean_Specific( MP4_Box_t *p_box );
-static inline MP4_Box_t * MP4_BoxNew( uint32_t i_type );
+static int MP4_PeekBoxHeader( stream_t *p_stream, MP4_Box_t *p_box );
 
 static int MP4_Seek( stream_t *p_stream, uint64_t i_pos )
 {
     bool b_canseek = false;
-    if ( stream_Control( p_stream, STREAM_CAN_SEEK, &b_canseek ) != VLC_SUCCESS ||
+    if ( vlc_stream_Control( p_stream, STREAM_CAN_SEEK, &b_canseek ) != VLC_SUCCESS ||
          b_canseek )
     {
         /* can seek or don't know */
-        return stream_Seek( p_stream, i_pos );
+        return vlc_stream_Seek( p_stream, i_pos );
     }
     /* obviously can't seek then */
 
-    int64_t i_current_pos = stream_Tell( p_stream );
+    int64_t i_current_pos = vlc_stream_Tell( p_stream );
     if ( i_current_pos < 0 || i_pos < (uint64_t)i_current_pos )
         return VLC_EGENERIC;
 
@@ -97,7 +97,8 @@ static int MP4_Seek( stream_t *p_stream, uint64_t i_pos )
     else if( i_toread > (1<<17) )
         return VLC_EGENERIC;
     else
-        return (stream_Read( p_stream, NULL, (int)i_toread ) != (int)i_toread);
+        return vlc_stream_Read( p_stream, NULL,
+                                i_toread ) != (ssize_t)i_toread;
 }
 
 static void MP4_BoxAddChild( MP4_Box_t *p_parent, MP4_Box_t *p_childbox )
@@ -127,9 +128,9 @@ MP4_Box_t * MP4_BoxExtract( MP4_Box_t **pp_chain, uint32_t i_type )
     return NULL;
 }
 
-/* Don't use stream_Seek directly */
-#undef stream_Seek
-#define stream_Seek(a,b) __NO__
+/* Don't use vlc_stream_Seek directly */
+#undef vlc_stream_Seek
+#define vlc_stream_Seek(a,b) __NO__
 
 /*****************************************************************************
  * MP4_PeekBoxHeader : Load only common parameters for all boxes
@@ -139,16 +140,16 @@ MP4_Box_t * MP4_BoxExtract( MP4_Box_t **pp_chain, uint32_t i_type )
  *
  * RETURN : 0 if it fail, 1 otherwise
  *****************************************************************************/
-int MP4_PeekBoxHeader( stream_t *p_stream, MP4_Box_t *p_box )
+static int MP4_PeekBoxHeader( stream_t *p_stream, MP4_Box_t *p_box )
 {
     int      i_read;
     const uint8_t  *p_peek;
 
-    if( ( ( i_read = stream_Peek( p_stream, &p_peek, 32 ) ) < 8 ) )
+    if( ( ( i_read = vlc_stream_Peek( p_stream, &p_peek, 32 ) ) < 8 ) )
     {
         return 0;
     }
-    p_box->i_pos = stream_Tell( p_stream );
+    p_box->i_pos = vlc_stream_Tell( p_stream );
 
     p_box->data.p_payload = NULL;
     p_box->p_father = NULL;
@@ -258,17 +259,18 @@ static MP4_Box_t *MP4_ReadBoxRestricted( stream_t *p_stream, MP4_Box_t *p_father
     {
         msg_Warn( p_stream, "Failed reading box %4.4s", (char*) &peekbox.i_type );
         MP4_BoxFree( p_box );
-        return NULL;
+        p_box = NULL;
     }
 
     /* Check is we consumed all data */
-    if( stream_Tell( p_stream ) < i_next )
+    if( vlc_stream_Tell( p_stream ) < i_next )
     {
         MP4_Seek( p_stream, i_next - 1 ); /*  since past seek can fail when hitting EOF */
         MP4_Seek( p_stream, i_next );
     }
 
-    MP4_BoxAddChild( p_father, p_box );
+    if ( p_box )
+        MP4_BoxAddChild( p_father, p_box );
 
     return p_box;
 }
@@ -285,7 +287,7 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
     /* Size of root container is set to 0 when unknown, for exemple
      * with a DASH stream. In that case, we skip the following check */
     if( (p_container->i_size || p_container->p_father)
-            && ( stream_Tell( p_stream ) + ((b_indexed)?16:8) >
+            && ( vlc_stream_Tell( p_stream ) + ((b_indexed)?16:8) >
         (uint64_t)(p_container->i_pos + p_container->i_size) )
       )
     {
@@ -300,7 +302,7 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
     {
         if ( p_container->i_size )
         {
-            const uint64_t i_tell = stream_Tell( p_stream );
+            const uint64_t i_tell = vlc_stream_Tell( p_stream );
             if( i_tell + ((b_indexed)?16:8) >= i_end )
                 break;
         }
@@ -309,7 +311,7 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
         if ( b_indexed )
         {
             uint8_t read[8];
-            if ( stream_Read( p_stream, read, 8 ) < 8 )
+            if ( vlc_stream_Read( p_stream, read, 8 ) < 8 )
                 break;
             i_index = GetDWBE(&read[4]);
         }
@@ -326,7 +328,7 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
 
         if ( p_container->i_size )
         {
-            const uint64_t i_tell = stream_Tell( p_stream );
+            const uint64_t i_tell = vlc_stream_Tell( p_stream );
             if( i_tell >= i_end )
             {
                 assert( i_tell == i_end );
@@ -339,7 +341,7 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
     /* Always move to end of container */
     if ( !b_onexclude &&  p_container->i_size )
     {
-        const uint64_t i_tell = stream_Tell( p_stream );
+        const uint64_t i_tell = vlc_stream_Tell( p_stream );
         if ( i_tell != i_end )
             MP4_Seek( p_stream, i_end );
     }
@@ -370,12 +372,13 @@ static int MP4_ReadBoxContainerRawInBox( stream_t *p_stream, MP4_Box_t *p_contai
 {
     if(!p_container)
         return 0;
-    stream_t *p_substream = stream_MemoryNew( p_stream, p_buffer, i_size, true );
+    stream_t *p_substream = vlc_stream_MemoryNew( p_stream, p_buffer, i_size,
+                                                  true );
     if( !p_substream )
         return 0;
     MP4_Box_t *p_last = p_container->p_last;
     MP4_ReadBoxContainerChildren( p_substream, p_container, NULL );
-    stream_Delete( p_substream );
+    vlc_stream_Delete( p_substream );
     /* do pos fixup */
     if( p_container )
     {
@@ -413,7 +416,7 @@ static int MP4_ReadBoxSkip( stream_t *p_stream, MP4_Box_t *p_box )
         int     i_read;
         vlc_fourcc_t i_fcc;
 
-        i_read  = stream_Peek( p_stream, &p_peek, 44 );
+        i_read  = vlc_stream_Peek( p_stream, &p_peek, 44 );
 
         p_peek += mp4_box_headersize( p_box ) + 4;
         i_read -= mp4_box_headersize( p_box ) + 4;
@@ -444,7 +447,7 @@ static int MP4_ReadBoxSkip( stream_t *p_stream, MP4_Box_t *p_box )
 
 static int MP4_ReadBox_ilst( stream_t *p_stream, MP4_Box_t *p_box )
 {
-    if( p_box->i_size < 8 || stream_Read( p_stream, NULL, 8 ) < 8 )
+    if( p_box->i_size < 8 || vlc_stream_Read( p_stream, NULL, 8 ) < 8 )
         return 0;
 
     /* Find our handler */
@@ -688,7 +691,17 @@ static int MP4_ReadBox_uuid( stream_t *p_stream, MP4_Box_t *p_box )
     if( !CmpUUID( &p_box->i_uuid, &TfxdBoxUUID ) )
         return MP4_ReadBox_tfxd( p_stream, p_box );
 
+#ifdef MP4_VERBOSE
+    msg_Warn( p_stream, "Unknown uuid type box: "
+    "0x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x"
+    "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x",
+    p_box->i_uuid.b[0],  p_box->i_uuid.b[1],  p_box->i_uuid.b[2],  p_box->i_uuid.b[3],
+    p_box->i_uuid.b[4],  p_box->i_uuid.b[5],  p_box->i_uuid.b[6],  p_box->i_uuid.b[7],
+    p_box->i_uuid.b[8],  p_box->i_uuid.b[9],  p_box->i_uuid.b[10], p_box->i_uuid.b[11],
+    p_box->i_uuid.b[12], p_box->i_uuid.b[13], p_box->i_uuid.b[14], p_box->i_uuid.b[15] );
+#else
     msg_Warn( p_stream, "Unknown uuid type box" );
+#endif
     return 1;
 }
 
@@ -2165,10 +2178,11 @@ static int MP4_ReadBox_sample_soun( stream_t *p_stream, MP4_Box_t *p_box )
                  p_box->data.p_sample_soun->i_constbytesperaudiopacket,
                  p_box->data.p_sample_soun->i_constLPCMframesperaudiopacket );
 #endif
-        /* @72 bytes */
-        i_extoffset = VLC_CLIP( i_extoffset, i_read, p_box->i_size );
-        p_peek += i_extoffset;
-        i_read -= i_extoffset;
+        /* @72 bytes + */
+        if( i_extoffset > i_actually_read )
+            i_extoffset = i_actually_read;
+        p_peek = &p_buff[i_extoffset];
+        i_read = i_actually_read - i_extoffset;
     }
     else
     {
@@ -2212,7 +2226,7 @@ static int MP4_ReadBox_sample_soun( stream_t *p_stream, MP4_Box_t *p_box )
     MP4_READBOX_EXIT( 1 );
 }
 
-void MP4_FreeBox_sample_vide( MP4_Box_t *p_box )
+static void MP4_FreeBox_sample_vide( MP4_Box_t *p_box )
 {
     FREENULL( p_box->data.p_sample_vide->p_qt_image_description );
 }
@@ -3042,13 +3056,14 @@ static int MP4_ReadBox_cmov( stream_t *p_stream, MP4_Box_t *p_box )
 
     /* now create a memory stream */
     p_stream_memory =
-        stream_MemoryNew( VLC_OBJECT(p_stream), p_cmvd->data.p_cmvd->p_data,
-                          p_cmvd->data.p_cmvd->i_uncompressed_size, true );
+        vlc_stream_MemoryNew( VLC_OBJECT(p_stream),
+                              p_cmvd->data.p_cmvd->p_data,
+                              p_cmvd->data.p_cmvd->i_uncompressed_size, true );
 
     /* and read uncompressd moov */
     p_box->data.p_cmov->p_moov = MP4_ReadBox( p_stream_memory, NULL );
 
-    stream_Delete( p_stream_memory );
+    vlc_stream_Delete( p_stream_memory );
 
 #ifdef MP4_VERBOSE
     msg_Dbg( p_stream, "read box: \"cmov\" compressed movie header completed");
@@ -3287,9 +3302,9 @@ static int MP4_ReadBox_data( stream_t *p_stream, MP4_Box_t *p_box )
 static int MP4_ReadBox_Metadata( stream_t *p_stream, MP4_Box_t *p_box )
 {
     const uint8_t *p_peek;
-    if ( stream_Peek( p_stream, &p_peek, 16 ) < 16 )
+    if ( vlc_stream_Peek( p_stream, &p_peek, 16 ) < 16 )
         return 0;
-    if ( stream_Read( p_stream, NULL, 8 ) < 8 )
+    if ( vlc_stream_Read( p_stream, NULL, 8 ) < 8 )
         return 0;
     const uint32_t stoplist[] = { ATOM_data, 0 };
     return MP4_ReadBoxContainerChildren( p_stream, p_box, stoplist );
@@ -3375,6 +3390,55 @@ static int MP4_ReadBox_chpl( stream_t *p_stream, MP4_Box_t *p_box )
     msg_Dbg( p_stream, "read box: \"chpl\" %d chapters",
                        p_chpl->i_chapter );
 #endif
+    MP4_READBOX_EXIT( 1 );
+}
+
+/* GoPro HiLight tags support */
+static void MP4_FreeBox_HMMT( MP4_Box_t *p_box )
+{
+    FREENULL( p_box->data.p_hmmt->pi_chapter_start );
+}
+
+static int MP4_ReadBox_HMMT( stream_t *p_stream, MP4_Box_t *p_box )
+{
+#define MAX_CHAPTER_COUNT 100
+
+    MP4_Box_data_HMMT_t *p_hmmt;
+    MP4_READBOX_ENTER( MP4_Box_data_HMMT_t, MP4_FreeBox_HMMT );
+
+    if( i_read < 4 )
+        MP4_READBOX_EXIT( 0 );
+
+    p_hmmt = p_box->data.p_hmmt;
+
+    MP4_GET4BYTES( p_hmmt->i_chapter_count );
+
+    if( p_hmmt->i_chapter_count <= 0 )
+    {
+        p_hmmt->pi_chapter_start = NULL;
+        MP4_READBOX_EXIT( 1 );
+    }
+
+    if( ( i_read / sizeof(uint32_t) ) < p_hmmt->i_chapter_count )
+        MP4_READBOX_EXIT( 0 );
+
+    /* Cameras are allowing a maximum of 100 tags */
+    if( p_hmmt->i_chapter_count > MAX_CHAPTER_COUNT )
+        p_hmmt->i_chapter_count = MAX_CHAPTER_COUNT;
+
+    p_hmmt->pi_chapter_start = malloc( p_hmmt->i_chapter_count * sizeof(uint32_t) );
+    if( p_hmmt->pi_chapter_start == NULL )
+        MP4_READBOX_EXIT( 0 );
+
+    for( uint32_t i = 0; i < p_hmmt->i_chapter_count; i++ )
+    {
+        MP4_GET4BYTES( p_hmmt->pi_chapter_start[i] );
+    }
+
+#ifdef MP4_VERBOSE
+    msg_Dbg( p_stream, "read box: \"HMMT\" %d HiLight tags", p_hmmt->i_chapter_count );
+#endif
+
     MP4_READBOX_EXIT( 1 );
 }
 
@@ -3488,14 +3552,14 @@ static int MP4_ReadBox_meta( stream_t *p_stream, MP4_Box_t *p_box )
     int i_actually_read;
 
     // skip over box header
-    i_actually_read = stream_Read( p_stream, meta_data, 8 );
+    i_actually_read = vlc_stream_Read( p_stream, meta_data, 8 );
     if( i_actually_read < 8 )
         return 0;
 
     if ( p_box->p_father && p_box->p_father->i_type == ATOM_udta ) /* itunes udta/meta */
     {
         /* meta content starts with a 4 byte version/flags value (should be 0) */
-        i_actually_read = stream_Read( p_stream, meta_data, 4 );
+        i_actually_read = vlc_stream_Read( p_stream, meta_data, 4 );
         if( i_actually_read < 4 || memcmp( meta_data, "\0\0\0", 4 ) )
             return 0;
     }
@@ -4224,6 +4288,7 @@ static const struct
     { ATOM_name,    MP4_ReadBox_String,    ATOM_udta },
     { ATOM_vndr,    MP4_ReadBox_String,    ATOM_udta },
     { ATOM_SDLN,    MP4_ReadBox_String,    ATOM_udta },
+    { ATOM_HMMT,    MP4_ReadBox_HMMT,      ATOM_udta }, /* GoPro HiLight tags */
 
     /* udta, non meta */
     { ATOM_tsel,    MP4_ReadBox_tsel,    ATOM_udta },
@@ -4329,7 +4394,7 @@ static MP4_Box_t *MP4_ReadBox( stream_t *p_stream, MP4_Box_t *p_father )
 /*****************************************************************************
  * MP4_BoxNew : creates and initializes an arbitrary box
  *****************************************************************************/
-static inline MP4_Box_t * MP4_BoxNew( uint32_t i_type )
+MP4_Box_t * MP4_BoxNew( uint32_t i_type )
 {
     MP4_Box_t *p_box = calloc( 1, sizeof( MP4_Box_t ) );
     if( likely( p_box != NULL ) )
@@ -4430,7 +4495,7 @@ MP4_Box_t *MP4_BoxGetRoot( stream_t *p_stream )
     if( i_result && !MP4_BoxGet( p_vroot, "moov" ) )
     {
         bool b_seekable;
-        if( stream_Control( p_stream, STREAM_CAN_SEEK, &b_seekable ) != VLC_SUCCESS || !b_seekable )
+        if( vlc_stream_Control( p_stream, STREAM_CAN_SEEK, &b_seekable ) != VLC_SUCCESS || !b_seekable )
         {
             msg_Err( p_stream, "no moov before mdat and the stream is not seekable" );
             goto error;
@@ -4454,7 +4519,7 @@ MP4_Box_t *MP4_BoxGetRoot( stream_t *p_stream )
         return p_vroot;
     }
 
-    if( stream_Tell( p_stream ) + 8 < (uint64_t) stream_Size( p_stream ) )
+    if( vlc_stream_Tell( p_stream ) + 8 < (uint64_t) stream_Size( p_stream ) )
     {
         /* Get the rest of the file */
         i_result = MP4_ReadBoxContainerChildren( p_stream, p_vroot, NULL );
@@ -4549,14 +4614,14 @@ void MP4_BoxDumpStructure( stream_t *s, const MP4_Box_t *p_box )
  **
  *****************************************************************************
  *****************************************************************************/
-static void get_token( char **ppsz_path, char **ppsz_token, int *pi_number )
+static bool get_token( char **ppsz_path, char **ppsz_token, int *pi_number )
 {
     size_t i_len ;
     if( !*ppsz_path[0] )
     {
         *ppsz_token = NULL;
         *pi_number = 0;
-        return;
+        return true;
     }
     i_len = strcspn( *ppsz_path, "/[" );
     if( !i_len && **ppsz_path == '/' )
@@ -4565,10 +4630,11 @@ static void get_token( char **ppsz_path, char **ppsz_token, int *pi_number )
     }
     *ppsz_token = strndup( *ppsz_path, i_len );
     if( unlikely(!*ppsz_token) )
-        abort();
+        return false;
 
     *ppsz_path += i_len;
 
+    /* Parse the token number token[n] */
     if( **ppsz_path == '[' )
     {
         (*ppsz_path)++;
@@ -4586,10 +4652,14 @@ static void get_token( char **ppsz_path, char **ppsz_token, int *pi_number )
     {
         *pi_number = 0;
     }
+
+    /* Forward to start of next token */
     while( **ppsz_path == '/' )
     {
         (*ppsz_path)++;
     }
+
+    return true;
 }
 
 static void MP4_BoxGet_Internal( const MP4_Box_t **pp_result, const MP4_Box_t *p_box,
@@ -4597,7 +4667,7 @@ static void MP4_BoxGet_Internal( const MP4_Box_t **pp_result, const MP4_Box_t *p
 {
     char *psz_dup;
     char *psz_path;
-    char *psz_token;
+    char *psz_token = NULL;
 
     if( !p_box )
     {
@@ -4621,7 +4691,8 @@ static void MP4_BoxGet_Internal( const MP4_Box_t **pp_result, const MP4_Box_t *p
     {
         int i_number;
 
-        get_token( &psz_path, &psz_token, &i_number );
+        if( !get_token( &psz_path, &psz_token, &i_number ) )
+            goto error_box;
 //        fprintf( stderr, "path:'%s', token:'%s' n:%d\n",
 //                 psz_path,psz_token,i_number );
         if( !psz_token )

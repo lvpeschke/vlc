@@ -43,7 +43,7 @@ static picture_t *CVPX_I420_Filter( filter_t *, picture_t * );
 
 vlc_module_begin ()
 set_description( N_("Conversions from CoreVideo buffers to I420") )
-set_capability( "video filter2", 10 )
+set_capability( "video filter", 10 )
 set_callbacks( Activate, NULL )
 vlc_module_end ()
 
@@ -89,7 +89,6 @@ static void CVPX_I420(filter_t *p_filter, picture_t *sourcePicture, picture_t *d
     }
 
     CopyFromNv12ToI420(destinationPicture, pp_plane, pi_pitch,
-                       sourcePicture->format.i_width,
                        sourcePicture->format.i_height);
 
     CVPixelBufferUnlockBaseAddress(picsys->pixelBuffer, 0);

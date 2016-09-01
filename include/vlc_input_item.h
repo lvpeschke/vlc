@@ -161,6 +161,7 @@ struct input_item_slave
 {
     enum slave_type     i_type;     /**< Slave type (spu, audio) */
     enum slave_priority i_priority; /**< Slave priority */
+    bool                b_forced;   /**< Slave should be selected */
     char                psz_uri[];  /**< Slave mrl */
 };
 
@@ -395,13 +396,16 @@ enum input_item_preparse_status
 {
     ITEM_PREPARSE_SKIPPED,
     ITEM_PREPARSE_FAILED,
+    ITEM_PREPARSE_TIMEOUT,
     ITEM_PREPARSE_DONE
 };
 
-VLC_API int libvlc_MetaRequest(libvlc_int_t *, input_item_t *,
-                               input_item_meta_request_option_t );
+VLC_API int libvlc_MetadataRequest( libvlc_int_t *, input_item_t *,
+                                    input_item_meta_request_option_t,
+                                    int, void * );
 VLC_API int libvlc_ArtRequest(libvlc_int_t *, input_item_t *,
                               input_item_meta_request_option_t );
+VLC_API void libvlc_MetadataCancel( libvlc_int_t *, void * );
 
 /******************
  * Input stats

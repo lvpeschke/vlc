@@ -26,7 +26,7 @@
 #endif
 
 #import "ExtensionsDialogProvider.h"
-#import "intf.h"
+#import "VLCMain.h"
 
 #import <vlc_extensions.h>
 

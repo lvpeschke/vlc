@@ -89,8 +89,8 @@ void SegmentList::mergeWith(SegmentList *updated)
 void SegmentList::pruneByPlaybackTime(mtime_t time)
 {
     uint64_t num;
-    const uint64_t timescale = inheritTimescale();
-    if(getSegmentNumberByScaledTime(time * timescale / CLOCK_FREQ, &num))
+    const Timescale timescale = inheritTimescale();
+    if(getSegmentNumberByScaledTime(timescale.ToScaled(time), &num))
         pruneBySegmentNumber(num);
 }
 
@@ -125,18 +125,21 @@ bool SegmentList::getSegmentNumberByScaledTime(stime_t time, uint64_t *ret) cons
     return SegmentInfoCommon::getSegmentNumberByScaledTime(allsubsegments, time, ret);
 }
 
-mtime_t SegmentList::getPlaybackTimeBySegmentNumber(uint64_t number)
+bool SegmentList::getPlaybackTimeDurationBySegmentNumber(uint64_t number,
+                                                         mtime_t *time, mtime_t *dur) const
 {
-    if(segments.empty())
-        return VLC_TS_INVALID;
+    *time = *dur = VLC_TS_INVALID;
 
-    const uint64_t timescale = inheritTimescale();
+    if(segments.empty())
+        return false;
+
+    const Timescale timescale = inheritTimescale();
     const ISegment *first = segments.front();
     if(first->getSequenceNumber() > number)
-        return VLC_TS_INVALID;
+        return false;
 
-    stime_t time = first->startTime.Get();
-    std::vector<ISegment *>::iterator it = segments.begin();
+    *time = first->startTime.Get();
+    std::vector<ISegment *>::const_iterator it = segments.begin();
     for(it = segments.begin(); it != segments.end(); ++it)
     {
         const ISegment *seg = *it;
@@ -147,13 +150,17 @@ mtime_t SegmentList::getPlaybackTimeBySegmentNumber(uint64_t number)
         }
         else if(seg->duration.Get())
         {
-            time += seg->duration.Get();
+            *time += seg->duration.Get();
+            *dur = seg->duration.Get();
         }
         else
         {
-            time += duration.Get();
+            *time += duration.Get();
+            *dur = duration.Get();
         }
     }
 
-    return VLC_TS_0 + CLOCK_FREQ * time / timescale;
+    *time = VLC_TS_0 + timescale.ToTime( *time );
+    *dur = VLC_TS_0 + timescale.ToTime( *dur );
+    return true;
 }

@@ -42,10 +42,10 @@
 /****************************************************************************
  * Local prototypes
  ****************************************************************************/
-static const char *const ppsz_sout_options[] = { "quality-mode", NULL };
 static int OpenDecoder(vlc_object_t *);
 static void CloseDecoder(vlc_object_t *);
 #ifdef ENABLE_SOUT
+static const char *const ppsz_sout_options[] = { "quality-mode", NULL };
 static int OpenEncoder(vlc_object_t *);
 static void CloseEncoder(vlc_object_t *);
 static block_t *Encode(encoder_t *p_enc, picture_t *p_pict);
@@ -161,6 +161,12 @@ static picture_t *Decode(decoder_t *dec, block_t **pp_block)
     if (img->d_w != v->i_visible_width || img->d_h != v->i_visible_height) {
         v->i_visible_width = img->d_w;
         v->i_visible_height = img->d_h;
+    }
+
+    if( !dec->fmt_out.video.i_sar_num || !dec->fmt_out.video.i_sar_den )
+    {
+        dec->fmt_out.video.i_sar_num = 1;
+        dec->fmt_out.video.i_sar_den = 1;
     }
 
     picture_t *pic = decoder_NewPicture(dec);

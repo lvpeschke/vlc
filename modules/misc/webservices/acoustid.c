@@ -158,17 +158,17 @@ int DoAcoustIdWebRequest( vlc_object_t *p_obj, acoustid_fingerprint_t *p_data )
     if( unlikely(asprintf( &psz_url, "http://fingerprint.videolan.org/"
                            "acoustid.php?meta=recordings+tracks+usermeta+"
                            "releases&duration=%d&fingerprint=%s",
-                           p_data->i_duration, p_data->psz_fingerprint )) )
+                           p_data->i_duration, p_data->psz_fingerprint ) < 1 ) )
          return VLC_EGENERIC;
 
     msg_Dbg( p_obj, "Querying AcoustID from %s", psz_url );
-    int i_saved_flags = p_obj->i_flags;
-    p_obj->i_flags |= OBJECT_FLAGS_NOINTERACT;
+    int i_saved_flags = p_obj->obj.flags;
+    p_obj->obj.flags |= OBJECT_FLAGS_NOINTERACT;
 
-    stream_t *p_stream = stream_UrlNew( p_obj, psz_url );
+    stream_t *p_stream = vlc_stream_NewMRL( p_obj, psz_url );
 
     free( psz_url );
-    p_obj->i_flags = i_saved_flags;
+    p_obj->obj.flags = i_saved_flags;
     if ( p_stream == NULL )
         return VLC_EGENERIC;
 
@@ -185,17 +185,17 @@ int DoAcoustIdWebRequest( vlc_object_t *p_obj, acoustid_fingerprint_t *p_data )
         p_buffer = realloc_or_free( p_buffer, 1 + i_ret + i_read );
         if( unlikely(p_buffer == NULL) )
         {
-            stream_Delete( p_stream );
+            vlc_stream_Delete( p_stream );
             return VLC_ENOMEM;
         }
 
-        i_read = stream_Read( p_stream, &p_buffer[i_ret], i_read );
+        i_read = vlc_stream_Read( p_stream, &p_buffer[i_ret], i_read );
         if( i_read <= 0 )
             break;
 
         i_ret += i_read;
     }
-    stream_Delete( p_stream );
+    vlc_stream_Delete( p_stream );
     p_buffer[i_ret] = 0;
 
     if ( ParseJson( p_obj, p_buffer, & p_data->results ) )

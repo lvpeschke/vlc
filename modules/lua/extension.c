@@ -764,7 +764,7 @@ static int GetMenuEntries( extensions_manager_t *p_mgr, extension_t *p_ext,
                     goto exit;
                 }
                 (*pppsz_titles)[ i_idx ] = strdup( luaL_checkstring( L, -1 ) );
-                (*ppi_ids)[ i_idx ] = (uint16_t) ( luaL_checkinteger( L, -2 ) & 0xFFFF );
+                (*ppi_ids)[ i_idx ] = luaL_checkinteger( L, -2 ) & 0xFFFF;
                 i_idx++;
                 lua_pop( L, 1 );
             }
@@ -812,7 +812,7 @@ static lua_State* GetLuaState( extensions_manager_t *p_mgr,
         }
         vlclua_set_this( L, p_mgr );
         vlclua_set_playlist_internal( L,
-            pl_Get((intf_thread_t *)(p_mgr->p_parent)) );
+            pl_Get((intf_thread_t *)(p_mgr->obj.parent)) );
         vlclua_extension_set( L, p_ext );
 
         luaL_openlibs( L );

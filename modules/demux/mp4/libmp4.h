@@ -331,6 +331,7 @@ typedef int64_t stime_t;
 #define ATOM_0xa9xyz VLC_FOURCC( 0xa9, 'x', 'y', 'z' )
 #define ATOM_aART VLC_FOURCC( 'a', 'A', 'R', 'T' )
 #define ATOM_chpl VLC_FOURCC( 'c', 'h', 'p', 'l' )
+#define ATOM_HMMT VLC_FOURCC( 'H', 'M', 'M', 'T' )
 #define ATOM_disk VLC_FOURCC( 'd', 'i', 's', 'k' )
 #define ATOM_WLOC VLC_FOURCC( 'W', 'L', 'O', 'C' )
 
@@ -1202,6 +1203,13 @@ typedef struct
 
 typedef struct
 {
+    uint32_t i_chapter_count;
+    uint32_t *pi_chapter_start;
+
+} MP4_Box_data_HMMT_t;
+
+typedef struct
+{
     uint8_t i_version;
     uint8_t i_profile;
     uint8_t i_profile_compatibility;
@@ -1608,6 +1616,7 @@ typedef union MP4_Box_data_s
 
     MP4_Box_data_pnot_t *p_pnot;
     MP4_Box_data_chpl_t *p_chpl;
+    MP4_Box_data_HMMT_t *p_hmmt;
     MP4_Box_data_tref_generic_t *p_tref_generic;
 
     MP4_Box_data_tfrf_t *p_tfrf;
@@ -1709,15 +1718,15 @@ static inline size_t mp4_box_headersize( MP4_Box_t *p_box )
     int64_t i_read = p_box->i_size; \
     if( maxread < (uint64_t)i_read ) i_read = maxread;\
     uint8_t *p_peek, *p_buff; \
-    int i_actually_read; \
+    ssize_t i_actually_read; \
     if( !( p_peek = p_buff = malloc( i_read ) ) ) \
     { \
         return( 0 ); \
     } \
-    i_actually_read = stream_Read( p_stream, p_peek, i_read ); \
-    if( i_actually_read < 0 || (int64_t)i_actually_read < i_read )\
+    i_actually_read = vlc_stream_Read( p_stream, p_peek, i_read ); \
+    if( i_actually_read < 0 || i_actually_read < i_read )\
     { \
-        msg_Warn( p_stream, "MP4_READBOX_ENTER: I got %i bytes, "\
+        msg_Warn( p_stream, "MP4_READBOX_ENTER: I got %zd bytes, "\
         "but I requested %" PRId64, i_actually_read, i_read );\
         free( p_buff ); \
         return( 0 ); \
@@ -1791,6 +1800,13 @@ MP4_Box_t *MP4_BoxGetNextChunk( stream_t * );
 MP4_Box_t *MP4_BoxGetRoot( stream_t * );
 
 /*****************************************************************************
+ * MP4_BoxNew : Allocates a new MP4 Box with its atom type
+ *****************************************************************************
+ *  returns NULL on failure
+ *****************************************************************************/
+MP4_Box_t * MP4_BoxNew( uint32_t i_type );
+
+/*****************************************************************************
  * MP4_FreeBox : free memory allocated after read with MP4_ReadBox
  *               or MP4_BoxGetRoot, this means also children boxes
  * XXX : all children have to be allocated by a malloc !! and
@@ -1829,11 +1845,9 @@ unsigned MP4_BoxCount( const MP4_Box_t *p_box, const char *psz_fmt, ... );
 
 MP4_Box_t * MP4_BoxExtract( MP4_Box_t **pp_chain, uint32_t i_type );
 
-/* Internal functions exposed for MKV demux */
-int MP4_PeekBoxHeader( stream_t *p_stream, MP4_Box_t *p_box );
+/* Internal functions exposed for demuxers */
 int MP4_ReadBoxContainerChildren( stream_t *p_stream, MP4_Box_t *p_container,
                                   const uint32_t stoplist[] );
 int MP4_ReadBox_sample_vide( stream_t *p_stream, MP4_Box_t *p_box );
-void MP4_FreeBox_sample_vide( MP4_Box_t *p_box );
 
 #endif

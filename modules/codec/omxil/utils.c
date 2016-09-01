@@ -223,7 +223,7 @@ void CopyOmxPicture( int i_color_format, picture_t *p_pic,
         copy_cache_t *p_surface_cache = (copy_cache_t*)p_architecture_specific->data;
         uint8_t *ppi_src_pointers[2] = { p_src, p_src + i_src_stride * i_slice_height };
         size_t pi_src_strides[2] = { i_src_stride, i_src_stride };
-        CopyFromNv12( p_pic, ppi_src_pointers, pi_src_strides, i_src_stride, i_slice_height, p_surface_cache );
+        CopyFromNv12( p_pic, ppi_src_pointers, pi_src_strides, i_slice_height, p_surface_cache );
         return;
     }
 #endif
@@ -301,11 +301,6 @@ bool OMXCodec_IsBlacklisted( const char *p_name, unsigned int i_name_len )
          * sensible latency. (Also, even if that one isn't found, in general,
          * using SW codecs is usually more than fast enough for MP3.) */
         "OMX.SEC.MP3.Decoder",
-        /* This codec should be able to handle both VC1 and WMV3, but
-         * for VC1 it doesn't output any buffers at all (in the way we use
-         * it) and for WMV3 it outputs plain black buffers. Thus ignore
-         * it until we can make it work properly. */
-        "OMX.Nvidia.vc1.decode",
         /* black screen */
         "OMX.MTK.VIDEO.DECODER.VC1",
         /* Not working or crashing (Samsung) */
@@ -385,7 +380,6 @@ int OMXCodec_GetQuirks( int i_cat, vlc_fourcc_t i_codec,
 
     if( i_cat == VIDEO_ES )
     {
-        i_quirks |= OMXCODEC_VIDEO_QUIRKS_NEED_SIZE;
         switch( i_codec )
         {
         case VLC_CODEC_H264:

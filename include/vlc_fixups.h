@@ -77,6 +77,7 @@ typedef struct
 #endif
 
 #if !defined (HAVE_POSIX_MEMALIGN) || \
+    !defined (HAVE_MEMRCHR) || \
     !defined (HAVE_STRLCPY) || \
     !defined (HAVE_STRNDUP) || \
     !defined (HAVE_STRNLEN) || \
@@ -137,6 +138,10 @@ int vasprintf (char **, const char *, va_list);
 /* string.h */
 #ifndef HAVE_FFSLL
 int ffsll(unsigned long long);
+#endif
+
+#ifndef HAVE_MEMRCHR
+void *memrchr(const void *, int, size_t);
 #endif
 
 #ifndef HAVE_STRCASECMP
@@ -225,6 +230,7 @@ int timespec_get(struct timespec *, int);
 
 /* sys/time.h */
 #ifndef HAVE_GETTIMEOFDAY
+struct timezone;
 int gettimeofday(struct timeval *, struct timezone *);
 #endif
 
@@ -320,8 +326,13 @@ void swab (const void *, void *, ssize_t);
 
 /* Socket stuff */
 #ifndef HAVE_INET_PTON
+# ifndef _WIN32
+#  include <sys/socket.h>
+#else
+typedef int socklen_t;
+# endif
 int inet_pton(int, const char *, void *);
-const char *inet_ntop(int, const void *, char *, int);
+const char *inet_ntop(int, const void *, char *, socklen_t);
 #endif
 
 #ifndef HAVE_STRUCT_POLLFD

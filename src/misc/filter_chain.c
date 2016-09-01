@@ -59,7 +59,7 @@ struct filter_chain_t
     es_format_t fmt_out; /**< Chain current output format */
     unsigned length; /**< Number of filters */
     bool b_allow_fmt_out_change; /**< Can the output format be changed? */
-    char psz_capability[1]; /**< Module capability for all chained filters */
+    char psz_capability[]; /**< Module capability for all chained filters */
 };
 
 /**
@@ -73,7 +73,7 @@ static filter_chain_t *filter_chain_NewInner( const filter_owner_t *callbacks,
     assert( callbacks != NULL && callbacks->sys != NULL );
     assert( cap != NULL );
 
-    filter_chain_t *chain = malloc( sizeof(*chain) + strlen( cap ) );
+    filter_chain_t *chain = malloc( sizeof(*chain) + strlen( cap ) + 1 );
     if( unlikely(chain == NULL) )
         return NULL;
 
@@ -138,7 +138,7 @@ filter_chain_t *filter_chain_NewVideo( vlc_object_t *obj, bool allow_change,
         },
     };
 
-    return filter_chain_NewInner( &callbacks, "video filter2", allow_change,
+    return filter_chain_NewInner( &callbacks, "video filter", allow_change,
                                   owner );
 }
 

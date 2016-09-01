@@ -34,7 +34,7 @@ extern "C" {
  * Category of a media discoverer
  * \see libvlc_media_discoverer_list_get()
  */
-typedef enum libvlc_media_discoverer_category {
+typedef enum libvlc_media_discoverer_category_t {
     /** devices, like portable music player */
     libvlc_media_discoverer_devices,
     /** LAN/WAN services, like Upnp, SMB, or SAP */
@@ -43,17 +43,17 @@ typedef enum libvlc_media_discoverer_category {
     libvlc_media_discoverer_podcasts,
     /** Local directories, like Video, Music or Pictures directories */
     libvlc_media_discoverer_localdirs,
-} libvlc_media_discoverer_category;
+} libvlc_media_discoverer_category_t;
 
 /**
  * Media discoverer description
  * \see libvlc_media_discoverer_list_get()
  */
-typedef struct libvlc_media_discoverer_description {
+typedef struct libvlc_media_discoverer_description_t {
     char *psz_name;
     char *psz_longname;
-    libvlc_media_discoverer_category i_cat;
-} libvlc_media_discoverer_description;
+    libvlc_media_discoverer_category_t i_cat;
+} libvlc_media_discoverer_description_t;
 
 /** \defgroup libvlc_media_discoverer LibVLC media discovery
  * \ingroup libvlc
@@ -72,10 +72,8 @@ typedef struct libvlc_media_discoverer_t libvlc_media_discoverer_t;
 /**
  * Create a media discoverer object by name.
  *
- * After this object is created, you should attach to events in order to be
- * notified of the discoverer state.
- * You should also attach to media_list events in order to be notified of new
- * items discovered.
+ * After this object is created, you should attach to media_list events in
+ * order to be notified of new items discovered.
  *
  * You need to call libvlc_media_discoverer_start() in order to start the
  * discovery.
@@ -130,15 +128,6 @@ LIBVLC_API void
 libvlc_media_discoverer_release( libvlc_media_discoverer_t * p_mdis );
 
 /**
- * Get media service discover object its localized name.
- *
- * \param p_mdis media discover object
- * \return localized name
- */
-LIBVLC_API char *
-libvlc_media_discoverer_localized_name( libvlc_media_discoverer_t * p_mdis );
-
-/**
  * Get media service discover media list.
  *
  * \param p_mdis media service discover object
@@ -146,15 +135,6 @@ libvlc_media_discoverer_localized_name( libvlc_media_discoverer_t * p_mdis );
  */
 LIBVLC_API libvlc_media_list_t *
 libvlc_media_discoverer_media_list( libvlc_media_discoverer_t * p_mdis );
-
-/**
- * Get event manager from media service discover object.
- *
- * \param p_mdis media service discover object
- * \return event manager object.
- */
-LIBVLC_API libvlc_event_manager_t *
-libvlc_media_discoverer_event_manager( libvlc_media_discoverer_t * p_mdis );
 
 /**
  * Query if media service discover object is running.
@@ -178,12 +158,12 @@ libvlc_media_discoverer_is_running( libvlc_media_discoverer_t * p_mdis );
  * services (must be freed with libvlc_media_discoverer_list_release() by
  * the caller) [OUT]
  *
- * \return the number of media discoverer services (zero on error)
+ * \return the number of media discoverer services or -1 on error
  */
-LIBVLC_API unsigned int
+LIBVLC_API ssize_t
 libvlc_media_discoverer_list_get( libvlc_instance_t *p_inst,
-                                  libvlc_media_discoverer_category i_cat,
-                                  libvlc_media_discoverer_description ***ppp_services );
+                                  libvlc_media_discoverer_category_t i_cat,
+                                  libvlc_media_discoverer_description_t ***ppp_services );
 
 /**
  * Release an array of media discoverer services
@@ -196,8 +176,8 @@ libvlc_media_discoverer_list_get( libvlc_instance_t *p_inst,
  * \param i_count number of elements in the array
  */
 LIBVLC_API void
-libvlc_media_discoverer_list_release( libvlc_media_discoverer_description **pp_services,
-                                      unsigned int i_count );
+libvlc_media_discoverer_list_release( libvlc_media_discoverer_description_t **pp_services,
+                                      size_t i_count );
 
 /**@} */
 

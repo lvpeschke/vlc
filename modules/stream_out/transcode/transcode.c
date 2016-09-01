@@ -177,7 +177,7 @@ vlc_module_begin ()
                  MAXWIDTH_LONGTEXT, true )
     add_integer( SOUT_CFG_PREFIX "maxheight", 0, MAXHEIGHT_TEXT,
                  MAXHEIGHT_LONGTEXT, true )
-    add_module_list( SOUT_CFG_PREFIX "vfilter", "video filter2",
+    add_module_list( SOUT_CFG_PREFIX "vfilter", "video filter",
                      NULL, VFILTER_TEXT, VFILTER_LONGTEXT, false )
 
     set_section( N_("Audio"), NULL )
@@ -206,7 +206,7 @@ vlc_module_begin ()
                 SCODEC_LONGTEXT, false )
     add_bool( SOUT_CFG_PREFIX "soverlay", false, SCODEC_TEXT,
                SCODEC_LONGTEXT, false )
-    add_module_list( SOUT_CFG_PREFIX "sfilter", "video filter",
+    add_module_list( SOUT_CFG_PREFIX "sfilter", "spu source",
                      NULL, SFILTER_TEXT, SFILTER_LONGTEXT, false )
 
     set_section( N_("On Screen Display"), NULL )
@@ -382,6 +382,12 @@ static int Open( vlc_object_t *p_this )
                  (char *)&p_sys->i_vcodec, p_sys->i_width, p_sys->i_height,
                  p_sys->f_scale, p_sys->i_vbitrate / 1000 );
     }
+
+    /* Disable hardware decoding by default (unlike normal playback) */
+    psz_string = var_CreateGetString( p_stream, "avcodec-hw" );
+    if( !strcasecmp( "any", psz_string ) )
+        var_SetString( p_stream, "avcodec-hw", "none" );
+    free( psz_string );
 
     /* Subpictures transcoding parameters */
     p_sys->p_spu = NULL;

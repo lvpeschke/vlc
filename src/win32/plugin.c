@@ -33,6 +33,8 @@
 #include <windows.h>
 #include <wchar.h>
 
+extern DWORD LoadLibraryFlags;
+
 #if (_WIN32_WINNT < 0x601)
 static BOOL WINAPI SetThreadErrorModeFallback(DWORD mode, DWORD *oldmode)
 {
@@ -103,15 +105,14 @@ int module_Load( vlc_object_t *p_this, const char *psz_file,
     module_handle_t handle = NULL;
 #if !VLC_WINSTORE_APP
     DWORD mode;
-
     if (SetThreadErrorMode (SEM_FAILCRITICALERRORS, &mode) != 0)
-#endif
     {
-        handle = LoadLibraryW (wfile);
-#if !VLC_WINSTORE_APP
+        handle = LoadLibraryExW (wfile, NULL, LoadLibraryFlags );
         SetThreadErrorMode (mode, NULL);
-#endif
     }
+#else
+    handle = LoadPackagedLibrary( wfile, 0 );
+#endif
     free (wfile);
 
     if( handle == NULL )

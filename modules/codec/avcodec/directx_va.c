@@ -40,6 +40,7 @@
 
 #include "avcodec.h"
 #include "../../packetizer/h264_nal.h"
+#include "../../packetizer/hevc_nal.h"
 
 static const int PROF_MPEG2_SIMPLE[] = { FF_PROFILE_MPEG2_SIMPLE, 0 };
 static const int PROF_MPEG2_MAIN[]   = { FF_PROFILE_MPEG2_SIMPLE,
@@ -240,7 +241,11 @@ static const directx_va_mode_t DXVA_MODES[] = {
 
     /* VPx */
     { "VP8",                                                                          &DXVA_ModeVP8_VLD,                      0, NULL },
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT( 57, 17, 100 ) && LIBAVCODEC_VERSION_MICRO >= 100
+    { "VP9 profile 0",                                                                &DXVA_ModeVP9_VLD_Profile0,             AV_CODEC_ID_VP9, NULL },
+#else
     { "VP9 profile 0",                                                                &DXVA_ModeVP9_VLD_Profile0,             0, NULL },
+#endif
 
     { NULL, NULL, 0, NULL }
 };
@@ -379,20 +384,24 @@ int directx_va_Get(vlc_va_t *va, directx_sys_t *dx_sys, picture_t *pic, uint8_t 
 
     vlc_mutex_lock( &dx_sys->surface_lock );
 
-    /* Grab an unused surface, in case none are, try the oldest
-     * XXX using the oldest is a workaround in case a problem happens with libavcodec */
-    int i, old;
-    for (i = 0, old = 0; i < dx_sys->surface_count; i++) {
+    /* Grab the oldest unused surface, in case none are, use the oldest used one
+     * XXX using the used one is a workaround in case a problem happens with libavcodec */
+    int i, old = -1, old_used = -1;
+
+    for (i = 0; i < dx_sys->surface_count; i++) {
         vlc_va_surface_t *surface = &dx_sys->surface[i];
-
-        if (!surface->refcount)
-            break;
-
-        if (surface->order < dx_sys->surface[old].order)
+        if ((old == -1 || surface->order < dx_sys->surface[old].order) && !surface->refcount)
             old = i;
+        if (old_used == -1 || surface->order < dx_sys->surface[old_used].order)
+            old_used = i;
     }
-    if (i >= dx_sys->surface_count)
+    if (old >= 0)
         i = old;
+    else if (old_used >= 0)
+    {
+        msg_Warn(va, "couldn't find a free decoding buffer, using index %d", old_used);
+        i = old_used;
+    }
 
     vlc_va_surface_t *surface = &dx_sys->surface[i];
 
@@ -490,9 +499,15 @@ static bool profile_supported(const directx_va_mode_t *mode, const es_format_t *
         int profile = fmt->i_profile;
         if (mode->codec == AV_CODEC_ID_H264)
         {
-            size_t h264_profile;
+            uint8_t h264_profile;
             if ( h264_get_profile_level(fmt, &h264_profile, NULL, NULL) )
                 profile = h264_profile;
+        }
+        if (mode->codec == AV_CODEC_ID_HEVC)
+        {
+            uint8_t hevc_profile;
+            if (hevc_get_profile_level(fmt, &hevc_profile, NULL, NULL) )
+                profile = hevc_profile;
         }
 
         if (profile <= 0)
@@ -554,7 +569,8 @@ static int FindVideoServiceConversion(vlc_va_t *va, directx_sys_t *dx_sys, const
         {
             is_supported = profile_supported( mode, fmt );
             if (!is_supported)
-                msg_Warn( va, "Unsupported profile for HWAccel: %d", fmt->i_profile );
+                msg_Warn( va, "Unsupported profile %d for %s ",
+                          fmt->i_profile, directx_va_GetDecoderName(mode->guid) );
         }
         if (!is_supported)
             continue;

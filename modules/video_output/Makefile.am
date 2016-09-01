@@ -36,13 +36,13 @@ endif
 libgles2_plugin_la_SOURCES = video_output/opengl.c video_output/opengl.h \
 	video_output/gl.c
 libgles2_plugin_la_CFLAGS = $(AM_CFLAGS) $(GLES2_CFLAGS) -DUSE_OPENGL_ES=2
-libgles2_plugin_la_LIBADD = $(GLES2_LIBS)
+libgles2_plugin_la_LIBADD = $(GLES2_LIBS) $(LIBM)
 libgles2_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
 
 libgles1_plugin_la_SOURCES = video_output/opengl.c video_output/opengl.h \
 	video_output/gl.c
 libgles1_plugin_la_CFLAGS = $(AM_CFLAGS) $(GLES1_CFLAGS) -DUSE_OPENGL_ES=1
-libgles1_plugin_la_LIBADD = $(GLES1_LIBS)
+libgles1_plugin_la_LIBADD = $(GLES1_LIBS) $(LIBM)
 libgles1_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
 
 EXTRA_LTLIBRARIES += libgles2_plugin.la libgles1_plugin.la
@@ -51,7 +51,7 @@ vout_LTLIBRARIES += $(LTLIBgles2) $(LTLIBgles1)
 libgl_plugin_la_SOURCES = video_output/opengl.c video_output/opengl.h \
 	video_output/gl.c
 libgl_plugin_la_CFLAGS = $(AM_CFLAGS) $(GL_CFLAGS)
-libgl_plugin_la_LIBADD = $(GL_LIBS)
+libgl_plugin_la_LIBADD = $(GL_LIBS) $(LIBM)
 if HAVE_GL
 vout_LTLIBRARIES += libgl_plugin.la
 endif
@@ -62,8 +62,11 @@ libvlc_xcb_events_la_SOURCES = \
 	video_output/xcb/events.c video_output/xcb/events.h
 libvlc_xcb_events_la_CPPFLAGS = -DMODULE_STRING=\"xcb\"
 libvlc_xcb_events_la_CFLAGS = $(AM_CFLAGS) $(XCB_CFLAGS)
-libvlc_xcb_events_la_LDFLAGS = -static
-libvlc_xcb_events_la_LIBADD = $(XCB_LIBS)
+libvlc_xcb_events_la_LDFLAGS = \
+	-no-undefined \
+	-export-symbols-regex ^vlc_xcb_ \
+	-version-info 0:0:0
+libvlc_xcb_events_la_LIBADD = $(XCB_LIBS) $(LTLIBVLCCORE)
 
 libxcb_x11_plugin_la_SOURCES = \
 	video_output/xcb/pictures.c video_output/xcb/pictures.h \
@@ -87,7 +90,7 @@ libxcb_glx_plugin_la_SOURCES = \
 libxcb_glx_plugin_la_CFLAGS = $(AM_CFLAGS) \
 	$(XCB_CFLAGS) $(GL_CFLAGS)
 libxcb_glx_plugin_la_LIBADD = libvlc_xcb_events.la \
-	$(XCB_LIBS) $(GL_LIBS)
+	$(XCB_LIBS) $(GL_LIBS) $(LIBM)
 
 libxcb_window_plugin_la_SOURCES =  \
 	video_output/xcb/keys.c \
@@ -108,7 +111,7 @@ libglx_plugin_la_CFLAGS = $(AM_CFLAGS) $(GL_CFLAGS)
 libglx_plugin_la_LIBADD = $(GL_LIBS) $(X_LIBS) $(X_PRE_LIBS) -lX11
 
 if HAVE_XCB
-noinst_LTLIBRARIES += libvlc_xcb_events.la
+pkglib_LTLIBRARIES += libvlc_xcb_events.la
 vout_LTLIBRARIES += libxcb_x11_plugin.la libxcb_window_plugin.la
 if HAVE_XCB_KEYSYMS
 libxcb_window_plugin_la_CFLAGS += -DHAVE_XCB_KEYSYMS
@@ -163,7 +166,7 @@ libdirect2d_plugin_la_SOURCES = video_output/win32/direct2d.c \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libdirect2d_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DMODULE_NAME_IS_direct2d
-libdirect2d_plugin_la_LIBADD = -lgdi32 -lole32 -luuid
+libdirect2d_plugin_la_LIBADD = -lgdi32 $(LIBCOM) -luuid
 libdirect2d_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
 if HAVE_WIN32_DESKTOP
 vout_LTLIBRARIES += $(LTLIBdirect2d)
@@ -177,7 +180,7 @@ libdirect3d9_plugin_la_SOURCES = video_output/win32/direct3d9.c \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libdirect3d9_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DMODULE_NAME_IS_direct3d9
-libdirect3d9_plugin_la_LIBADD = -lgdi32 -lole32 -luuid
+libdirect3d9_plugin_la_LIBADD = -lgdi32 $(LIBCOM) -luuid
 libdirect3d9_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
 if HAVE_WIN32_DESKTOP
 vout_LTLIBRARIES += $(LTLIBdirect3d9)
@@ -193,9 +196,9 @@ if !HAVE_WINSTORE
 libdirect3d11_plugin_la_SOURCES += video_output/win32/events.c \
  video_output/win32/events.h \
  video_output/win32/win32touch.c video_output/win32/win32touch.h
-libdirect3d11_plugin_la_LIBADD = -lgdi32 -lole32 -luuid
+libdirect3d11_plugin_la_LIBADD = -lgdi32 $(LIBCOM) -luuid
 else
-libdirect3d11_plugin_la_LIBADD = -ld3dcompiler_47 -lole32 -luuid
+libdirect3d11_plugin_la_LIBADD = -ld3dcompiler_47 $(LIBCOM) -luuid
 endif
 libdirect3d11_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
 vout_LTLIBRARIES += $(LTLIBdirect3d11)
@@ -207,7 +210,7 @@ libdirectdraw_plugin_la_SOURCES = video_output/win32/directdraw.c \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libdirectdraw_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DMODULE_NAME_IS_directdraw
-libdirectdraw_plugin_la_LIBADD = -luser32 -lgdi32 -lole32 -luuid
+libdirectdraw_plugin_la_LIBADD = -luser32 -lgdi32 $(LIBCOM) -luuid
 libdirectdraw_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
 if HAVE_WIN32_DESKTOP
 vout_LTLIBRARIES += $(LTLIBdirectdraw)
@@ -219,13 +222,23 @@ libglwin32_plugin_la_SOURCES = video_output/win32/glwin32.c \
 	video_output/win32/common.c video_output/win32/common.h \
 	video_output/win32/events.c video_output/win32/events.h \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
+libwgl_plugin_la_SOURCES = video_output/win32/wgl.c \
+        video_output/opengl.c video_output/opengl.h
+
 libglwin32_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DMODULE_NAME_IS_glwin32
-libglwin32_plugin_la_LIBADD = -lopengl32 -lgdi32 -lole32 -luuid
+libwgl_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
+        -DMODULE_NAME_IS_wgl
+
+libglwin32_plugin_la_LIBADD = -lopengl32 -lgdi32 $(LIBCOM) -luuid
+libwgl_plugin_la_LIBADD = -lopengl32 -lgdi32
+
 libglwin32_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+libwgl_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+
 if HAVE_WIN32_DESKTOP
-vout_LTLIBRARIES += $(LTLIBglwin32)
-EXTRA_LTLIBRARIES += libglwin32_plugin.la
+vout_LTLIBRARIES += $(LTLIBglwin32) $(LTLIBwgl)
+EXTRA_LTLIBRARIES += libglwin32_plugin.la libwgl_plugin.la
 endif
 
 libwingdi_plugin_la_SOURCES = video_output/win32/wingdi.c \
@@ -234,7 +247,7 @@ libwingdi_plugin_la_SOURCES = video_output/win32/wingdi.c \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libwingdi_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DMODULE_NAME_IS_wingdi
-libwingdi_plugin_la_LIBADD = -lgdi32 -lole32 -luuid
+libwingdi_plugin_la_LIBADD = -lgdi32 $(LIBCOM) -luuid
 if HAVE_WIN32_DESKTOP
 vout_LTLIBRARIES += libwingdi_plugin.la
 endif
@@ -357,11 +370,16 @@ endif
 
 
 ### Common ###
+
+libflaschen_plugin_la_SOURCES = video_output/flaschen.c
+libflaschen_plugin_la_LIBADD = $(SOCKET_LIBS)
+
 libvdummy_plugin_la_SOURCES = video_output/vdummy.c
 libvmem_plugin_la_SOURCES = video_output/vmem.c
 libyuv_plugin_la_SOURCES = video_output/yuv.c
 
 vout_LTLIBRARIES += \
+	libflaschen_plugin.la \
 	libvdummy_plugin.la \
 	libvmem_plugin.la \
 	libyuv_plugin.la

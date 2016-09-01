@@ -145,6 +145,9 @@ bool PIDSetup( demux_t *p_demux, ts_pid_type_t i_type, ts_pid_t *pid, ts_pid_t *
             PIDReset( pid );
             return true;
 
+        case TYPE_CAT:
+            return true;
+
         case TYPE_PAT:
             PIDReset( pid );
             pid->u.p_pat = ts_pat_New( p_demux );
@@ -228,6 +231,9 @@ void PIDRelease( demux_t *p_demux, ts_pid_t *pid )
             assert( pid->type != TYPE_FREE );
             break;
 
+        case TYPE_CAT:
+            break;
+
         case TYPE_PAT:
             ts_pat_Del( p_demux, pid->u.p_pat );
             pid->u.p_pat = NULL;
@@ -264,7 +270,7 @@ int UpdateHWFilter( demux_sys_t *p_sys, ts_pid_t *p_pid )
     if( !p_sys->b_access_control )
         return VLC_EGENERIC;
 
-    return stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_STATE,
+    return vlc_stream_Control( p_sys->stream, STREAM_SET_PRIVATE_ID_STATE,
                            p_pid->i_pid, !!(p_pid->i_flags & FLAG_FILTERED) );
 }
 

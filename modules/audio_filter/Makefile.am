@@ -76,17 +76,6 @@ audio_filter_LTLIBRARIES += \
 	libtrivial_channel_mixer_plugin.la
 
 # Converters
-liba52tofloat32_plugin_la_SOURCES = audio_filter/converter/a52tofloat32.c
-liba52tofloat32_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CPPFLAGS_a52tofloat32)
-liba52tofloat32_plugin_la_LIBADD = $(LIBM) $(LIBS_a52tofloat32)
-liba52tofloat32_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(audio_filterdir)'
-libdtstofloat32_plugin_la_SOURCES = audio_filter/converter/dtstofloat32.c
-libdtstofloat32_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(DCA_CFLAGS)
-libdtstofloat32_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(audio_filterdir)'
-libdtstofloat32_plugin_la_LIBADD = $(LIBM) $(DCA_LIBS)
-EXTRA_LTLIBRARIES += liba52tofloat32_plugin.la libdtstofloat32_plugin.la
-audio_filter_LTLIBRARIES += $(LTLIBa52tofloat32) $(LTLIBdtstofloat32)
-
 libmad_plugin_la_SOURCES = audio_filter/converter/mpgatofixed32.c
 libmad_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(MAD_CFLAGS)
 libmad_plugin_la_LIBADD = $(AM_LIBADD) $(MAD_LIBS)
@@ -98,13 +87,11 @@ libaudio_format_plugin_la_SOURCES = audio_filter/converter/format.c
 libaudio_format_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
 libaudio_format_plugin_la_LIBADD = $(LIBM)
 
-liba52tospdif_plugin_la_SOURCES = audio_filter/converter/a52tospdif.c
-libdtstospdif_plugin_la_SOURCES = audio_filter/converter/dtstospdif.c
+libtospdif_plugin_la_SOURCES = audio_filter/converter/tospdif.c
 
 audio_filter_LTLIBRARIES += \
-	liba52tospdif_plugin.la \
-	libaudio_format_plugin.la \
-	libdtstospdif_plugin.la
+	libtospdif_plugin.la \
+	libaudio_format_plugin.la
 
 # Resamplers
 libbandlimited_resampler_plugin_la_SOURCES = \

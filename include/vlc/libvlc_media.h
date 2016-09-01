@@ -265,16 +265,16 @@ typedef enum libvlc_media_parse_flag_t
  */
 typedef enum libvlc_media_parsed_status_t
 {
-    libvlc_media_parse_init,
-    libvlc_media_parse_skipped,
-    libvlc_media_parse_failed,
-    libvlc_media_parse_done,
+    libvlc_media_parsed_status_skipped = 1,
+    libvlc_media_parsed_status_failed,
+    libvlc_media_parsed_status_timeout,
+    libvlc_media_parsed_status_done,
 } libvlc_media_parsed_status_t;
 
 /**
  * Type of a media slave: subtitle or audio.
  */
-typedef enum
+typedef enum libvlc_media_slave_type_t
 {
     libvlc_media_slave_type_subtitle,
     libvlc_media_slave_type_audio,
@@ -284,11 +284,11 @@ typedef enum
  * A slave of a libvlc_media_t
  * \see libvlc_media_slaves_get
  */
-typedef struct
+typedef struct libvlc_media_slave_t
 {
+    char *                          psz_uri;
     libvlc_media_slave_type_t       i_type;
     unsigned int                    i_priority;
-    char                            psz_uri[];
 } libvlc_media_slave_t;
 
 /**
@@ -655,7 +655,7 @@ libvlc_media_parse( libvlc_media_t *p_md );
  * This fetches (local or network) art, meta data and/or tracks information.
  * This method is the extended version of libvlc_media_parse_with_options().
  *
- * To track when this is over you can listen to libvlc_MediaParsedStatus
+ * To track when this is over you can listen to libvlc_MediaParsedChanged
  * event. However if this functions returns an error, you will not receive any
  * events.
  *
@@ -663,7 +663,7 @@ libvlc_media_parse( libvlc_media_t *p_md );
  * these flags can be combined. By default, media is parsed if it's a local
  * file.
  *
- * \see libvlc_MediaParsedStatus
+ * \see libvlc_MediaParsedChanged
  * \see libvlc_media_get_meta
  * \see libvlc_media_tracks_get
  * \see libvlc_media_get_parsed_status
@@ -671,17 +671,21 @@ libvlc_media_parse( libvlc_media_t *p_md );
  *
  * \param p_md media descriptor object
  * \param parse_flag parse options:
+ * \param timeout maximum time allowed to preparse the media. If -1, the
+ * default "preparse-timeout" option will be used as a timeout. If 0, it will
+ * wait indefinitely. If > 0, the timeout will be used (in milliseconds).
  * \return -1 in case of error, 0 otherwise
  * \version LibVLC 3.0.0 or later
  */
 LIBVLC_API int
 libvlc_media_parse_with_options( libvlc_media_t *p_md,
-                                 libvlc_media_parse_flag_t parse_flag );
+                                 libvlc_media_parse_flag_t parse_flag,
+                                 int timeout );
 
 /**
  * Get Parsed status for media descriptor object.
  *
- * \see libvlc_MediaParsedStatus
+ * \see libvlc_MediaParsedChanged
  * \see libvlc_media_parsed_status_t
  *
  * \param p_md media descriptor object
@@ -786,9 +790,9 @@ libvlc_media_type_t libvlc_media_get_type( libvlc_media_t *p_md );
  * \version LibVLC 3.0.0 and later.
  *
  * \param p_md media descriptor object
- * \param psz_uri Uri of the slave (should contain a valid scheme).
  * \param i_type subtitle or audio
  * \param i_priority from 0 (low priority) to 4 (high priority)
+ * \param psz_uri Uri of the slave (should contain a valid scheme).
  *
  * \return 0 on success, -1 on error.
  */

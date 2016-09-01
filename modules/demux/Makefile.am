@@ -160,7 +160,7 @@ demux_LTLIBRARIES += libavformat_plugin.la
 endif
 endif
 
-libes_plugin_la_SOURCES  = demux/mpeg/es.c codec/dts_header.c codec/dts_header.h
+libes_plugin_la_SOURCES  = demux/mpeg/es.c packetizer/dts_header.c packetizer/dts_header.h
 demux_LTLIBRARIES += libes_plugin.la
 
 libh26x_plugin_la_SOURCES = demux/mpeg/h26x.c \
@@ -184,7 +184,7 @@ libmkv_plugin_la_SOURCES = \
 	demux/mp4/libmp4.c demux/vobsub.h \
 	demux/mkv/mkv.hpp demux/mkv/mkv.cpp \
 	demux/windows_audio_commons.h
-libmkv_plugin_la_SOURCES += codec/dts_header.h codec/dts_header.c
+libmkv_plugin_la_SOURCES += packetizer/dts_header.h packetizer/dts_header.c
 libmkv_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
 libmkv_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(demuxdir)'
 libmkv_plugin_la_LIBADD = $(LIBS_mkv)
@@ -235,7 +235,7 @@ demux_LTLIBRARIES += libplaylist_plugin.la
 libts_plugin_la_SOURCES = demux/mpeg/ts.c demux/mpeg/ts.h \
         demux/mpeg/ts_pid.h demux/mpeg/ts_pid_fwd.h demux/mpeg/ts_pid.c \
         demux/mpeg/ts_psi.h demux/mpeg/ts_psi.c \
-        demux/mpeg/ts_psi_eit.h demux/mpeg/ts_psi_eit.c \
+        demux/mpeg/ts_si.h demux/mpeg/ts_si.c \
         demux/mpeg/ts_psip.h demux/mpeg/ts_psip.c \
         demux/mpeg/ts_psip_dvbpsi_fixes.h demux/mpeg/ts_psip_dvbpsi_fixes.c \
         demux/mpeg/ts_decoders.h demux/mpeg/ts_decoders.c \

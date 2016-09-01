@@ -43,6 +43,7 @@
 #include <vlc_network.h>
 #include <vlc_block.h>
 #include <vlc_interrupt.h>
+#include <vlc_atomic.h>
 #ifdef HAVE_POLL
 # include <poll.h>
 #endif
@@ -83,13 +84,13 @@ struct access_sys_t
     block_fifo_t *fifo;
     vlc_sem_t semaphore;
     vlc_thread_t thread;
-    bool timeout_reached;
+    atomic_bool timeout_reached;
 };
 
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
-static block_t *BlockUDP( access_t * );
+static block_t *BlockUDP( access_t *, bool * );
 static int Control( access_t *, int, va_list );
 static void* ThreadRead( void *data );
 
@@ -99,14 +100,18 @@ static void* ThreadRead( void *data );
 static int Open( vlc_object_t *p_this )
 {
     access_t     *p_access = (access_t*)p_this;
-    access_sys_t *sys = malloc( sizeof( *sys ) );
+    access_sys_t *sys;
+
+    if( p_access->b_preparsing )
+        return VLC_EGENERIC;
+
+    sys = malloc( sizeof( *sys ) );
     if( unlikely( sys == NULL ) )
         return VLC_ENOMEM;
 
     p_access->p_sys = sys;
 
     /* Set up p_access */
-    access_InitFields( p_access );
     ACCESS_SET_CALLBACKS( NULL, BlockUDP, Control, NULL );
 
     char *psz_name = strdup( p_access->psz_location );
@@ -189,7 +194,7 @@ static int Open( vlc_object_t *p_this )
     vlc_sem_init( &sys->semaphore, 0 );
 
     sys->timeout = var_InheritInteger( p_access, "udp-timeout");
-    sys->timeout_reached = false;
+    atomic_init(&sys->timeout_reached, false);
     if( sys->timeout > 0)
         sys->timeout *= 1000;
 
@@ -233,15 +238,15 @@ static int Control( access_t *p_access, int i_query, va_list args )
 
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
-        case ACCESS_CAN_FASTSEEK:
-        case ACCESS_CAN_PAUSE:
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_SEEK:
+        case STREAM_CAN_FASTSEEK:
+        case STREAM_CAN_PAUSE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = false;
             break;
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg( args, int64_t * );
             *pi_64 = INT64_C(1000)
                    * var_InheritInteger(p_access, "network-caching");
@@ -256,22 +261,20 @@ static int Control( access_t *p_access, int i_query, va_list args )
 /*****************************************************************************
  * BlockUDP:
  *****************************************************************************/
-static block_t *BlockUDP( access_t *p_access )
+static block_t *BlockUDP( access_t *p_access, bool *restrict eof )
 {
     access_sys_t *sys = p_access->p_sys;
     block_t *block;
 
-    if (p_access->info.b_eof)
+    if (atomic_load(&sys->timeout_reached)) {
+        *eof = true;
         return NULL;
+    }
 
     vlc_sem_wait_i11e(&sys->semaphore);
     vlc_fifo_Lock(sys->fifo);
 
     block = vlc_fifo_DequeueAllUnlocked(sys->fifo);
-
-    if (unlikely(sys->timeout_reached == true))
-        p_access->info.b_eof=true;
-
     vlc_fifo_Unlock(sys->fifo);
 
     return block;
@@ -320,9 +323,7 @@ static void* ThreadRead( void *data )
             if (unlikely( poll_return == 0))
             {
                 msg_Err( access, "Timeout on receiving, timeout %d seconds", sys->timeout/1000 );
-                vlc_fifo_Lock(sys->fifo);
-                sys->timeout_reached=true;
-                vlc_fifo_Unlock(sys->fifo);
+                atomic_store(&sys->timeout_reached, true);
                 vlc_sem_post(&sys->semaphore);
                 len=0;
                 break;

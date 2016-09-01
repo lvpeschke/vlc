@@ -29,22 +29,12 @@
 #include <vlc_stream.h>
 
 /* */
-stream_t *stream_CommonNew( vlc_object_t *, void (*destroy)(stream_t *) );
 void stream_CommonDelete( stream_t *s );
 
 /**
  * This function creates a stream_t with an access_t back-end.
  */
-stream_t *stream_AccessNew(vlc_object_t *, input_thread_t *, const char *);
-
-/**
- * This function creates a new stream_t filter.
- *
- * You must release it using stream_Delete unless it is used as a
- * source to another filter.
- */
-stream_t *stream_FilterNew( stream_t *p_source,
-                            const char *psz_stream_filter );
+stream_t *stream_AccessNew(vlc_object_t *, input_thread_t *, bool, const char *);
 
 /**
  * Automatically wraps a stream with any applicable stream filter.
@@ -58,8 +48,8 @@ stream_t *stream_FilterAutoNew( stream_t *source ) VLC_USED;
  * This function creates a chain of filters according to the colon-separated
  * list.
  *
- * You must release the returned value using stream_Delete unless it is used as a
- * source to another filter.
+ * You must release the returned value using vlc_stream_Delete unless it is
+ * used as a source to another filter.
  */
 stream_t *stream_FilterChainNew( stream_t *p_source, const char *psz_chain );
 

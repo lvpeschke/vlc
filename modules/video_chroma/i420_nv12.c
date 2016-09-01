@@ -131,7 +131,6 @@ static void I420_YUV( filter_sys_t *p_sys, picture_t *p_src, picture_t *p_dst, b
     };
 
     CopyFromI420ToNv12( p_dst, plane, pitch,
-                        p_src->format.i_x_offset + p_src->format.i_visible_width,
                         p_src->format.i_y_offset + p_src->format.i_visible_height,
                         &p_sys->cache );
 }
@@ -160,6 +159,6 @@ static void YV12_NV12( filter_t *p_filter, picture_t *p_src,
  *****************************************************************************/
 vlc_module_begin ()
     set_description( N_("YUV planar to semiplanar conversions") )
-    set_capability( "video filter2", 160 )
+    set_capability( "video filter", 160 )
     set_callbacks( Create, Delete )
 vlc_module_end ()

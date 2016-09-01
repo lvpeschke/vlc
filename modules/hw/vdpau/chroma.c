@@ -652,7 +652,8 @@ static picture_t *Render(filter_t *filter, picture_t *src, bool import)
     err = vdp_video_mixer_render(sys->vdp, sys->mixer, VDP_INVALID_HANDLE,
                                  NULL, structure,
                                  MAX_PAST, past, surface, MAX_FUTURE, future,
-                                 &src_rect, output, &dst_rect, NULL, 0, NULL);
+                                 &src_rect, output, &dst_rect, &dst_rect, 0,
+                                 NULL);
     if (err != VDP_STATUS_OK)
     {
         msg_Err(filter, "video %s %s failure: %s", "mixer", "rendering",
@@ -808,7 +809,7 @@ static const char *const algo_names[] = {
 vlc_module_begin()
     set_shortname(N_("VDPAU"))
     set_description(N_("VDPAU surface conversions"))
-    set_capability("video filter2", 10)
+    set_capability("video filter", 10)
     set_category(CAT_VIDEO)
     set_subcategory(SUBCAT_VIDEO_VFILTER)
     set_callbacks(OutputOpen, OutputClose)

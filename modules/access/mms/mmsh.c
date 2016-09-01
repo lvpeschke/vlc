@@ -53,7 +53,7 @@
 int  MMSHOpen  ( access_t * );
 void MMSHClose ( access_t * );
 
-static block_t *Block( access_t *p_access );
+static block_t *Block( access_t *p_access, bool * );
 static int  Seek( access_t *, uint64_t );
 static int  Control( access_t *, int, va_list );
 
@@ -136,7 +136,7 @@ int MMSHOpen( access_t *p_access )
     }
 
     /* open a tcp connection */
-    vlc_UrlParse( &p_sys->url, p_access->psz_location );
+    vlc_UrlParse( &p_sys->url, p_access->psz_url );
     if( ( p_sys->url.psz_host == NULL ) ||
         ( *p_sys->url.psz_host == '\0' ) )
     {
@@ -207,23 +207,23 @@ static int Control( access_t *p_access, int i_query, va_list args )
 
     switch( i_query )
     {
-        case ACCESS_CAN_SEEK:
+        case STREAM_CAN_SEEK:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = !p_sys->b_broadcast;
             break;
 
-        case ACCESS_CAN_FASTSEEK:
+        case STREAM_CAN_FASTSEEK:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = false;
             break;
 
-        case ACCESS_CAN_PAUSE:
-        case ACCESS_CAN_CONTROL_PACE:
+        case STREAM_CAN_PAUSE:
+        case STREAM_CAN_CONTROL_PACE:
             pb_bool = (bool*)va_arg( args, bool* );
             *pb_bool = true;
             break;
 
-        case ACCESS_GET_SIZE:
+        case STREAM_GET_SIZE:
         {
             uint64_t *s = va_arg( args, uint64_t * );
             if (p_sys->b_broadcast)
@@ -232,13 +232,13 @@ static int Control( access_t *p_access, int i_query, va_list args )
             return VLC_SUCCESS;
         }
 
-        case ACCESS_GET_PTS_DELAY:
+        case STREAM_GET_PTS_DELAY:
             pi_64 = (int64_t*)va_arg( args, int64_t * );
             *pi_64 = INT64_C(1000)
                    * var_InheritInteger( p_access, "network-caching" );
             break;
 
-        case ACCESS_GET_PRIVATE_ID_STATE:
+        case STREAM_GET_PRIVATE_ID_STATE:
             i_int = (int)va_arg( args, int );
             pb_bool = (bool *)va_arg( args, bool * );
 
@@ -247,7 +247,7 @@ static int Control( access_t *p_access, int i_query, va_list args )
             *pb_bool =  p_sys->asfh.stream[i_int].i_selected ? true : false;
             break;
 
-        case ACCESS_SET_PRIVATE_ID_STATE:
+        case STREAM_SET_PRIVATE_ID_STATE:
         {
             i_int = (int)va_arg( args, int );
             b_bool = (bool)va_arg( args, int );
@@ -284,7 +284,7 @@ static int Control( access_t *p_access, int i_query, va_list args )
             return VLC_SUCCESS;
         }
 
-        case ACCESS_SET_PAUSE_STATE:
+        case STREAM_SET_PAUSE_STATE:
             b_bool = (bool)va_arg( args, int );
             if( b_bool )
                 Stop( p_access );
@@ -329,7 +329,6 @@ static int Seek( access_t *p_access, uint64_t i_pos )
     }
 
     p_sys->i_position = i_pos;
-    p_access->info.b_eof = false;
     p_sys->i_packet_used += i_offset;
 
     return VLC_SUCCESS;
@@ -338,7 +337,7 @@ static int Seek( access_t *p_access, uint64_t i_pos )
 /*****************************************************************************
  * Block:
  *****************************************************************************/
-static block_t *Block( access_t *p_access )
+static block_t *Block( access_t *p_access, bool *restrict eof )
 {
     access_sys_t *p_sys = p_access->p_sys;
     const unsigned i_packet_min = p_sys->asfh.i_min_data_packet_size;
@@ -395,7 +394,7 @@ static block_t *Block( access_t *p_access )
         }
         if( i_ret )
         {
-            p_access->info.b_eof = true;
+            *eof = true;
             return 0;
         }
     }
@@ -664,7 +663,7 @@ static int Describe( access_t  *p_access, char **ppsz_location )
         else if( !strcasecmp( psz, "Location" ) )
         {
             free( psz_location );
-            psz_location = strdup( p );
+            psz_location = vlc_uri_resolve( p_access->psz_url, p );
         }
         else if( !strcasecmp( psz, "Content-Length" ) )
         {
@@ -687,7 +686,7 @@ static int Describe( access_t  *p_access, char **ppsz_location )
     /* Handle the redirection */
     if( ( (i_code == 301) || (i_code == 302) ||
           (i_code == 303) || (i_code == 307) ) &&
-        psz_location && *psz_location )
+        psz_location )
     {
         msg_Dbg( p_access, "redirection to %s", psz_location );
         net_Close( p_sys->fd ); p_sys->fd = -1;
@@ -730,7 +729,7 @@ static int Describe( access_t  *p_access, char **ppsz_location )
     return VLC_SUCCESS;
 
 error:
-    if( p_sys->fd > 0 )
+    if( p_sys->fd >= 0 )
     {
         net_Close( p_sys->fd  );
         p_sys->fd = -1;
@@ -891,7 +890,7 @@ static void Stop( access_t *p_access )
     access_sys_t *p_sys = p_access->p_sys;
 
     msg_Dbg( p_access, "closing stream" );
-    if( p_sys->fd > 0 )
+    if( p_sys->fd >= 0 )
     {
         net_Close( p_sys->fd );
         p_sys->fd = -1;
