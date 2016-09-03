@@ -1,5 +1,5 @@
 /*****************************************************************************
- * extensions_manager.h: Extensions manager for Cocoa
+ * VLCExtensionsManager.h: Extensions manager for Cocoa
  ****************************************************************************
  * Copyright (C) 2012 VideoLAN and authors
  * $Id$
@@ -25,20 +25,16 @@
 # include "config.h"
 #endif
 
-#import "ExtensionsDialogProvider.h"
+#import "VLCExtensionsDialogProvider.h"
 #import "VLCMain.h"
 
 #import <vlc_extensions.h>
 
 #import <Cocoa/Cocoa.h>
 
-@class ExtensionsDialogProvider;
+@class VLCExtensionsDialogProvider;
 
-@protocol ExtensionsDelegate <NSObject>
-- (void)extensionsUpdated;
-@end
-
-@interface ExtensionsManager : NSObject
+@interface VLCExtensionsManager : NSObject
 
 - (void)buildMenu:(NSMenu *)extMenu;
 

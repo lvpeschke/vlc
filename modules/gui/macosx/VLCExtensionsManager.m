@@ -1,5 +1,5 @@
 /*****************************************************************************
- * extensions_manager.cpp: Extensions manager for Cocoa
+ * VLCExtensionsManager.m: Extensions manager for Cocoa
  ****************************************************************************
  * Copyright (C) 2009-2012 VideoLAN and authors
  * $Id$
@@ -22,9 +22,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-#import "ExtensionsManager.h"
+#import "VLCExtensionsManager.h"
 
-#import "ExtensionsDialogProvider.h"
+#import "VLCExtensionsDialogProvider.h"
 
 #import <vlc_modules.h>
 #import "assert.h"
@@ -33,20 +33,18 @@
 #define MENU_GET_ACTION(a) ((uint16_t)(((uint32_t)a) >> 16))
 #define MENU_GET_EXTENSION(a) ((uint16_t)(((uint32_t)a) & 0xFFFF))
 
-@interface ExtensionsManager()
+@interface VLCExtensionsManager()
 {
     extensions_manager_t *p_extensions_manager;
-    ExtensionsDialogProvider *_extensionDialogProvider;
+    VLCExtensionsDialogProvider *_extensionDialogProvider;
 
     NSMutableDictionary *p_extDict;
 
     BOOL b_failed; ///< Flag set to true if we could not load the module
-
-    id <ExtensionsDelegate> delegate;
 }
 @end
 
-@implementation ExtensionsManager
+@implementation VLCExtensionsManager
 
 - (id)init
 {
@@ -54,14 +52,12 @@
 
     if (self) {
         p_extensions_manager = NULL;
-        _extensionDialogProvider = [[ExtensionsDialogProvider alloc] init];
+        _extensionDialogProvider = [[VLCExtensionsDialogProvider alloc] init];
 
         p_extDict = [[NSMutableDictionary alloc] init];
 
         _isUnloading = false;
         b_failed = false;
-
-        delegate = nil;
     }
 
     return self;
@@ -165,7 +161,6 @@
         p_extensions_manager = (extensions_manager_t*)vlc_object_create(p_intf, sizeof(extensions_manager_t));
         if (!p_extensions_manager) {
             b_failed = true;
-            [delegate extensionsUpdated];
             return false;
         }
 
@@ -176,14 +171,12 @@
             vlc_object_release(p_extensions_manager);
             p_extensions_manager = NULL;
             b_failed = true;
-            [delegate extensionsUpdated];
             return false;
         }
 
         _isUnloading = false;
     }
     b_failed = false;
-    [delegate extensionsUpdated];
     return true;
 }
 
@@ -202,9 +195,6 @@
 {
     [self unloadExtensions];
     [self loadExtensions];
-
-    if (delegate)
-        [delegate extensionsUpdated];
 }
 
 - (void)triggerMenu:(id)sender

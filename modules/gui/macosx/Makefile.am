@@ -32,18 +32,18 @@ libmacosx_plugin_la_SOURCES = \
 	VLCMainWindowControlsBar.m VLCMainWindowControlsBar.h \
 	VLCConvertAndSaveWindowController.h VLCConvertAndSaveWindowController.m \
 	VLCCoreInteraction.h VLCCoreInteraction.m \
-	ExtensionsDialogProvider.h ExtensionsDialogProvider.m \
-	ExtensionsManager.h ExtensionsManager.m \
+	VLCExtensionsDialogProvider.h VLCExtensionsDialogProvider.m \
+	VLCExtensionsManager.h VLCExtensionsManager.m \
 	VLCFSPanel.h VLCFSPanel.m \
 	VLCHelpWindowController.h VLCHelpWindowController.m \
 	VLCMain+OldPrefs.h VLCMain+OldPrefs.m \
 	VLCMain.h VLCMain.m \
 	VLCApplication.h VLCApplication.m \
 	iTunes.h \
-	KeyboardBacklight.h KeyboardBacklight.m \
+	VLCKeyboardBacklightControl.h VLCKeyboardBacklightControl.m \
 	macosx.m \
 	VLCMainMenu.h VLCMainMenu.m \
-	MainWindowTitle.h MainWindowTitle.m \
+	VLCMainWindowTitleView.h VLCMainWindowTitleView.m \
 	misc.h misc.m \
 	VLCOpenWindowController.h VLCOpenWindowController.m \
 	VLCOutput.h VLCOutput.m \
@@ -57,7 +57,8 @@ libmacosx_plugin_la_SOURCES = \
 	PXSourceList.h PXSourceList.m \
 	PXSourceListDataSource.h PXSourceListDelegate.h \
 	SideBarItem.h SideBarItem.m \
-	SharedDialogs.h SharedDialogs.m \
+	VLCPopupPanelController.h VLCPopupPanelController.m \
+	VLCTextfieldPanelController.h VLCTextfieldPanelController.m \
 	simple_prefs.h simple_prefs.m \
 	SPInvocationGrabbing.h SPInvocationGrabbing.m \
 	SPMediaKeyTap.h SPMediaKeyTap.m \

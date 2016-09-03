@@ -555,10 +555,10 @@ modules/gui/macosx/VLCCoreDialogProvider.h
 modules/gui/macosx/VLCCoreDialogProvider.m
 modules/gui/macosx/VLCCoreInteraction.h
 modules/gui/macosx/VLCCoreInteraction.m
-modules/gui/macosx/ExtensionsDialogProvider.h
-modules/gui/macosx/ExtensionsDialogProvider.m
-modules/gui/macosx/ExtensionsManager.h
-modules/gui/macosx/ExtensionsManager.m
+modules/gui/macosx/VLCExtensionsDialogProvider.h
+modules/gui/macosx/VLCExtensionsDialogProvider.m
+modules/gui/macosx/VLCExtensionsManager.h
+modules/gui/macosx/VLCExtensionsManager.m
 modules/gui/macosx/VLCEyeTvController.h
 modules/gui/macosx/VLCEyeTvController.m
 modules/gui/macosx/VLCFSPanel.h
@@ -575,8 +575,8 @@ modules/gui/macosx/VLCMainWindow.h
 modules/gui/macosx/VLCMainWindow.m
 modules/gui/macosx/VLCMainWindowControlsBar.h
 modules/gui/macosx/VLCMainWindowControlsBar.m
-modules/gui/macosx/MainWindowTitle.h
-modules/gui/macosx/MainWindowTitle.m
+modules/gui/macosx/VLCMainWindowTitleView.h
+modules/gui/macosx/VLCMainWindowTitleView.m
 modules/gui/macosx/misc.h
 modules/gui/macosx/misc.m
 modules/gui/macosx/VLCOpenWindowController.h
