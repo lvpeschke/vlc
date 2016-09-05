@@ -210,8 +210,8 @@ static MP4_Box_t *MP4_ReadBoxRestricted( stream_t *p_stream, MP4_Box_t *p_father
 
     if( peekbox.i_size < 8 )
     {
-        msg_Warn( p_stream, "found an invalid sized %"PRIu64" box %4.4s",
-                  peekbox.i_size, (char *) &peekbox.i_type );
+        msg_Warn( p_stream, "found an invalid sized %"PRIu64" box %4.4s @%ld",
+                  peekbox.i_size, (char *) &peekbox.i_type, vlc_stream_Tell(p_stream) );
         return NULL;
     }
 
@@ -295,11 +295,14 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
         return 0;
     }
 
+    uint64_t i_last_pos = 0; /* used to detect read failure loops */
     const uint64_t i_end = p_container->i_pos + p_container->i_size;
     MP4_Box_t *p_box = NULL;
     bool b_onexclude = false;
+    bool b_continue;
     do
     {
+        b_continue = false;
         if ( p_container->i_size )
         {
             const uint64_t i_tell = vlc_stream_Tell( p_stream );
@@ -318,6 +321,7 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
         b_onexclude = false; /* If stopped due exclude list */
         if( (p_box = MP4_ReadBoxRestricted( p_stream, p_container, NULL, excludelist, &b_onexclude )) )
         {
+            b_continue = true;
             p_box->i_index = i_index;
             for(size_t i=0; stoplist && stoplist[i]; i++)
             {
@@ -326,17 +330,23 @@ static int MP4_ReadBoxContainerChildrenIndexed( stream_t *p_stream,
             }
         }
 
-        if ( p_container->i_size )
+        const uint64_t i_tell = vlc_stream_Tell( p_stream );
+        if ( p_container->i_size && i_tell >= i_end )
         {
-            const uint64_t i_tell = vlc_stream_Tell( p_stream );
-            if( i_tell >= i_end )
-            {
-                assert( i_tell == i_end );
-                break;
-            }
+            assert( i_tell == i_end );
+            break;
         }
 
-    } while( p_box );
+        if ( !p_box )
+        {
+            /* Continue with next if box fails to load */
+            if( i_last_pos == i_tell )
+                break;
+            i_last_pos = i_tell;
+            b_continue = true;
+        }
+
+    } while( b_continue );
 
     /* Always move to end of container */
     if ( !b_onexclude &&  p_container->i_size )
@@ -1608,6 +1618,41 @@ static int MP4_ReadBox_avcC( stream_t *p_stream, MP4_Box_t *p_box )
 error:
     MP4_FreeBox_avcC( p_box );
     MP4_READBOX_EXIT( 0 );
+}
+
+static void MP4_FreeBox_vpcC( MP4_Box_t *p_box )
+{
+    free( p_box->data.p_vpcC->p_codec_init_data );
+}
+
+static int MP4_ReadBox_vpcC( stream_t *p_stream, MP4_Box_t *p_box )
+{
+    MP4_READBOX_ENTER( MP4_Box_data_vpcC_t, MP4_FreeBox_vpcC );
+    MP4_Box_data_vpcC_t *p_vpcC = p_box->data.p_vpcC;
+
+    if( p_box->i_size < 6 )
+        MP4_READBOX_EXIT( 0 );
+
+    uint8_t i_version;
+    MP4_GET1BYTE( i_version );
+    if( i_version != 0 )
+        MP4_READBOX_EXIT( 0 );
+
+    MP4_GET1BYTE( p_vpcC->i_profile );
+    MP4_GET1BYTE( p_vpcC->i_level );
+    MP4_GET1BYTE( p_vpcC->i_bit_depth );
+    p_vpcC->i_color_space = p_vpcC->i_bit_depth & 0x0F;
+    p_vpcC->i_bit_depth >>= 4;
+    MP4_GET1BYTE( p_vpcC->i_chroma_subsampling );
+    p_vpcC->i_xfer_function = ( p_vpcC->i_chroma_subsampling & 0x0F ) >> 1;
+    p_vpcC->i_fullrange = p_vpcC->i_chroma_subsampling & 0x01;
+    p_vpcC->i_chroma_subsampling >>= 4;
+    MP4_GET2BYTES( p_vpcC->i_codec_init_datasize );
+    if( p_vpcC->i_codec_init_datasize > i_read )
+        p_vpcC->i_codec_init_datasize = i_read;
+    memcpy( p_vpcC->p_codec_init_data, p_peek, i_read );
+
+    MP4_READBOX_EXIT( 1 );
 }
 
 static void MP4_FreeBox_WMA2( MP4_Box_t *p_box )
@@ -3548,36 +3593,53 @@ static int MP4_ReadBox_colr( stream_t *p_stream, MP4_Box_t *p_box )
 
 static int MP4_ReadBox_meta( stream_t *p_stream, MP4_Box_t *p_box )
 {
-    uint8_t meta_data[8];
-    int i_actually_read;
+    const uint8_t *p_peek;
+    const size_t i_headersize = mp4_box_headersize( p_box );
 
-    // skip over box header
-    i_actually_read = vlc_stream_Read( p_stream, meta_data, 8 );
-    if( i_actually_read < 8 )
+    if( p_box->i_size < 16 || p_box->i_size - i_headersize < 8 )
         return 0;
 
-    if ( p_box->p_father && p_box->p_father->i_type == ATOM_udta ) /* itunes udta/meta */
+    /* skip over box header */
+    if( vlc_stream_Read( p_stream, NULL, i_headersize ) < (ssize_t) i_headersize )
+        return 0;
+
+    /* meta content starts with a 4 byte version/flags value (should be 0) */
+    if( vlc_stream_Peek( p_stream, &p_peek, 8 ) < 8 )
+        return 0;
+
+    if( !memcmp( p_peek, "\0\0\0", 4 ) ) /* correct header case */
     {
-        /* meta content starts with a 4 byte version/flags value (should be 0) */
-        i_actually_read = vlc_stream_Read( p_stream, meta_data, 4 );
-        if( i_actually_read < 4 || memcmp( meta_data, "\0\0\0", 4 ) )
+        if( vlc_stream_Read( p_stream, NULL, 4 ) < 4 )
             return 0;
     }
+    else if( memcmp( &p_peek[4], "hdlr", 4 ) ) /* Broken, headerless ones */
+    {
+       return 0;
+    }
 
+    /* load child atoms up to the handler (which should be next anyway) */
     const uint32_t stoplist[] = { ATOM_hdlr, 0 };
     if ( !MP4_ReadBoxContainerChildren( p_stream, p_box, stoplist ) )
         return 0;
 
     /* Mandatory */
     const MP4_Box_t *p_hdlr = MP4_BoxGet( p_box, "hdlr" );
-    if ( !p_hdlr || !BOXDATA(p_hdlr) ||
-         ( BOXDATA(p_hdlr)->i_handler_type != HANDLER_mdta &&
-           BOXDATA(p_hdlr)->i_handler_type != HANDLER_mdir ) ||
-         BOXDATA(p_hdlr)->i_version != 0 )
-        return 0;
+    if ( p_hdlr && BOXDATA(p_hdlr) && BOXDATA(p_hdlr)->i_version == 0 )
+    {
+        p_box->i_handler = BOXDATA(p_hdlr)->i_handler_type;
+        switch( p_box->i_handler )
+        {
+            case HANDLER_mdta:
+            case HANDLER_mdir:
+                /* then it behaves like a container */
+                return MP4_ReadBoxContainerChildren( p_stream, p_box, NULL );
+            default:
+                /* skip parsing, will be seen as empty container */
+                break;
+        }
+    }
 
-    /* then it behaves like a container */
-    return MP4_ReadBoxContainerChildren( p_stream, p_box, NULL );
+    return 1;
 }
 
 static int MP4_ReadBox_iods( stream_t *p_stream, MP4_Box_t *p_box )
@@ -4030,6 +4092,9 @@ static const struct
     { ATOM_avcC,    MP4_ReadBox_avcC,         ATOM_avc1 },
     { ATOM_avcC,    MP4_ReadBox_avcC,         ATOM_avc3 },
     { ATOM_hvcC,    MP4_ReadBox_Binary,       0 },
+    { ATOM_vpcC,    MP4_ReadBox_vpcC,         ATOM_vp08 },
+    { ATOM_vpcC,    MP4_ReadBox_vpcC,         ATOM_vp09 },
+    { ATOM_vpcC,    MP4_ReadBox_vpcC,         ATOM_vp10 },
     { ATOM_dac3,    MP4_ReadBox_dac3,         0 },
     { ATOM_dec3,    MP4_ReadBox_dec3,         0 },
     { ATOM_dvc1,    MP4_ReadBox_dvc1,         ATOM_vc1  },

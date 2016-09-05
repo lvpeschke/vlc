@@ -160,7 +160,9 @@ demux_LTLIBRARIES += libavformat_plugin.la
 endif
 endif
 
-libes_plugin_la_SOURCES  = demux/mpeg/es.c packetizer/dts_header.c packetizer/dts_header.h
+libes_plugin_la_SOURCES  = demux/mpeg/es.c \
+                           meta_engine/ID3Tag.h \
+                           packetizer/dts_header.c packetizer/dts_header.h \
 demux_LTLIBRARIES += libes_plugin.la
 
 libh26x_plugin_la_SOURCES = demux/mpeg/h26x.c \
@@ -411,6 +413,7 @@ libadaptive_hls_SOURCES = \
     demux/hls/HLSManager.cpp \
     demux/hls/HLSStreams.hpp \
     demux/hls/HLSStreams.cpp
+libadaptive_hls_SOURCES += meta_engine/ID3Tag.h
 
 libadaptive_smooth_SOURCES = \
     demux/smooth/mp4/IndexReader.cpp \
