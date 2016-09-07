@@ -2,14 +2,18 @@ CLEANFILES = skins2/default.vlt
 MOSTLYCLEANFILES =
 EXTRA_DIST =
 
-appdatadir = $(datadir)/applications
+desktopdir = $(datadir)/applications
 if !HAVE_WIN32
 if !HAVE_DARWIN
-appdata_DATA = vlc.desktop
+desktop_DATA = vlc.desktop
 endif
 endif
+appdatadir = $(datarootdir)/appdata
+appdata_DATA = $(appdata_in_files:.xml.in=.xml)
+appdata_in_files = vlc.appdata.xml.in
+
 EXTRA_DIST += vlc.desktop.in vlc.desktop.mimetypes
-CLEANFILES += $(appdata_DATA)
+CLEANFILES += $(desktop_DATA) $(appdata_DATA)
 
 vlc.desktop: vlc.desktop.in $(top_builddir)/config.status
 	$(AM_V_GEN)sed -e 's,\@bindir\@,$(bindir),g' < "$<" > tmp-$@
@@ -17,8 +21,8 @@ vlc.desktop: vlc.desktop.in $(top_builddir)/config.status
 	$(AM_V_at)$(DESKTOP_FILE_VALIDATE) tmp-$@
 	$(AM_V_at)mv -f tmp-$@ $@
 
-vlc.appdata.xml: vlc.appdata.xml.in $(top_builddir)/config.status
-	cd $(top_builddir) && $(SHELL) ./config.status --file=$(subdir)/$@
+vlc.appdata.xml: vlc.appdata.xml.in
+	$(AM_V_GEN)$(MSGFMT) --xml --template $< -d $(top_srcdir)/po -o $@
 
 iconsdatadir = $(datadir)/icons/hicolor
 icons16dir = $(iconsdatadir)/16x16/apps
