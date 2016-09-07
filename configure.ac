@@ -2314,10 +2314,13 @@ dnl
 AC_ARG_ENABLE(avcodec,
 [  --enable-avcodec        libavcodec codec (default enabled)])
 AS_IF([test "${enable_avcodec}" != "no"], [
-  PKG_CHECK_MODULES(AVCODEC,[libavcodec >= 55.0.0 libavutil >= 52.0.0], [
-    dnl PKG_CHECK_EXISTS([libavcodec < 56],, [
-    dnl   AC_MSG_ERROR([libavcodec versions 56 and later are not supported yet.])
-    dnl ])
+  dnl We need >=57.16.0 from libav or >=57.37.100 from ffmpeg
+  case "${avfork}" in
+    libav) av_codec_ver="57.16.0" ;;
+    ffmpeg) av_codec_ver="57.37.100" ;;
+    *) AC_MSG_ERROR([Missing libav or FFmpeg])
+  esac
+  PKG_CHECK_MODULES(AVCODEC,[libavcodec >= ${av_codec_ver} libavutil >= 52.0.0], [
     VLC_SAVE_FLAGS
     CPPFLAGS="${CPPFLAGS} ${AVCODEC_CFLAGS}"
     CFLAGS="${CFLAGS} ${AVCODEC_CFLAGS}"
@@ -2372,15 +2375,6 @@ AM_CONDITIONAL([HAVE_VAAPI_X11], [test "${have_vaapi_x11}" = "yes"])
 
 have_avcodec_vaapi="no"
 AS_IF([test "${have_vaapi}" = "yes" -a "${have_avcodec}" = "yes"], [
-  case "${avfork}" in
-    ffmpeg)
-      PKG_CHECK_EXISTS([libavcodec >= 57.10.100], [
-        PKG_CHECK_EXISTS([libavcodec <= 57.12.100], [
-          AC_MSG_ERROR([VA API requires FFmpeg libavcodec < 57.10 or > 57.12 or libav.])
-        ])
-      ])
-      ;;
-  esac
   VLC_SAVE_FLAGS
   CPPFLAGS="${CPPFLAGS} ${AVCODEC_CFLAGS}"
   CFLAGS="${CFLAGS} ${AVCODEC_CFLAGS}"
