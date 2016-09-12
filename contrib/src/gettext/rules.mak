@@ -1,5 +1,5 @@
 # gettext
-GETTEXT_VERSION=0.19.6
+GETTEXT_VERSION=0.19.8.1
 GETTEXT_URL=$(GNU)/gettext/gettext-$(GETTEXT_VERSION).tar.gz
 
 PKGS += gettext
@@ -17,19 +17,22 @@ gettext: gettext-$(GETTEXT_VERSION).tar.gz .sum-gettext
 	$(UNPACK)
 	$(MOVE)
 
-DEPS_gettext = iconv $(DEPS_iconv)
+DEPS_gettext = iconv $(DEPS_iconv) libxml2 $(DEPS_libxml2)
 
+GETTEXT_CFLAGS := $(CFLAGS)
 GETTEXT_CONF = \
 	--disable-relocatable \
 	--disable-java \
 	--disable-native-java \
-	--without-emacs
+	--without-emacs \
+	--without-included-libxml
 ifdef HAVE_WIN32
 GETTEXT_CONF += --disable-threads
+GETTEXT_CFLAGS += -DLIBXML_STATIC
 endif
 
 .gettext: gettext
-	cd $< && $(HOSTVARS) ./configure $(HOSTCONF) $(GETTEXT_CONF)
+	cd $< && $(HOSTVARS) ./configure $(HOSTCONF) CFLAGS="$(GETTEXT_CFLAGS)" $(GETTEXT_CONF)
 ifndef HAVE_ANDROID
 	cd $< && $(MAKE) install
 else
