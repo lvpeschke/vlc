@@ -44,8 +44,6 @@
 #include <errno.h>
 #include <assert.h>
 
-#undef HAVE_RECVMMSG
-
 #define RTSP_DEFAULT_PORT 554
 #define RTSP_RECEIVE_BUFFER 2048
 #define RTP_HEADER_SIZE 12
@@ -62,6 +60,8 @@ static void satip_close(vlc_object_t *);
 #define MULTICAST_TEXT N_("Request multicast stream")
 #define MULTICAST_LONGTEXT N_("Request server to send stream as multicast")
 
+#define SATIP_HOST_TEXT N_("Host")
+
 vlc_module_begin()
     set_shortname("satip")
     set_description( N_("SAT>IP Receiver Plugin") )
@@ -71,7 +71,9 @@ vlc_module_begin()
     set_subcategory(SUBCAT_INPUT_ACCESS)
     add_integer("satip-buffer", 0x400000, BUFFER_TEXT, BUFFER_LONGTEXT, true)
     add_bool("satip-multicast", false, MULTICAST_TEXT, MULTICAST_LONGTEXT, true)
-    add_shortcut("satip")
+    add_string("satip-host", "", SATIP_HOST_TEXT, SATIP_HOST_TEXT, true)
+    change_safe()
+    add_shortcut("rtsp", "satip")
 vlc_module_end()
 
 enum rtsp_state {
@@ -464,7 +466,7 @@ static void *satip_thread(void *data) {
             continue;
 
         last_recv = mdate();
-        for (size_t i = 0; i < retval; ++i) {
+        for (int i = 0; i < retval; ++i) {
             block_t *block = input_blocks[i];
 
             len = msgs[i].msg_len;
@@ -627,6 +629,8 @@ static int satip_open(vlc_object_t *obj)
 
     msg_Dbg(access, "try to open '%s'", access->psz_url);
 
+    char *psz_host = var_InheritString(access, "satip-host");
+
     sys->udp_sock = -1;
     sys->rtcp_sock = -1;
 
@@ -649,17 +653,20 @@ static int satip_open(vlc_object_t *obj)
     vlc_UrlParse(&url, psz_lower_url);
     if (url.i_port <= 0)
         url.i_port = RTSP_DEFAULT_PORT;
+    if (psz_host == NULL) {
+        psz_host = strdup(url.psz_host);
+    }
 
-    msg_Dbg(access, "connect to host '%s'", url.psz_host);
-    sys->tcp_sock = net_ConnectTCP(access, url.psz_host, url.i_port);
+    msg_Dbg(access, "connect to host '%s'", psz_host);
+    sys->tcp_sock = net_ConnectTCP(access, psz_host, url.i_port);
     if (sys->tcp_sock < 0) {
         msg_Err(access, "Failed to connect to RTSP server %s:%d",
-                url.psz_host, url.i_port);
+                psz_host, url.i_port);
         goto error;
     }
     setsockopt (sys->tcp_sock, SOL_SOCKET, SO_KEEPALIVE, &(int){ 1 }, sizeof (int));
 
-    if (asprintf(&sys->content_base, "rtsp://%s:%d/", url.psz_host,
+    if (asprintf(&sys->content_base, "rtsp://%s:%d/", psz_host,
              url.i_port) < 0) {
         sys->content_base = NULL;
         goto error;
@@ -668,23 +675,39 @@ static int satip_open(vlc_object_t *obj)
     sys->last_seq_nr = 0;
     sys->keepalive_interval = (KEEPALIVE_INTERVAL - KEEPALIVE_MARGIN);
 
+    vlc_url_t setup_url = url;
+
+    // substitute "sat.ip" if present with an the host IP that was fetched during device discovery
+    if( !strncasecmp( setup_url.psz_host, "sat.ip", 6 ) ) {
+        setup_url.psz_host = psz_host;
+    }
+
+    // reverse the satip protocol trick, as SAT>IP believes to be RTSP
+    if( !strncasecmp( setup_url.psz_protocol, "satip", 5 ) ) {
+        setup_url.psz_protocol = (char *)"rtsp";
+    }
+
+    char *psz_setup_url = vlc_uri_compose(&setup_url);
     if (multicast) {
         net_Printf(access, sys->tcp_sock,
-                "SETUP rtsp://%s RTSP/1.0\r\n"
+                "SETUP %s RTSP/1.0\r\n"
                 "CSeq: %d\r\n"
                 "Transport: RTP/AVP;multicast\r\n\r\n",
-                psz_lower_location, sys->cseq++);
+                psz_setup_url, sys->cseq++);
     } else {
         /* open UDP socket to acquire a free port to use */
-        if (satip_bind_ports(access))
+        if (satip_bind_ports(access)) {
+            free(psz_setup_url);
             goto error;
+        }
 
         net_Printf(access, sys->tcp_sock,
-                "SETUP rtsp://%s RTSP/1.0\r\n"
+                "SETUP %s RTSP/1.0\r\n"
                 "CSeq: %d\r\n"
                 "Transport: RTP/AVP;unicast;client_port=%d-%d\r\n\r\n",
-                psz_lower_location, sys->cseq++, sys->udp_port, sys->udp_port + 1);
+                psz_setup_url, sys->cseq++, sys->udp_port, sys->udp_port + 1);
     }
+    free(psz_setup_url);
 
     bool interrupted = false;
     if (rtsp_handle(access, &interrupted) != RTSP_RESULT_OK) {
@@ -748,11 +771,12 @@ static int satip_open(vlc_object_t *obj)
     access->pf_control = satip_control;
     access->pf_block = satip_block;
 
+    free(psz_host);
     free(psz_lower_url);
-    vlc_UrlClean(&url);
     return VLC_SUCCESS;
 
 error:
+    free(psz_host);
     free(psz_lower_url);
     vlc_UrlClean(&url);
 

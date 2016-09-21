@@ -693,7 +693,7 @@ void PlaylistManager::updateControlsContentType()
     }
 }
 
-AbstractAdaptationLogic *PlaylistManager::createLogic(AbstractAdaptationLogic::LogicType type, HTTPConnectionManager *conn)
+AbstractAdaptationLogic *PlaylistManager::createLogic(AbstractAdaptationLogic::LogicType type, AbstractConnectionManager *conn)
 {
     switch(type)
     {

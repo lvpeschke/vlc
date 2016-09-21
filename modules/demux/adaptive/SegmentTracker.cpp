@@ -115,7 +115,8 @@ void SegmentTracker::reset()
     format = StreamFormat::UNSUPPORTED;
 }
 
-SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed, HTTPConnectionManager *connManager)
+SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
+                                            AbstractConnectionManager *connManager)
 {
     /* LVP added, TFE */
     std::cerr << "TFE DEBUG SegmentTracker getNextChunk, " << mdate() << std::endl;

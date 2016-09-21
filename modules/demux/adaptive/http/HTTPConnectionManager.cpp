@@ -31,15 +31,37 @@
 #include "Sockets.hpp"
 #include "Downloader.hpp"
 #include <vlc_url.h>
-/* LVP added */
-#include <iostream>
-#include <ctime>
 
 using namespace adaptive::http;
 
-HTTPConnectionManager::HTTPConnectionManager    (vlc_object_t *p_object_, ConnectionFactory *factory_) :
-                       p_object                 (p_object_),
-                       rateObserver             (NULL)
+AbstractConnectionManager::AbstractConnectionManager(vlc_object_t *p_object_)
+    : IDownloadRateObserver()
+{
+    p_object = p_object_;
+    rateObserver = NULL;
+}
+
+AbstractConnectionManager::~AbstractConnectionManager()
+{
+
+}
+
+void AbstractConnectionManager::updateDownloadRate(size_t size, mtime_t time)
+{
+    if(rateObserver) {
+        rateObserver->updateDownloadRate(size, time);
+        /* LVP added, TFE */
+        std::cerr << "TFE updateDownloadRate in HTTPConnectionManager, " << mdate() << std::endl;
+    }
+}
+
+void AbstractConnectionManager::setDownloadRateObserver(IDownloadRateObserver *obs)
+{
+    rateObserver = obs;
+}
+
+HTTPConnectionManager::HTTPConnectionManager    (vlc_object_t *p_object_, ConnectionFactory *factory_)
+    : AbstractConnectionManager( p_object_ )
 {
     vlc_mutex_init(&lock);
     downloader = new (std::nothrow) Downloader();
@@ -64,9 +86,6 @@ HTTPConnectionManager::~HTTPConnectionManager   ()
 
 void HTTPConnectionManager::closeAllConnections      ()
 {
-    /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::closeAllConnections");
-
     vlc_mutex_lock(&lock);
     releaseAllConnections();
     vlc_delete_all(this->connectionPool);
@@ -75,9 +94,6 @@ void HTTPConnectionManager::closeAllConnections      ()
 
 void HTTPConnectionManager::releaseAllConnections()
 {
-    /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::releaseAllConnections");
-
     std::vector<AbstractConnection *>::iterator it;
     for(it = connectionPool.begin(); it != connectionPool.end(); ++it)
         (*it)->setUsed(false);
@@ -85,33 +101,18 @@ void HTTPConnectionManager::releaseAllConnections()
 
 AbstractConnection * HTTPConnectionManager::reuseConnection(ConnectionParams &params)
 {
-    /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection, connectionPool has size %d", connectionPool.size());
-
     std::vector<AbstractConnection *>::const_iterator it;
     for(it = connectionPool.begin(); it != connectionPool.end(); ++it)
     {
         AbstractConnection *conn = *it;
-        if(conn->canReuse(params)) {
+        if(conn->canReuse(params))
             return conn;
-        } else {
-            /* LVP added */
-            msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection --> cannot reuse");
-        }
-
     }
-
-    /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::reuseConnection --> did not find any");
-
     return NULL;
 }
 
 AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &params)
 {
-    /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::getConnection");
-
     if(unlikely(!factory || !downloader))
         return NULL;
 
@@ -119,9 +120,6 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
     AbstractConnection *conn = reuseConnection(params);
     if(!conn)
     {
-        /* LVP added */
-        msg_Dbg(p_object, "LVP entered HTTPConnectionManager::getConnection --> create new");
-
         conn = factory->createConnection(p_object, params);
         if(!conn)
         {
@@ -130,10 +128,6 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
         }
 
         connectionPool.push_back(conn);
-
-        /* LVP added, TFE */
-        std::cerr << "TFE create new HTTP connection, " << mdate() << std::endl;
-        std::cerr << "TFE new connectionPool.size, " << mdate() << ", " << connectionPool.size() << std::endl;
 
         if (!conn->prepare(params))
         {
@@ -147,19 +141,16 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
     return conn;
 }
 
-void HTTPConnectionManager::updateDownloadRate(size_t size, mtime_t time)
+void HTTPConnectionManager::start(AbstractChunkSource *source)
 {
-    /* LVP added */
-    msg_Dbg(p_object, "LVP entered HTTPConnectionManager::updateDownloadRate");
-
-    if(rateObserver) {
-        rateObserver->updateDownloadRate(size, time);
-        /* LVP added, TFE */
-        std::cerr << "TFE updateDownloadRate in HTTPConnectionManager, " << mdate() << std::endl;
-    }
+    HTTPChunkBufferedSource *src = dynamic_cast<HTTPChunkBufferedSource *>(source);
+    if(src)
+        downloader->schedule(src);
 }
 
-void HTTPConnectionManager::setDownloadRateObserver(IDownloadRateObserver *obs)
+void HTTPConnectionManager::cancel(AbstractChunkSource *source)
 {
-    rateObserver = obs;
+    HTTPChunkBufferedSource *src = dynamic_cast<HTTPChunkBufferedSource *>(source);
+    if(src)
+        downloader->cancel(src);
 }

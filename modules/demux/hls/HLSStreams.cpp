@@ -123,19 +123,23 @@ block_t * HLSStream::checkBlock(block_t *p_block, bool b_first)
     if(b_first && p_block &&
        p_block->i_buffer >= 10 && ID3TAG_IsTag(p_block->p_buffer, false))
     {
-        size_t i_size = ID3TAG_Parse( p_block->p_buffer, p_block->i_buffer,
-                                      ID3TAG_Parse_Handler, static_cast<void *>(this) );
-
-        /* Skip ID3 for demuxer */
-        p_block->p_buffer += i_size;
-        p_block->i_buffer -= i_size;
+        while( p_block->i_buffer )
+        {
+            size_t i_size = ID3TAG_Parse( p_block->p_buffer, p_block->i_buffer,
+                                          ID3TAG_Parse_Handler, static_cast<void *>(this) );
+            /* Skip ID3 for demuxer */
+            p_block->p_buffer += i_size;
+            p_block->i_buffer -= i_size;
+            if( i_size == 0 )
+                break;
+        }
     }
 
     return p_block;
 }
 
 AbstractStream * HLSStreamFactory::create(demux_t *realdemux, const StreamFormat &,
-                               SegmentTracker *tracker, HTTPConnectionManager *manager) const
+                               SegmentTracker *tracker, AbstractConnectionManager *manager) const
 {
     HLSStream *stream = new (std::nothrow) HLSStream(realdemux);
     if(stream && !stream->init(StreamFormat(StreamFormat::UNKNOWN), tracker, manager))

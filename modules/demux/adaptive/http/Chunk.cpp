@@ -120,7 +120,7 @@ block_t * AbstractChunk::read(size_t size)
     return doRead(size, false);
 }
 
-HTTPChunkSource::HTTPChunkSource(const std::string& url, HTTPConnectionManager *manager) :
+HTTPChunkSource::HTTPChunkSource(const std::string& url, AbstractConnectionManager *manager) :
     AbstractChunkSource(),
     connection   (NULL),
     connManager  (manager),
@@ -241,7 +241,7 @@ block_t * HTTPChunkSource::readBlock()
     return read(HTTPChunkSource::CHUNK_SIZE);
 }
 
-HTTPChunkBufferedSource::HTTPChunkBufferedSource(const std::string& url, HTTPConnectionManager *manager) :
+HTTPChunkBufferedSource::HTTPChunkBufferedSource(const std::string& url, AbstractConnectionManager *manager) :
     HTTPChunkSource(url, manager),
     p_head     (NULL),
     pp_tail    (&p_head),
@@ -267,7 +267,7 @@ HTTPChunkBufferedSource::~HTTPChunkBufferedSource()
     buffered = 0;
     vlc_mutex_unlock(&lock);
 
-    connManager->downloader->cancel(this);
+    connManager->cancel(this);
 
     vlc_cond_destroy(&avail);
     vlc_mutex_destroy(&lock);
@@ -467,7 +467,7 @@ block_t * HTTPChunkBufferedSource::read(size_t readsize)
     return p_block;
 }
 
-HTTPChunk::HTTPChunk(const std::string &url, HTTPConnectionManager *manager):
+HTTPChunk::HTTPChunk(const std::string &url, AbstractConnectionManager *manager):
     AbstractChunk(new HTTPChunkSource(url, manager))
 {
 
