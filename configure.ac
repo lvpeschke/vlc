@@ -79,7 +79,7 @@ dnl Check for compiler properties
 AC_C_CONST
 AC_C_INLINE
 AC_C_RESTRICT
-AX_CXX_COMPILE_STDCXX_11(noext, optional)
+AX_CXX_COMPILE_STDCXX_11(noext, mandatory)
 
 dnl Extend the --help string at the current spot.
 AC_DEFUN([EXTEND_HELP_STRING], [m4_divert_once([HELP_ENABLE], [$1])])
@@ -600,7 +600,7 @@ AC_CHECK_DECLS([nanosleep],,,[#include <time.h>])
 AC_CHECK_FUNCS([daemon fcntl flock fstatvfs fork getenv getpwuid_r isatty lstat memalign mkostemp mmap open_memstream openat pread posix_fadvise posix_madvise setlocale stricmp strnicmp strptime uselocale pthread_cond_timedwait_monotonic_np pthread_condattr_setclock])
 AC_REPLACE_FUNCS([atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv memrchr nrand48 poll posix_memalign recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tdestroy timegm timespec_get strverscmp])
 AC_REPLACE_FUNCS([gettimeofday])
-AC_CHECK_FUNCS(fdatasync,,
+AC_CHECK_FUNC(fdatasync,,
   [AC_DEFINE(fdatasync, fsync, [Alias fdatasync() to fsync() if missing.])
 ])
 

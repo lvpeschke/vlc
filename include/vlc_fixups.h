@@ -33,7 +33,7 @@
 
 /* C++11 says there's no need to define __STDC_*_MACROS when including
  * inttypes.h and stdint.h. */
-#if defined (__cplusplus) && (!defined(HAVE_CXX11) || defined(__MINGW32__) || defined(__UCLIBC__))
+#if defined (__cplusplus) && (defined(__MINGW32__) || defined(__UCLIBC__))
 # ifndef __STDC_FORMAT_MACROS
 #  define __STDC_FORMAT_MACROS 1
 # endif
@@ -108,7 +108,7 @@ extern "C" {
 #endif
 
 /* stddef.h */
-#ifndef HAVE_MAX_ALIGN_T
+#if !defined (__cplusplus) && !defined (HAVE_MAX_ALIGN_T)
 typedef struct {
   long long ll;
   long double ld;

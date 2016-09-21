@@ -254,7 +254,7 @@ static int MergeStyles(char** pp_dest, char* p_src)
     if( p_src )
     {
         char *p_tmp = NULL;
-        if( asprintf( &p_tmp, "%s %s", p_src, *pp_dest ) < 0 )
+        if( asprintf( &p_tmp, "%s %s", p_src, *pp_dest ? *pp_dest : "" ) < 0 )
             return VLC_ENOMEM;
 
         free( *pp_dest );
@@ -357,11 +357,8 @@ static bool isInArray( vlc_array_t* p_array, mtime_t* p_elem )
 static int addToArrayIfNotInside( vlc_array_t* p_array, mtime_t* p_elem )
 {
     if( !isInArray( p_array, p_elem ) )
-    {
-        vlc_array_append( p_array, (void*)p_elem );
-        if( unlikely( p_array->pp_elems[p_array->i_count - 1] == NULL ) )
-            return VLC_ENOMEM;
-    }
+        vlc_array_append( p_array, p_elem );
+
     return VLC_SUCCESS;
 }
 
@@ -407,7 +404,7 @@ static void CleanSubs( subtitle_t** tab )
 * create a new p tag for each time space in the
 * subtitle timeline in the function below.
 */
-static int ParseTimeOnSpan( demux_sys_t* p_sys, char* psz_text )
+static int ParseTimeOnSpan( demux_sys_t* p_sys, const char* psz_text )
 {
     xml_reader_t* p_reader = p_sys->p_reader;
     subtitle_t** pp_subtitles = calloc( 1, sizeof( *pp_subtitles ) );
@@ -516,11 +513,17 @@ static int ParseTimeOnSpan( demux_sys_t* p_sys, char* psz_text )
 
     qsort( p_times->pp_elems, p_times->i_count, sizeof( mtime_t* ), timeCmp );
 
-    subtitle_t* p_tmp_sub = realloc( p_sys->subtitle, sizeof( *p_sys->subtitle ) * ( p_times->i_count - 1 + p_sys->i_subtitles ) );
-    if( unlikely( p_tmp_sub == NULL ) )
-        goto error;
+    ssize_t total_count = p_times->i_count + p_sys->i_subtitles - 1;
 
-    p_sys->subtitle = p_tmp_sub;
+    if( total_count > 0 )
+    {
+        subtitle_t* p_tmp_sub = realloc( p_sys->subtitle, sizeof( *p_sys->subtitle ) * total_count );
+
+        if( unlikely( p_tmp_sub == NULL ) )
+            goto error;
+
+        p_sys->subtitle = p_tmp_sub;
+    }
     /*
     * For each time space represented by the times inside the p_times array
     * we create a p tag with all the spans inside.
@@ -707,6 +710,8 @@ static int ReadTTML( demux_t* p_demux )
                 {
                     if( ParseTimeOnSpan( p_sys , psz_text ) != VLC_SUCCESS )
                         goto error;
+
+                    free( psz_text );
                     ClearNode( p_node );
                 }
             }
@@ -719,9 +724,12 @@ static int ReadTTML( demux_t* p_demux )
         /*  end tag after a p tag but inside the body */
         else if( i_type == XML_READER_ENDELEM && CompareTagName( psz_node_name, "body" ) )
         {
-            node_t* p_parent = p_parent_node->p_parent;
-            ClearNode( p_parent_node );
-            p_parent_node = p_parent;
+            if( p_parent_node )
+            {
+                node_t* p_parent = p_parent_node->p_parent;
+                ClearNode( p_parent_node );
+                p_parent_node = p_parent;
+            }
         }
     } while( i_type != XML_READER_ENDELEM || CompareTagName( psz_node_name, "tt" ) );
     ClearNodeStack( p_parent_node );
@@ -781,7 +789,7 @@ static void ParseHead( demux_t* p_demux )
         return;
     }
 
-    while( ( i_read = vlc_stream_Read( p_demux->s, (void*)buff, 1024 ) ) > 0 )
+    while( ( i_read = vlc_stream_Read( p_demux->s, buff, 1024 ) ) > 0 )
     {
         ssize_t i_offset = -1;
         // Ensure we can use strstr

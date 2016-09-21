@@ -111,7 +111,7 @@ struct item
 {
     char *              psz_uri;
     input_item_t *      p_input_item;
-    vlc_renderer_item * p_renderer_item;
+    vlc_renderer_item_t*p_renderer_item;
     mtime_t             i_last_seen;
 };
 
@@ -181,9 +181,10 @@ items_add_input( struct discovery_sys *p_sys, services_discovery_t *p_sd,
 }
 
 static int
-items_add_renderer( struct discovery_sys *p_sys, vlc_renderer_discovery *p_rd,
+items_add_renderer( struct discovery_sys *p_sys, vlc_renderer_discovery_t *p_rd,
                     const char *psz_name, char *psz_uri,
-                    const char *psz_icon_uri, int i_flags )
+                    const char *psz_demux_filter, const char *psz_icon_uri,
+                    int i_flags )
 {
     struct item *p_item = malloc( sizeof(struct item) );
     if( p_item == NULL )
@@ -191,8 +192,9 @@ items_add_renderer( struct discovery_sys *p_sys, vlc_renderer_discovery *p_rd,
 
     const char *psz_extra_uri = i_flags & VLC_RENDERER_CAN_VIDEO ? NULL : "video=0";
 
-    vlc_renderer_item *p_renderer_item =
-        vlc_renderer_item_new( psz_name, psz_uri, psz_extra_uri, psz_icon_uri, i_flags );
+    vlc_renderer_item_t *p_renderer_item =
+        vlc_renderer_item_new( "chromecast", psz_name, psz_uri, psz_extra_uri,
+                               psz_demux_filter, psz_icon_uri, i_flags );
     if( p_renderer_item == NULL )
     {
         free( psz_uri );
@@ -245,8 +247,9 @@ items_exists( struct discovery_sys *p_sys, const char *psz_uri )
 
 static void
 items_timeout( struct discovery_sys *p_sys, services_discovery_t *p_sd,
-               vlc_renderer_discovery *p_rd )
+               vlc_renderer_discovery_t *p_rd )
 {
+    assert( p_rd != NULL || p_sd != NULL );
     mtime_t i_now = mdate();
 
     /* Remove items that are not seen since TIMEOUT */
@@ -255,14 +258,11 @@ items_timeout( struct discovery_sys *p_sys, services_discovery_t *p_sd,
         struct item *p_item = vlc_array_item_at_index( &p_sys->items, i );
         if( i_now - p_item->i_last_seen > TIMEOUT )
         {
-            items_release( p_sys, p_item );
             if( p_sd != NULL )
                 services_discovery_RemoveItem( p_sd, p_item->p_input_item );
             else
-            {
-                assert( p_rd != NULL );
                 vlc_rd_remove_item( p_rd, p_item->p_renderer_item );
-            }
+            items_release( p_sys, p_item );
             vlc_array_remove( &p_sys->items, i-- );
         }
     }
@@ -437,7 +437,7 @@ RunSD( void *p_this )
 static void
 new_entries_rd_cb( void *p_this, int i_status, const struct rr_entry *p_entries )
 {
-    vlc_renderer_discovery *p_rd = (vlc_renderer_discovery *)p_this;
+    vlc_renderer_discovery_t *p_rd = (vlc_renderer_discovery_t *)p_this;
     struct discovery_sys *p_sys = &p_rd->p_sys->s;
     if( i_status < 0 )
     {
@@ -483,6 +483,7 @@ new_entries_rd_cb( void *p_this, int i_status, const struct rr_entry *p_entries 
         char *psz_icon_uri = NULL;
         char *psz_uri = create_uri( p_srv->psz_protocol, psz_ip, b_ipv6,
                                     p_srv->i_port );
+        const char *psz_demux_filter = NULL;
 
         if( psz_uri == NULL )
             break;
@@ -501,13 +502,17 @@ new_entries_rd_cb( void *p_this, int i_status, const struct rr_entry *p_entries 
             break;
         }
 
-        if( strcmp( p_srv->psz_protocol, "chromecast" ) == 0
-         && ( psz_model == NULL
-           || strcasecmp( psz_model, "Chromecast Audio" ) != 0 ) )
-            p_srv->i_renderer_flags |= VLC_RENDERER_CAN_VIDEO;
+        if( strcmp( p_srv->psz_protocol, "chromecast" ) == 0)
+        {
+            if ( psz_model == NULL
+                || strcasecmp( psz_model, "Chromecast Audio" ) != 0 )
+                p_srv->i_renderer_flags |= VLC_RENDERER_CAN_VIDEO;
+            psz_demux_filter = "cc_demux";
+        }
 
         items_add_renderer( p_sys, p_rd, p_srv->psz_device_name, psz_uri,
-                            psz_icon_uri, p_srv->i_renderer_flags );
+                            psz_demux_filter, psz_icon_uri,
+                            p_srv->i_renderer_flags );
         free(psz_icon_uri);
     }
 
@@ -519,7 +524,7 @@ new_entries_rd_cb( void *p_this, int i_status, const struct rr_entry *p_entries 
 static bool
 stop_rd_cb( void *p_this )
 {
-    vlc_renderer_discovery *p_rd = ( vlc_renderer_discovery* )p_this;
+    vlc_renderer_discovery_t *p_rd = p_this;
     struct discovery_sys *p_sys = &p_rd->p_sys->s;
 
     if( atomic_load( &p_sys->stop ) )
@@ -534,7 +539,7 @@ stop_rd_cb( void *p_this )
 static void *
 RunRD( void *p_this )
 {
-    vlc_renderer_discovery *p_rd = ( vlc_renderer_discovery* )p_this;
+    vlc_renderer_discovery_t *p_rd = p_this;
     struct discovery_sys *p_sys = &p_rd->p_sys->s;
 
     int i_status = mdns_listen( p_sys->p_microdns,
@@ -632,7 +637,7 @@ CloseSD( vlc_object_t *p_this )
 static int
 OpenRD( vlc_object_t *p_obj )
 {
-    vlc_renderer_discovery *p_rd = (vlc_renderer_discovery *)p_obj;
+    vlc_renderer_discovery_t *p_rd = (vlc_renderer_discovery_t *)p_obj;
 
     p_rd->p_sys = calloc( 1, sizeof(vlc_renderer_discovery_sys) );
     if( !p_rd->p_sys )
@@ -646,7 +651,7 @@ OpenRD( vlc_object_t *p_obj )
 static void
 CloseRD( vlc_object_t *p_this )
 {
-    vlc_renderer_discovery *p_rd = (vlc_renderer_discovery *) p_this;
+    vlc_renderer_discovery_t *p_rd = (vlc_renderer_discovery_t *) p_this;
 
     CleanCommon( &p_rd->p_sys->s );
     free( p_rd->p_sys );
