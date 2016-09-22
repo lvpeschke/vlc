@@ -31,6 +31,9 @@
 #include "Sockets.hpp"
 #include "Downloader.hpp"
 #include <vlc_url.h>
+/* LVP added */
+#include <iostream>
+#include <ctime>
 
 using namespace adaptive::http;
 
