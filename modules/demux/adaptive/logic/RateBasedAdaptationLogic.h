@@ -26,6 +26,7 @@
 #define RATEBASEDADAPTATIONLOGIC_H_
 
 #include "AbstractAdaptationLogic.h"
+#include "../tools/MovingAverage.hpp"
 
 namespace adaptive
 {
@@ -38,8 +39,8 @@ namespace adaptive
                 RateBasedAdaptationLogic            (vlc_object_t *, int, int);
                 virtual ~RateBasedAdaptationLogic   ();
 
-                BaseRepresentation *getNextRepresentation(BaseAdaptationSet *, BaseRepresentation *) const;
-                virtual void updateDownloadRate(size_t, mtime_t); /* reimpl */
+                BaseRepresentation *getNextRepresentation(BaseAdaptationSet *, BaseRepresentation *);
+                virtual void updateDownloadRate(const ID &, size_t, mtime_t); /* reimpl */
                 virtual void trackerEvent(const SegmentTrackerEvent &); /* reimpl */
 
             private:
@@ -50,14 +51,7 @@ namespace adaptive
                 size_t                  usedBps;
                 vlc_object_t *          p_obj;
 
-                static const unsigned   TOTALOBS = 10;
-                struct
-                {
-                    size_t bw;
-                    size_t diff;
-                } window[TOTALOBS];
-                unsigned                window_idx;
-                size_t                  prevbps;
+                MovingAverage<size_t>   average;
 
                 size_t                  dlsize;
                 mtime_t                 dllength;
@@ -70,7 +64,7 @@ namespace adaptive
             public:
                 FixedRateAdaptationLogic(size_t);
 
-                BaseRepresentation *getNextRepresentation(BaseAdaptationSet *, BaseRepresentation *) const;
+                BaseRepresentation *getNextRepresentation(BaseAdaptationSet *, BaseRepresentation *);
 
             private:
                 size_t                  currentBps;

@@ -49,9 +49,6 @@ RateBasedAdaptationLogic::RateBasedAdaptationLogic  (vlc_object_t *p_obj_, int w
     usedBps = 0;
     dllength = 0;
     p_obj = p_obj_;
-    for(unsigned i=0; i<10; i++) window[i].bw = window[i].diff = 0;
-    window_idx = 0;
-    prevbps = 0;
     dlsize = 0;
     vlc_mutex_init(&lock);
 }
@@ -61,7 +58,7 @@ RateBasedAdaptationLogic::~RateBasedAdaptationLogic()
     vlc_mutex_destroy(&lock);
 }
 
-BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *currep) const
+BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *currep)
 {
     if(adaptSet == NULL)
         return NULL;
@@ -105,7 +102,7 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     return rep;
 }
 
-void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
+void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime_t time)
 {
     /* LVP added */
     BwDebug(msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate"));
@@ -122,60 +119,25 @@ void RateBasedAdaptationLogic::updateDownloadRate(size_t size, mtime_t time)
 
     if(dllength < CLOCK_FREQ / 4){
         /* LVP added */
-        std::cerr << "LVP dllength < CLOCK_FREQ / 4 happened in ...Logic update download rate, " << std::endl;
+        std::cerr << "LVP dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << std::endl;
         return;
     }
 
     const size_t bps = CLOCK_FREQ * dlsize * 8 / dllength;
 
-    /* set window value */
-    if(window[0].bw == 0)
-    {
-        for(unsigned i=0; i<TOTALOBS; i++) window[i].bw = bps;
-    }
-    else
-    {
-        window_idx = (window_idx + 1) % TOTALOBS;
-        window[window_idx].bw = bps;
-        window[window_idx].diff = bps >= prevbps ? bps - prevbps : prevbps - bps;
-    }
-
-    /* compute for deltamax */
-    size_t diffsum = 0;
-    size_t omin = SIZE_MAX;
-    size_t omax = 0;
-    for(unsigned i=0; i < TOTALOBS; i++)
-    {
-        /* Find max and min */
-        if(window[i].bw > omax)
-            omax = window[i].bw;
-        if(window[i].bw < omin)
-            omin = window[i].bw;
-        diffsum += window[i].diff;
-    }
-
-    /* Vertical Horizontal Filter / Moving Average
-     *
-     * Bandwidth stability during observation window alters the alpha parameter
-     * and then defines how fast we adapt to current bandwidth */
-    const size_t deltamax = omax - omin;
-    double alpha = (diffsum) ? 0.33 * ((double)deltamax / diffsum) : 0.5;
-
     vlc_mutex_lock(&lock);
-    bpsAvg = alpha * bpsAvg + (1.0 - alpha) * bps;
+    bpsAvg = average.push(bps);
 
     BwDebug(msg_Dbg(p_obj, "alpha1 %lf alpha0 %lf dmax %ld ds %ld", alpha,
                     (double)deltamax / diffsum, deltamax, diffsum));
     BwDebug(msg_Dbg(p_obj, "bw estimation bps %zu -> avg %zu",
-                            bps / 8192, bpsAvg / 8192));
+                            bps / 8000, bpsAvg / 8000));
 
     currentBps = bpsAvg * 3/4;
     dlsize = dllength = 0;
-    prevbps = bps;
 
     BwDebug(msg_Info(p_obj, "Current bandwidth %zu KiB/s using %u%%",
-                    (bpsAvg / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0));
-
+                    (bpsAvg / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0));
     vlc_mutex_unlock(&lock);
 
     /* LVP added, TFE */ // all in bps (bits per second)
@@ -201,10 +163,9 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         if(event.u.switching.next)
             usedBps += event.u.switching.next->getBandwidth();
 
-        BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
-                        (usedBps / 8192), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
-
-        std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
+        BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%", 
+                        (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
+		std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }
 }
@@ -215,7 +176,7 @@ FixedRateAdaptationLogic::FixedRateAdaptationLogic(size_t bps) :
     currentBps = bps;
 }
 
-BaseRepresentation *FixedRateAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *) const
+BaseRepresentation *FixedRateAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *)
 {
 
     /* LVP added, TFE */

@@ -131,7 +131,6 @@ struct decoder_sys_t
 
 static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
 {
-    decoder_sys_t *p_sys = p_dec->p_sys;
     uint8_t i_profile = 0xFF, i_level = 0xFF;
     bool b_ret = false;
     CMVideoCodecType codec;
@@ -147,7 +146,7 @@ static CMVideoCodecType CodecPrecheck(decoder_t *p_dec)
                 return kCMVideoCodecType_H264;
             }
 
-            msg_Dbg(p_dec, "trying to decode MPEG-4 Part 10: profile %" PRIx8 ", level %i" PRIx8, i_profile, i_level);
+            msg_Dbg(p_dec, "trying to decode MPEG-4 Part 10: profile %" PRIx8 ", level %" PRIx8, i_profile, i_level);
 
             switch (i_profile) {
                 case PROFILE_H264_BASELINE:
@@ -382,19 +381,24 @@ static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
         uint8_t *p_alloc_buf = NULL;
         int i_ret = 0;
 
-        if (p_block == NULL) {
-            /* we need to convert the SPS and PPS units we received from the
-             * demuxer's avvC atom so we can process them further */
-            if(h264_isavcC(p_dec->fmt_in.p_extra, p_dec->fmt_in.i_extra))
+        /* we need to convert the SPS and PPS units we received from the
+         * demuxer's avvC atom so we can process them further */
+        p_sys->b_is_avcc = h264_isavcC(p_dec->fmt_in.p_extra, p_dec->fmt_in.i_extra);
+        if(p_sys->b_is_avcc)
+        {
+            p_alloc_buf = h264_avcC_to_AnnexB_NAL(p_dec->fmt_in.p_extra,
+                                                  p_dec->fmt_in.i_extra,
+                                                  &i_buf,
+                                                  &p_sys->i_nal_length_size);
+            p_buf = p_alloc_buf;
+            if(!p_alloc_buf)
             {
-                p_alloc_buf = h264_avcC_to_AnnexB_NAL(p_dec->fmt_in.p_extra,
-                                                      p_dec->fmt_in.i_extra,
-                                                      &i_buf,
-                                                      &p_sys->i_nal_length_size);
-                p_buf = p_alloc_buf;
-                p_sys->b_is_avcc = !!p_buf;
+                msg_Warn(p_dec, "invalid avc decoder configuration record");
+                return VLC_EGENERIC;
             }
-        } else {
+        }
+        else if(p_block)
+        {
             /* we are mid-stream, let's have the h264_get helper see if it
              * can find a NAL unit */
             i_buf = p_block->i_buffer;
@@ -402,17 +406,17 @@ static int StartVideoToolbox(decoder_t *p_dec, block_t *p_block)
             p_sys->i_nal_length_size = 4; /* default to 4 bytes */
             i_ret = VLC_SUCCESS;
         }
-
-        uint8_t *p_sps_ab = NULL, *p_pps_ab = NULL, *p_ext_ab = NULL;
-        size_t i_sps_absize = 0, i_pps_absize = 0, i_ext_absize = 0;
-        if (!p_buf) {
-            msg_Warn(p_dec, "no valid extradata or conversion failed");
+        else
+        {
+            vlc_assert_unreachable();
             return VLC_EGENERIC;
         }
 
         /* get the SPS and PPS units from the NAL unit which is either
          * part of the demuxer's avvC atom or the mid stream data block */
-        i_ret = h264_get_spspps(p_buf, i_buf,
+        const uint8_t *p_sps_ab = NULL, *p_pps_ab = NULL, *p_ext_ab = NULL;
+        size_t i_sps_absize = 0, i_pps_absize = 0, i_ext_absize = 0;
+        i_ret = h264_AnnexB_get_spspps(p_buf, i_buf,
                                 &p_sps_ab, &i_sps_absize,
                                 &p_pps_ab, &i_pps_absize,
                                 &p_ext_ab, &i_ext_absize);

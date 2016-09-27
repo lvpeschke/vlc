@@ -52,9 +52,13 @@ struct playlist_preparser_t
     playlist_fetcher_t  *p_fetcher;
     mtime_t              default_timeout;
 
-    input_thread_t      *input;
     void                *input_id;
-    bool                 input_done;
+    enum {
+        INPUT_INIT,
+        INPUT_RUNNING,
+        INPUT_STOPPED,
+        INPUT_CANCELED,
+    } input_state;
 
     vlc_mutex_t     lock;
     vlc_cond_t      wait;
@@ -75,9 +79,8 @@ playlist_preparser_t *playlist_preparser_New( vlc_object_t *parent )
     if( !p_preparser )
         return NULL;
 
-    p_preparser->input = NULL;
     p_preparser->input_id = NULL;
-    p_preparser->input_done = false;
+    p_preparser->input_state = INPUT_INIT;
     p_preparser->object = parent;
     p_preparser->default_timeout = var_InheritInteger( parent, "preparse-timeout" );
     p_preparser->p_fetcher = playlist_fetcher_New( parent );
@@ -149,8 +152,8 @@ void playlist_preparser_Cancel( playlist_preparser_t *p_preparser, void *id )
     /* Stop the input_thread reading the item (if any) */
     if( p_preparser->input_id == id )
     {
-        assert( p_preparser->input != NULL );
-        input_Stop( p_preparser->input );
+        p_preparser->input_state = INPUT_CANCELED;
+        vlc_cond_signal( &p_preparser->thread_wait );
     }
     vlc_mutex_unlock( &p_preparser->lock );
 }
@@ -167,8 +170,8 @@ void playlist_preparser_Delete( playlist_preparser_t *p_preparser )
         REMOVE_ELEM( p_preparser->pp_waiting, p_preparser->i_waiting, 0 );
     }
 
-    if( p_preparser->input != NULL )
-        input_Stop( p_preparser->input );
+    p_preparser->input_state = INPUT_CANCELED;
+    vlc_cond_signal( &p_preparser->thread_wait );
 
     while( p_preparser->b_live )
         vlc_cond_wait( &p_preparser->wait, &p_preparser->lock );
@@ -196,8 +199,15 @@ static int InputEvent( vlc_object_t *obj, const char *varname,
 
     if( event == INPUT_EVENT_DEAD )
     {
-        preparser->input_done = true;
-        vlc_cond_signal( &preparser->thread_wait );
+        vlc_mutex_lock( &preparser->lock );
+
+        if( preparser->input_state != INPUT_INIT )
+        {
+            preparser->input_state = INPUT_STOPPED;
+            vlc_cond_signal( &preparser->thread_wait );
+        }
+
+        vlc_mutex_unlock( &preparser->lock );
     }
 
     (void) obj; (void) varname; (void) old;
@@ -232,43 +242,52 @@ static void Preparse( playlist_preparser_t *preparser,
     if( b_preparse && !input_item_IsPreparsed( p_item ) )
     {
         int status;
-        preparser->input = input_CreatePreparser( preparser->object, p_item );
-        if( preparser->input == NULL )
+        input_thread_t *input = input_CreatePreparser( preparser->object, p_item );
+        if( input == NULL )
         {
             input_item_SignalPreparseEnded( p_item, ITEM_PREPARSE_FAILED );
             return;
         }
-        preparser->input_done = false;
-        preparser->input_id = p_entry->id;
 
-        var_AddCallback( preparser->input, "intf-event", InputEvent,
-                         preparser );
-        if( input_Start( preparser->input ) == VLC_SUCCESS )
+        var_AddCallback( input, "intf-event", InputEvent, preparser );
+        if( input_Start( input ) == VLC_SUCCESS )
         {
+            vlc_mutex_lock( &preparser->lock );
+
+            preparser->input_state = INPUT_RUNNING;
+            preparser->input_id = p_entry->id;
+
             if( p_entry->timeout > 0 )
             {
                 mtime_t deadline = mdate() + p_entry->timeout;
-                int ret = 0;
-                while( !preparser->input_done && ret == 0 )
-                    ret = vlc_cond_timedwait( &preparser->thread_wait,
-                                              &preparser->lock, deadline );
-                status = ret == 0 ? ITEM_PREPARSE_DONE : ITEM_PREPARSE_TIMEOUT;
+                while( preparser->input_state == INPUT_RUNNING )
+                {
+                    if( vlc_cond_timedwait( &preparser->thread_wait,
+                                            &preparser->lock, deadline ) )
+                        preparser->input_state = INPUT_CANCELED; /* timeout */
+                }
             }
             else
             {
-                while( !preparser->input_done )
+                while( preparser->input_state == INPUT_RUNNING )
                     vlc_cond_wait( &preparser->thread_wait, &preparser->lock );
-                status = ITEM_PREPARSE_DONE;
             }
+            assert( preparser->input_state == INPUT_STOPPED
+                 || preparser->input_state == INPUT_CANCELED );
+            status = preparser->input_state == INPUT_STOPPED ?
+                     ITEM_PREPARSE_DONE : ITEM_PREPARSE_TIMEOUT;
+            preparser->input_state = INPUT_INIT;
+            preparser->input_id = NULL;
+
+            vlc_mutex_unlock( &preparser->lock );
         }
         else
             status = ITEM_PREPARSE_FAILED;
 
-        var_DelCallback( preparser->input, "intf-event", InputEvent,
-                         preparser );
-        input_Close( preparser->input );
-        preparser->input = NULL;
-        preparser->input_id = NULL;
+        var_DelCallback( input, "intf-event", InputEvent, preparser );
+        if( status == ITEM_PREPARSE_TIMEOUT )
+            input_Stop( input );
+        input_Close( input );
 
         var_SetAddress( preparser->object, "item-change", p_item );
         input_item_SetPreparsed( p_item, true );
@@ -276,7 +295,6 @@ static void Preparse( playlist_preparser_t *preparser,
     }
     else if (!b_preparse)
         input_item_SignalPreparseEnded( p_item, ITEM_PREPARSE_SKIPPED );
-
 }
 
 /**
@@ -327,11 +345,11 @@ static void *Thread( void *data )
 {
     playlist_preparser_t *p_preparser = data;
 
-    vlc_mutex_lock( &p_preparser->lock );
     for( ;; )
     {
         preparser_entry_t *p_entry;
 
+        vlc_mutex_lock( &p_preparser->lock );
         /* */
         if( p_preparser->i_waiting > 0 )
         {
@@ -342,8 +360,10 @@ static void *Thread( void *data )
         {
             p_preparser->b_live = false;
             vlc_cond_signal( &p_preparser->wait );
+            vlc_mutex_unlock( &p_preparser->lock );
             break;
         }
+        vlc_mutex_unlock( &p_preparser->lock );
         assert( p_entry );
 
         Preparse( p_preparser, p_entry );
@@ -352,7 +372,6 @@ static void *Thread( void *data )
         vlc_gc_decref( p_entry->p_item );
         free( p_entry );
     }
-    vlc_mutex_unlock( &p_preparser->lock );
     return NULL;
 }
 

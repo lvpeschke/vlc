@@ -120,7 +120,8 @@ block_t * AbstractChunk::read(size_t size)
     return doRead(size, false);
 }
 
-HTTPChunkSource::HTTPChunkSource(const std::string& url, AbstractConnectionManager *manager) :
+HTTPChunkSource::HTTPChunkSource(const std::string& url, AbstractConnectionManager *manager,
+                                 const ID &id) :
     AbstractChunkSource(),
     connection   (NULL),
     connManager  (manager),
@@ -128,6 +129,7 @@ HTTPChunkSource::HTTPChunkSource(const std::string& url, AbstractConnectionManag
 {
     prepared = false;
     eof = false;
+    sourceid = id;
     if(!init(url))
         eof = true;
 }
@@ -202,7 +204,7 @@ block_t * HTTPChunkSource::read(size_t readsize)
         consumed += p_block->i_buffer;
         if((size_t)ret < readsize)
             eof = true;
-        connManager->updateDownloadRate(p_block->i_buffer, time);
+        connManager->updateDownloadRate(sourceid, p_block->i_buffer, time);
         /* LVP added, TFE */
         //std::cerr << "TFE updateDownloadRate in chunk, " << mdate() << std::endl;
         // not encountered
@@ -241,8 +243,9 @@ block_t * HTTPChunkSource::readBlock()
     return read(HTTPChunkSource::CHUNK_SIZE);
 }
 
-HTTPChunkBufferedSource::HTTPChunkBufferedSource(const std::string& url, AbstractConnectionManager *manager) :
-    HTTPChunkSource(url, manager),
+HTTPChunkBufferedSource::HTTPChunkBufferedSource(const std::string& url, AbstractConnectionManager *manager,
+                                                 const ID &sourceid) :
+    HTTPChunkSource(url, manager, sourceid),
     p_head     (NULL),
     pp_tail    (&p_head),
     buffered     (0)
@@ -316,7 +319,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     } rate = {0,0};
 
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
-    std::cerr << "TFE read HTTP chunkBuffered, " << mdate() << ", " << ret << std::endl;
+    std::cerr << "TFE read HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << ret << std::endl;
     if(ret <= 0)
     {
         block_Release(p_block);
@@ -345,10 +348,10 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
 
     if(rate.size)
     {
-        connManager->updateDownloadRate(rate.size, rate.time);
-        /* LVP added, TFE */
-        std::cerr << "TFE updateDownloadRate in chunkBuffered, " << mdate() << std::endl;
-        // always after RateBaseAdaptationLogic->updateDownloadRate()
+        connManager->updateDownloadRate(sourceid, rate.size, rate.time);
+		/* LVP added, TFE */
+		std::cerr << "TFE updateDownloadRate in HTTPChunkBufferedSource::bufferize, " << mdate() << std::endl;
+		// always after RateBaseAdaptationLogic->updateDownloadRate()
     }
 
     /* LVP added, TFE */
@@ -467,8 +470,9 @@ block_t * HTTPChunkBufferedSource::read(size_t readsize)
     return p_block;
 }
 
-HTTPChunk::HTTPChunk(const std::string &url, AbstractConnectionManager *manager):
-    AbstractChunk(new HTTPChunkSource(url, manager))
+HTTPChunk::HTTPChunk(const std::string &url, AbstractConnectionManager *manager,
+                     const ID &id):
+    AbstractChunk(new HTTPChunkSource(url, manager, id))
 {
 
 }

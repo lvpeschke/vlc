@@ -135,6 +135,13 @@ static int lavc_GetVideoFormat(decoder_t *dec, video_format_t *restrict fmt,
         if (GetVlcChroma(fmt, pix_fmt))
             return -1;
 
+        /* The libavcodec palette can only be fetched when the first output
+         * frame is decoded. Assume that the current chroma is RGB32 while we
+         * are waiting for a valid palette. Indeed, fmt_out.video.p_palette
+         * doesn't trigger a new vout request, but a new chroma yes. */
+        if (pix_fmt == AV_PIX_FMT_PAL8 && !dec->fmt_out.video.p_palette)
+            fmt->i_chroma = VLC_CODEC_RGB32;
+
         avcodec_align_dimensions2(ctx, &width, &height, aligns);
     }
     else /* hardware decoding */
@@ -275,6 +282,9 @@ static int lavc_UpdateVideoFormat(decoder_t *dec, AVCodecContext *ctx,
     val = lavc_GetVideoFormat(dec, &fmt_out, ctx, fmt, swfmt);
     if (val)
         return val;
+
+    fmt_out.p_palette = dec->fmt_out.video.p_palette;
+    dec->fmt_out.video.p_palette = NULL;
 
     es_format_Clean(&dec->fmt_out);
     es_format_Init(&dec->fmt_out, VIDEO_ES, fmt_out.i_chroma);
@@ -905,6 +915,36 @@ static picture_t *DecodeVideo( decoder_t *p_dec, block_t **pp_block )
             continue;
         }
 
+        if( p_context->pix_fmt == AV_PIX_FMT_PAL8
+         && !p_dec->fmt_out.video.p_palette )
+        {
+            /* See AV_PIX_FMT_PAL8 comment in avc_GetVideoFormat(): update the
+             * fmt_out palette and change the fmt_out chroma to request a new
+             * vout */
+            assert( p_dec->fmt_out.video.i_chroma != VLC_CODEC_RGBP );
+
+            video_palette_t *p_palette;
+            p_palette = p_dec->fmt_out.video.p_palette
+                      = malloc( sizeof(video_palette_t) );
+            if( !p_palette )
+            {
+                p_dec->b_error = true;
+                av_frame_free(&frame);
+                break;
+            }
+            static_assert( sizeof(p_palette->palette) == AVPALETTE_SIZE,
+                           "Palette size mismatch between vlc and libavutil" );
+            assert( frame->data[1] != NULL );
+            memcpy( p_palette->palette, frame->data[1], AVPALETTE_SIZE );
+            p_palette->i_entries = AVPALETTE_COUNT;
+            p_dec->fmt_out.video.i_chroma = VLC_CODEC_RGBP;
+            if( decoder_UpdateVideoFormat( p_dec ) )
+            {
+                av_frame_free(&frame);
+                continue;
+            }
+        }
+
         picture_t *p_pic = frame->opaque;
         if( p_pic == NULL )
         {   /* When direct rendering is not used, get_format() and get_buffer()
@@ -913,7 +953,7 @@ static picture_t *DecodeVideo( decoder_t *p_dec, block_t **pp_block )
             if (p_sys->p_va == NULL
              && lavc_UpdateVideoFormat(p_dec, p_context, p_context->pix_fmt,
                                        p_context->pix_fmt) == 0)
-                p_pic = decoder_GetPicture(p_dec);
+                p_pic = decoder_NewPicture(p_dec);
 
             if( !p_pic )
             {
@@ -1210,7 +1250,7 @@ static int lavc_GetFrame(struct AVCodecContext *ctx, AVFrame *frame, int flags)
     }
     post_mt(sys);
 
-    pic = decoder_GetPicture(dec);
+    pic = decoder_NewPicture(dec);
     if (pic == NULL)
         return -ENOMEM;
 
@@ -1308,7 +1348,7 @@ static enum PixelFormat ffmpeg_GetFormat( AVCodecContext *p_context,
             continue; /* Unsupported brand of hardware acceleration */
         post_mt(p_sys);
 
-        picture_t *test_pic = decoder_GetPicture(p_dec);
+        picture_t *test_pic = decoder_NewPicture(p_dec);
         assert(!test_pic || test_pic->format.i_chroma == p_dec->fmt_out.video.i_chroma);
         vlc_va_t *va = vlc_va_New(VLC_OBJECT(p_dec), p_context, hwfmt,
                                   &p_dec->fmt_in,

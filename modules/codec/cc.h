@@ -28,6 +28,8 @@
 
 #define BLOCK_FLAG_ORDERED_CAPTIONS (0x01 << BLOCK_FLAG_PRIVATE_SHIFT)
 
+#define CC_PKT_BYTE0(field) (0xFC | (0x03 & field))
+
 /* CC have a maximum rate of 9600 bit/s (per field?) */
 #define CC_MAX_DATA_SIZE (2 * 3*600)
 enum
@@ -80,15 +82,16 @@ static inline void cc_Flush( cc_data_t *c )
     c->i_data = 0;
 }
 
-static inline void cc_AppendData( cc_data_t *c, int i_field, const uint8_t cc[2] )
+static inline void cc_AppendData( cc_data_t *c, uint8_t cc_preamble, const uint8_t cc[2] )
 {
+    uint8_t i_field = cc_preamble & 0x03;
     if( i_field == 0 || i_field == 1 )
     {
         c->pb_present[2*i_field+0] =
         c->pb_present[2*i_field+1] = true;
     }
 
-    c->p_data[c->i_data++] = i_field;
+    c->p_data[c->i_data++] = cc_preamble;
     c->p_data[c->i_data++] = cc[0];
     c->p_data[c->i_data++] = cc[1];
 }
@@ -96,13 +99,13 @@ static inline void cc_AppendData( cc_data_t *c, int i_field, const uint8_t cc[2]
 static inline void cc_Extract( cc_data_t *c, bool b_top_field_first, const uint8_t *p_src, int i_src )
 {
     static const uint8_t p_cc_ga94[4] = { 0x47, 0x41, 0x39, 0x34 };
-    static const uint8_t p_cc_dvd[4] = { 0x43, 0x43, 0x01, 0xf8 };
+    static const uint8_t p_cc_dvd[4] = { 0x43, 0x43, 0x01, 0xf8 }; /* ascii 'CC', type_code, cc_block_size */
     static const uint8_t p_cc_replaytv4a[2] = { 0xbb, 0x02 };
     static const uint8_t p_cc_replaytv4b[2] = { 0xcc, 0x02 };
     static const uint8_t p_cc_replaytv5a[2] = { 0x99, 0x02 };
     static const uint8_t p_cc_replaytv5b[2] = { 0xaa, 0x02 };
-    static const uint8_t p_cc_scte20[2] = { 0x03, 0x81 };
-    static const uint8_t p_cc_scte20_old[2] = { 0x03, 0x01 };
+    static const uint8_t p_cc_scte20[2] = { 0x03, 0x81 };    /* user_data_type_code, SCTE 20 */
+    static const uint8_t p_cc_scte20_old[2] = { 0x03, 0x01 };/* user_data_type_code, old, Note 1 */
 
     if( i_src < 4 )
         return;
@@ -198,20 +201,28 @@ static inline void cc_Extract( cc_data_t *c, bool b_top_field_first, const uint8
 
         for( i = 0; i < i_count_cc; i++, cc += 3 )
         {
-            int i_field = cc[0] & 0x03;
-            if( ( cc[0] & 0xfc ) != 0xfc )
-                continue;
-            if( i_field != 0 && i_field != 1 )
-                continue;
             if( c->i_data + 3 > CC_MAX_DATA_SIZE )
-                continue;
+                break;
 
-            cc_AppendData( c, i_field, &cc[1] );
+            cc_AppendData( c, cc[0], &cc[1] );
         }
         c->b_reorder = true;
     }
     else if( i_payload_type == CC_PAYLOAD_DVD )
     {
+        /* user_data
+         *          (u32 stripped earlier)
+         *          u32 (0x43 0x43 0x01 0xf8)
+         *          u1 caption_odd_field_first (CC1/CC2)
+         *          u1 caption_filler
+         *          u5 cc_block_count  (== cc_count / 2)
+         *          u1 caption_extra_field_added (because odd cc_count)
+         *          for cc_block_count * 2 + caption_extra_field_added
+         *              u7 cc_filler_1
+         *              u1 cc_field_is_odd
+         *              u8 cc_data_1
+         *              u8 cc_data_2
+         */
         const int b_truncate = p_src[4] & 0x01;
         const int i_field_first = (p_src[4] & 0x80) ? 0 : 1;
         const int i_count_cc2 = (p_src[4] >> 1) & 0xf;
@@ -229,12 +240,12 @@ static inline void cc_Extract( cc_data_t *c, bool b_top_field_first, const uint8
 
                 if( b_truncate && i == i_count_cc2 - 1 && j == 1 )
                     break;
-                if( cc[0] != 0xff && cc[0] != 0xfe )
+                if( (cc[0] & 0xfe) != 0xfe )
                     continue;
                 if( c->i_data + 3 > CC_MAX_DATA_SIZE )
                     continue;
 
-                cc_AppendData( c, i_field, &cc[1] );
+                cc_AppendData( c, CC_PKT_BYTE0(i_field), &cc[1] );
             }
         }
         c->b_reorder = false;
@@ -250,12 +261,26 @@ static inline void cc_Extract( cc_data_t *c, bool b_top_field_first, const uint8
         {
             const int i_field = i == 0 ? 1 : 0;
 
-            cc_AppendData( c, i_field, &cc[2] );
+            cc_AppendData( c, CC_PKT_BYTE0(i_field), &cc[2] );
         }
         c->b_reorder = false;
     }
-    else
+    else /* CC_PAYLOAD_SCTE20 */
     {
+        /* user_data(2)
+         *          (u32 stripped earlier)
+         *          u16 p_cc_scte20
+         *          u5 cc_count
+         *          for cc_count
+         *              u2 cc_priority
+         *              u2 cc_field_num
+         *              u5 cc_line_offset
+         *              u8 cc_data_1[1:8]
+         *              u8 cc_data_2[1:8]
+         *              u1 marker bit
+         *          un additional_realtimevideodata
+         *          un reserved
+         */
         bs_t s;
         bs_init( &s, &p_src[2], i_src - 2 );
         const int i_cc_count = bs_read( &s, 5 );
@@ -283,7 +308,7 @@ static inline void cc_Extract( cc_data_t *c, bool b_top_field_first, const uint8
             if (!b_top_field_first)
                 i_field ^= 1;
 
-            cc_AppendData( c, i_field, &cc[0] );
+            cc_AppendData( c, CC_PKT_BYTE0(i_field), &cc[0] );
         }
         c->b_reorder = true;
     }

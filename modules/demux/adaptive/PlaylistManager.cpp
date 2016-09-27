@@ -33,6 +33,7 @@
 #include "logic/AlwaysBestAdaptationLogic.h"
 #include "logic/RateBasedAdaptationLogic.h"
 #include "logic/AlwaysLowestAdaptationLogic.hpp"
+#include "logic/PredictiveAdaptationLogic.hpp"
 #include "tools/Debug.hpp"
 #include <vlc_stream.h>
 #include <vlc_demux.h>
@@ -188,23 +189,37 @@ void PlaylistManager::stop()
     }
 }
 
+static bool streamCompare(AbstractStream *a,  AbstractStream *b)
+{
+    AbstractStream::buffering_status ba = a->getLastBufferStatus();
+    AbstractStream::buffering_status bb = b->getLastBufferStatus();
+    if( ba >= bb ) /* Highest prio is higer value in enum */
+    {
+        if ( ba == bb ) /* Highest prio is lowest buffering */
+           return a->getDemuxedAmount() < b->getDemuxedAmount();
+        else
+            return true;
+    }
+    return false;
+}
+
 AbstractStream::buffering_status PlaylistManager::bufferize(mtime_t i_nzdeadline,
                                                             unsigned i_min_buffering, unsigned i_extra_buffering)
 {
     AbstractStream::buffering_status i_return = AbstractStream::buffering_end;
 
+    /* First reorder by status >> buffering level */
+    std::vector<AbstractStream *> prioritized_streams(streams);
+    std::sort(prioritized_streams.begin(), prioritized_streams.end(), streamCompare);
+
     std::vector<AbstractStream *>::iterator it;
-    for(it=streams.begin(); it!=streams.end(); ++it)
+    for(it=prioritized_streams.begin(); it!=prioritized_streams.end(); ++it)
     {
         AbstractStream *st = *it;
 
-        if (st->isDisabled())
-        {
-            if(st->isSelected() && !st->isDead())
-                reactivateStream(st);
-            else
+        if (st->isDisabled() &&
+            (!st->isSelected() || !st->canActivate() || !reactivateStream(st)))
                 continue;
-        }
 
         AbstractStream::buffering_status i_ret = st->bufferize(i_nzdeadline, i_min_buffering, i_extra_buffering);
         if(i_return != AbstractStream::buffering_ongoing) /* Buffering streams need to keep going */
@@ -212,6 +227,10 @@ AbstractStream::buffering_status PlaylistManager::bufferize(mtime_t i_nzdeadline
             if(i_ret > i_return)
                 i_return = i_ret;
         }
+
+        /* Bail out, will start again (high prio could be same starving stream) */
+        if( i_return == AbstractStream::buffering_lessthanmin )
+            break;
     }
 
     vlc_mutex_lock(&demux.lock);
@@ -320,7 +339,7 @@ bool PlaylistManager::setPosition(mtime_t time)
         for(it=streams.begin(); it!=streams.end(); ++it)
         {
             AbstractStream *st = *it;
-            if(!st->isDisabled() && !st->isDead())
+            if(!st->isDisabled())
                 ret &= st->setPosition(time, !real);
         }
         if(!ret)
@@ -367,7 +386,7 @@ void PlaylistManager::pruneLiveStream()
     for(it=streams.begin(); it!=streams.end(); it++)
     {
         const AbstractStream *st = *it;
-        if(st->isDisabled() || !st->isSelected() || st->isDead())
+        if(st->isDisabled() || !st->isSelected())
             continue;
         const mtime_t t = st->getPlaybackTime();
         if(minValidPos == 0 || t < minValidPos)
@@ -398,7 +417,7 @@ int PlaylistManager::doDemux(int64_t increment)
         bool b_dead = true;
         std::vector<AbstractStream *>::const_iterator it;
         for(it=streams.begin(); it!=streams.end(); ++it)
-            b_dead &= (*it)->isDead();
+            b_dead &= !(*it)->canActivate();
         if(!b_dead)
             vlc_cond_timedwait(&demux.cond, &demux.lock, mdate() + CLOCK_FREQ / 20);
         vlc_mutex_unlock(&demux.lock);
@@ -706,16 +725,25 @@ AbstractAdaptationLogic *PlaylistManager::createLogic(AbstractAdaptationLogic::L
             return new (std::nothrow) AlwaysLowestAdaptationLogic();
         case AbstractAdaptationLogic::AlwaysBest:
             return new (std::nothrow) AlwaysBestAdaptationLogic();
-        case AbstractAdaptationLogic::Default:
         case AbstractAdaptationLogic::RateBased:
         {
             int width = var_InheritInteger(p_demux, "adaptive-width");
             int height = var_InheritInteger(p_demux, "adaptive-height");
             RateBasedAdaptationLogic *logic =
                     new (std::nothrow) RateBasedAdaptationLogic(VLC_OBJECT(p_demux), width, height);
-            conn->setDownloadRateObserver(logic);
+            if(logic)
+                conn->setDownloadRateObserver(logic);
             return logic;
         }
+        case AbstractAdaptationLogic::Default:
+        case AbstractAdaptationLogic::Predictive:
+        {
+            AbstractAdaptationLogic *logic = new (std::nothrow) PredictiveAdaptationLogic(VLC_OBJECT(p_demux));
+            if(logic)
+                conn->setDownloadRateObserver(logic);
+            return logic;
+        }
+
         default:
             return NULL;
     }

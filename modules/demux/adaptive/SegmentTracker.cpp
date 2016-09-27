@@ -56,6 +56,28 @@ SegmentTrackerEvent::SegmentTrackerEvent(const StreamFormat *fmt)
     u.format.f = fmt;
 }
 
+SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, bool enabled)
+{
+    type = BUFFERING_STATE;
+    u.buffering.enabled = enabled;
+    u.buffering.id = &id;
+}
+
+SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t current, mtime_t target)
+{
+    type = BUFFERING_LEVEL_CHANGE;
+    u.buffering_level.current = current;
+    u.buffering_level.target = target;
+    u.buffering.id = &id;
+}
+
+SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t duration)
+{
+    type = SEGMENT_CHANGE;
+    u.segment.duration = duration;
+    u.segment.id = &id;
+}
+
 SegmentTracker::SegmentTracker(AbstractAdaptationLogic *logic_, BaseAdaptationSet *adaptSet)
 {
     first = true;
@@ -256,6 +278,14 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
 
     SegmentChunk *chunk = segment->toChunk(next, rep, connManager);
 
+    /* Notify new segment length for stats / logic */
+    if(chunk)
+    {
+        const Timescale timescale = rep->inheritTimescale();
+        notify(SegmentTrackerEvent(rep->getAdaptationSet()->getID(),
+                                   timescale.ToTime(segment->duration.Get())));
+    }
+
     /* We need to check segment/chunk format changes, as we can't rely on representation's (HLS)*/
     if(chunk && format != chunk->getStreamFormat())
     {
@@ -335,6 +365,16 @@ mtime_t SegmentTracker::getMinAheadTime() const
     return 0;
 }
 
+void SegmentTracker::notifyBufferingState(bool enabled) const
+{
+    notify(SegmentTrackerEvent(adaptationSet->getID(), enabled));
+}
+
+void SegmentTracker::notifyBufferingLevel(mtime_t current, mtime_t target) const
+{
+    notify(SegmentTrackerEvent(adaptationSet->getID(), current, target));
+}
+
 void SegmentTracker::registerListener(SegmentTrackerListenerInterface *listener)
 {
     listeners.push_back(listener);
@@ -349,7 +389,7 @@ void SegmentTracker::updateSelected()
     }
 }
 
-void SegmentTracker::notify(const SegmentTrackerEvent &event)
+void SegmentTracker::notify(const SegmentTrackerEvent &event) const
 {
     std::list<SegmentTrackerListenerInterface *>::const_iterator it;
     for(it=listeners.begin();it != listeners.end(); ++it)

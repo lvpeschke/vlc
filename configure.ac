@@ -2631,7 +2631,7 @@ dnl
 AC_ARG_ENABLE(vpx,
     AS_HELP_STRING([--enable-vpx],[libvpx VP8/VP9 encoder and decoder (default auto)]))
 AS_IF([test "${enable_vpx}" != "no"],[
-    PKG_CHECK_MODULES([VPX], [vpx] , [
+    PKG_CHECK_MODULES([VPX], [vpx >= 1.4.0], [
         VLC_ADD_PLUGIN([vpx])
         VLC_ADD_CPPFLAGS([vpx], [${VPX_CFLAGS}])
         VLC_ADD_LIBS([vpx], [${VPX_LIBS}])
@@ -2649,7 +2649,7 @@ AS_IF([test "${enable_vpx}" != "no"],[
         ], [], [${VPX_LIBS}])
     ], [
     AS_IF([test "${enable_vpx}" = "yes"],[
-        AC_MSG_ERROR([libvpx was not found])
+        AC_MSG_ERROR([libvpx 1.4.0 or higher was not found])
     ])])
 ])
 
@@ -3795,7 +3795,7 @@ AS_IF([test "${enable_qt}" != "no"], [
 AM_CONDITIONAL(ENABLE_QT, [test "$enable_qt" != "no"])
 
 dnl
-dnl detect kde4-config patch (used for kde solids and kwallet).
+dnl detect kde4-config patch (used for kde solids).
 dnl
 AC_ARG_VAR([KDE4_CONFIG], [kde4-config utility])
 AS_IF([test "x$KDE4_CONFIG" = "x"], [
@@ -4103,6 +4103,11 @@ dnl
 dnl  libsecret
 dnl
 PKG_ENABLE_MODULES_VLC([SECRET], [], [libsecret-1 >= 0.18], [use libsecret for keystore], [auto])
+
+dnl
+dnl  kwallet
+dnl
+PKG_ENABLE_MODULES_VLC([KWALLET], [], [dbus-1 >= 1.6.0], [use kwallet for keystore], [auto])
 
 dnl
 dnl  Developers helper modules (should be hidden from configure help)

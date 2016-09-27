@@ -54,6 +54,7 @@ namespace adaptive
                  *          Will be a valid value, as the parser refuses Representation
                  *          without bandwidth.
                  */
+                BaseAdaptationSet*  getAdaptationSet        ();
                 uint64_t            getBandwidth            () const;
                 void                setBandwidth            ( uint64_t bandwidth );
                 const std::list<std::string> & getCodecs    () const;
@@ -72,6 +73,8 @@ namespace adaptive
                 virtual std::string contextualize(size_t, const std::string &,
                                                   const BaseSegmentTemplate *) const;
 
+                static bool         bwCompare(const BaseRepresentation *a,
+                                              const BaseRepresentation *b);
             protected:
                 virtual bool        validateCodec(const std::string &) const;
                 BaseAdaptationSet                  *adaptationSet;

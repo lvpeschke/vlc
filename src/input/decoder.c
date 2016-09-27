@@ -498,6 +498,7 @@ static int vout_update_format( decoder_t *p_dec )
 static picture_t *vout_new_buffer( decoder_t *p_dec )
 {
     decoder_owner_sys_t *p_owner = p_dec->p_owner;
+    assert( p_owner->p_vout );
 
     return vout_GetPicture( p_owner->p_vout );
 }
@@ -594,8 +595,8 @@ static int DecoderGetDisplayRate( decoder_t *p_dec )
  *****************************************************************************/
 block_t *decoder_NewAudioBuffer( decoder_t *dec, int samples )
 {
-    if( decoder_UpdateAudioFormat( dec ) )
-        return NULL;
+    assert( dec->fmt_out.audio.i_frame_length > 0
+         && dec->fmt_out.audio.i_bytes_per_frame  > 0 );
 
     size_t length = samples * dec->fmt_out.audio.i_bytes_per_frame
                             / dec->fmt_out.audio.i_frame_length;
@@ -817,6 +818,9 @@ static void DecoderProcessSout( decoder_t *p_dec, block_t *p_block )
                          (char *)&p_owner->fmt.i_codec );
                 p_dec->b_error = true;
 
+                if(p_block)
+                    block_Release(p_block);
+
                 block_ChainRelease(p_sout_block);
                 break;
             }
@@ -835,6 +839,10 @@ static void DecoderProcessSout( decoder_t *p_dec, block_t *p_block )
                 p_dec->b_error = true;
 
                 /* Cleanup */
+
+                if( p_block )
+                    block_Release( p_block );
+
                 block_ChainRelease( p_next );
                 return;
             }
@@ -2112,10 +2120,10 @@ int input_DecoderSetCcState( decoder_t *p_dec, bool b_decode, int i_channel )
     if( b_decode )
     {
         static const vlc_fourcc_t fcc[4] = {
-            VLC_FOURCC('c', 'c', '1', ' '),
-            VLC_FOURCC('c', 'c', '2', ' '),
-            VLC_FOURCC('c', 'c', '3', ' '),
-            VLC_FOURCC('c', 'c', '4', ' '),
+            VLC_CODEC_EIA608_1,
+            VLC_CODEC_EIA608_2,
+            VLC_CODEC_EIA608_3,
+            VLC_CODEC_EIA608_4,
         };
         decoder_t *p_cc;
         es_format_t fmt;

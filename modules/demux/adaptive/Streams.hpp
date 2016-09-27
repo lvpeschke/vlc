@@ -60,13 +60,14 @@ namespace adaptive
 
         void setLanguage(const std::string &);
         void setDescription(const std::string &);
-        bool isDead() const;
         mtime_t getPCR() const;
         mtime_t getMinAheadTime() const;
         mtime_t getFirstDTS() const;
         int esCount() const;
         bool isSelected() const;
+        bool canActivate() const;
         virtual bool reactivate(mtime_t);
+        void setDisabled(bool);
         bool isDisabled() const;
         typedef enum {
             status_eof = 0, /* prioritized */
@@ -82,6 +83,8 @@ namespace adaptive
             buffering_lessthanmin,
         } buffering_status;
         buffering_status bufferize(mtime_t, unsigned, unsigned);
+        buffering_status getLastBufferStatus() const;
+        mtime_t getDemuxedAmount() const;
         status dequeue(mtime_t, mtime_t *);
         bool drain();
         virtual bool setPosition(mtime_t, bool);
@@ -113,9 +116,7 @@ namespace adaptive
         SegmentTracker *segmentTracker;
 
         SegmentChunk *currentChunk;
-        bool disabled;
         bool eof;
-        bool dead;
         std::string language;
         std::string description;
 
@@ -124,6 +125,12 @@ namespace adaptive
         AbstractSourceStream *demuxersource;
         FakeESOut *fakeesout; /* to intercept/proxy what is sent from demuxstream */
         vlc_mutex_t lock; /* lock for everything accessed by dequeuing */
+
+    private:
+        buffering_status doBufferize(mtime_t, unsigned, unsigned);
+        buffering_status last_buffer_status;
+        bool dead;
+        bool disabled;
     };
 
     class AbstractStreamFactory

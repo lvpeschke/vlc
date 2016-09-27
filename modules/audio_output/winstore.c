@@ -57,10 +57,23 @@ struct aout_sys_t
     IAudioClient *client;
 };
 
+static int vlc_FromHR(audio_output_t *aout, HRESULT hr)
+{
+    aout_sys_t* sys = aout->sys;
+    /* Select the default device (and restart) on unplug */
+    if (unlikely(hr == AUDCLNT_E_DEVICE_INVALIDATED ||
+                 hr == AUDCLNT_E_RESOURCES_INVALIDATED))
+    {
+        sys->client = NULL;
+    }
+    return SUCCEEDED(hr) ? 0 : -1;
+}
 
 static int VolumeSet(audio_output_t *aout, float vol)
 {
     aout_sys_t *sys = aout->sys;
+    if( unlikely( sys->client == NULL ) )
+        return VLC_EGENERIC;
     HRESULT hr;
     ISimpleAudioVolume *pc_AudioVolume = NULL;
     float gain = 1.f;
@@ -98,6 +111,8 @@ done:
 static int MuteSet(audio_output_t *aout, bool mute)
 {
     aout_sys_t *sys = aout->sys;
+    if( unlikely( sys->client == NULL ) )
+        return VLC_EGENERIC;
     HRESULT hr;
     ISimpleAudioVolume *pc_AudioVolume = NULL;
 
@@ -124,6 +139,8 @@ done:
 static int TimeGet(audio_output_t *aout, mtime_t *restrict delay)
 {
     aout_sys_t *sys = aout->sys;
+    if( unlikely( sys->client == NULL ) )
+        return VLC_EGENERIC;
     HRESULT hr;
 
     EnterMTA();
@@ -136,30 +153,41 @@ static int TimeGet(audio_output_t *aout, mtime_t *restrict delay)
 static void Play(audio_output_t *aout, block_t *block)
 {
     aout_sys_t *sys = aout->sys;
+    if( unlikely( sys->client == NULL ) )
+        return;
 
     EnterMTA();
-    aout_stream_Play(sys->stream, block);
+    HRESULT hr = aout_stream_Play(sys->stream, block);
     LeaveMTA();
+
+    vlc_FromHR(aout, hr);
 }
 
 static void Pause(audio_output_t *aout, bool paused, mtime_t date)
 {
     aout_sys_t *sys = aout->sys;
+    if( unlikely( sys->client == NULL ) )
+        return;
 
     EnterMTA();
-    aout_stream_Pause(sys->stream, paused);
+    HRESULT hr = aout_stream_Pause(sys->stream, paused);
     LeaveMTA();
 
     (void) date;
+    vlc_FromHR(aout, hr);
 }
 
 static void Flush(audio_output_t *aout, bool wait)
 {
     aout_sys_t *sys = aout->sys;
+    if( unlikely( sys->client == NULL ) )
+        return;
 
     EnterMTA();
-    aout_stream_Flush(sys->stream, wait);
+    HRESULT hr = aout_stream_Flush(sys->stream, wait);
     LeaveMTA();
+
+    vlc_FromHR(aout, hr);
 }
 
 static HRESULT ActivateDevice(void *opaque, REFIID iid, PROPVARIANT *actparms,
@@ -169,7 +197,7 @@ static HRESULT ActivateDevice(void *opaque, REFIID iid, PROPVARIANT *actparms,
 
     if (!IsEqualIID(iid, &IID_IAudioClient))
         return E_NOINTERFACE;
-    if (actparms != NULL)
+    if (actparms != NULL || client == NULL )
         return E_INVALIDARG;
 
     IAudioClient_AddRef(client);
@@ -250,6 +278,7 @@ static int DeviceSelect(audio_output_t *aout, const char* psz_device)
     if (aout->sys->client == (IAudioClient*)ptr)
         return VLC_SUCCESS;
     aout->sys->client = (IAudioClient*)ptr;
+    var_SetAddress( aout->obj.parent, "winstore-client", aout->sys->client );
     aout_RestartRequest( aout, AOUT_RESTART_OUTPUT );
     return VLC_SUCCESS;
 }
@@ -264,7 +293,9 @@ static int Open(vlc_object_t *obj)
 
     aout->sys = sys;
     sys->stream = NULL;
-    sys->client = NULL;
+    aout->sys->client = var_CreateGetAddress( aout->obj.parent, "winstore-client" );
+    if (aout->sys->client != NULL)
+        msg_Dbg( aout, "Reusing previous client: %p", aout->sys->client );
     aout->start = Start;
     aout->stop = Stop;
     aout->time_get = TimeGet;

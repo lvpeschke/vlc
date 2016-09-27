@@ -49,13 +49,13 @@ AbstractConnectionManager::~AbstractConnectionManager()
 
 }
 
-void AbstractConnectionManager::updateDownloadRate(size_t size, mtime_t time)
+void AbstractConnectionManager::updateDownloadRate(const ID &sourceid, size_t size, mtime_t time)
 {
-    if(rateObserver) {
-        rateObserver->updateDownloadRate(size, time);
-        /* LVP added, TFE */
-        std::cerr << "TFE updateDownloadRate in HTTPConnectionManager, " << mdate() << std::endl;
-    }
+	if(rateObserver) {
+        rateObserver->updateDownloadRate(sourceid, size, time);
+		/* LVP added, TFE */
+		std::cerr << "TFE updateDownloadRate in HTTPConnectionManager, " << mdate() << std::endl;
+	}
 }
 
 void AbstractConnectionManager::setDownloadRateObserver(IDownloadRateObserver *obs)

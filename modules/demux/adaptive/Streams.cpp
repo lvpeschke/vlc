@@ -23,6 +23,7 @@
 #endif
 
 #include "Streams.hpp"
+#include "logic/AbstractAdaptationLogic.h"
 #include "http/HTTPConnection.hpp"
 #include "http/HTTPConnectionManager.h"
 #include "playlist/BaseRepresentation.h"
@@ -53,6 +54,7 @@ AbstractStream::AbstractStream(demux_t * demux_)
     commandsqueue = NULL;
     demuxer = NULL;
     fakeesout = NULL;
+    last_buffer_status = buffering_lessthanmin;
     vlc_mutex_init(&lock);
 }
 
@@ -79,6 +81,7 @@ bool AbstractStream::init(const StreamFormat &format_, SegmentTracker *tracker, 
                     format = format_;
                     segmentTracker = tracker;
                     segmentTracker->registerListener(this);
+                    segmentTracker->notifyBufferingState(true);
                     connManager = conn;
                     return true;
                 }
@@ -99,6 +102,8 @@ bool AbstractStream::init(const StreamFormat &format_, SegmentTracker *tracker, 
 AbstractStream::~AbstractStream()
 {
     delete currentChunk;
+    if(segmentTracker)
+        segmentTracker->notifyBufferingState(false);
     delete segmentTracker;
 
     delete demuxer;
@@ -139,15 +144,10 @@ void AbstractStream::setDescription(const std::string &desc)
     description = desc;
 }
 
-bool AbstractStream::isDead() const
-{
-    return dead;
-}
-
 mtime_t AbstractStream::getPCR() const
 {
     vlc_mutex_lock(const_cast<vlc_mutex_t *>(&lock));
-    mtime_t pcr = (dead || disabled) ? VLC_TS_INVALID : commandsqueue->getPCR();
+    mtime_t pcr = isDisabled() ? VLC_TS_INVALID : commandsqueue->getPCR();
     vlc_mutex_unlock(const_cast<vlc_mutex_t *>(&lock));
     return pcr;
 }
@@ -163,7 +163,7 @@ mtime_t AbstractStream::getFirstDTS() const
 {
     mtime_t dts;
     vlc_mutex_lock(const_cast<vlc_mutex_t *>(&lock));
-    if(dead || disabled)
+    if(isDisabled())
     {
         dts = VLC_TS_INVALID;
     }
@@ -199,7 +199,7 @@ bool AbstractStream::reactivate(mtime_t basetime)
 {
     if(setPosition(basetime, false))
     {
-        disabled = false;
+        setDisabled(false);
         return true;
     }
     else
@@ -242,9 +242,21 @@ bool AbstractStream::restartDemux()
     return true;
 }
 
+void AbstractStream::setDisabled(bool b)
+{
+    if(disabled != b)
+        segmentTracker->notifyBufferingState(!b);
+    disabled = b;
+}
+
 bool AbstractStream::isDisabled() const
 {
-    return disabled;
+    return dead || disabled;
+}
+
+bool AbstractStream::canActivate() const
+{
+    return !dead;
 }
 
 bool AbstractStream::drain()
@@ -252,8 +264,25 @@ bool AbstractStream::drain()
     return fakeesout->drain();
 }
 
+AbstractStream::buffering_status AbstractStream::getLastBufferStatus() const
+{
+    return last_buffer_status;
+}
+
+mtime_t AbstractStream::getDemuxedAmount() const
+{
+    return commandsqueue->getDemuxedAmount();
+}
+
 AbstractStream::buffering_status AbstractStream::bufferize(mtime_t nz_deadline,
                                                            unsigned i_min_buffering, unsigned i_extra_buffering)
+{
+    last_buffer_status = doBufferize(nz_deadline, i_min_buffering, i_extra_buffering);
+    return last_buffer_status;
+}
+
+AbstractStream::buffering_status AbstractStream::doBufferize(mtime_t nz_deadline,
+                                                             unsigned i_min_buffering, unsigned i_extra_buffering)
 {
     vlc_mutex_lock(&lock);
 
@@ -267,7 +296,7 @@ AbstractStream::buffering_status AbstractStream::bufferize(mtime_t nz_deadline,
     /* Disable streams that are not selected (alternate streams) */
     if(esCount() && !isSelected() && !fakeesout->restarting())
     {
-        disabled = true;
+        setDisabled(true);
         segmentTracker->reset();
         commandsqueue->Abort(false);
         msg_Dbg(p_realdemux, "deactivating stream %s", format.str().c_str());
@@ -306,6 +335,7 @@ AbstractStream::buffering_status AbstractStream::bufferize(mtime_t nz_deadline,
     const int64_t i_total_buffering = i_min_buffering + i_extra_buffering;
 
     mtime_t i_demuxed = commandsqueue->getDemuxedAmount();
+    segmentTracker->notifyBufferingLevel(i_demuxed, i_total_buffering);
     if(i_demuxed < i_total_buffering) /* not already demuxed */
     {
         if(!segmentTracker->segmentsListReady()) /* Live Streams */
@@ -342,6 +372,7 @@ AbstractStream::buffering_status AbstractStream::bufferize(mtime_t nz_deadline,
             return AbstractStream::buffering_end;
         }
         i_demuxed = commandsqueue->getDemuxedAmount();
+        segmentTracker->notifyBufferingLevel(i_demuxed, i_total_buffering);
     }
     vlc_mutex_unlock(&lock);
 
@@ -360,7 +391,7 @@ AbstractStream::status AbstractStream::dequeue(mtime_t nz_deadline, mtime_t *pi_
 
     *pi_pcr = nz_deadline;
 
-    if (disabled || dead)
+    if (isDisabled())
         return AbstractStream::status_eof;
 
     if(commandsqueue->isFlushing())
