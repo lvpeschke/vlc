@@ -319,7 +319,8 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     } rate = {0,0};
 
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
-    std::cerr << "TFE read HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << ret << std::endl;
+    /* LVP added */
+    std::cerr << "LVP read HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << ret << std::endl;
     if(ret <= 0)
     {
         block_Release(p_block);
@@ -350,12 +351,12 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     {
         connManager->updateDownloadRate(sourceid, rate.size, rate.time);
 		/* LVP added, TFE */
-		std::cerr << "TFE updateDownloadRate in HTTPChunkBufferedSource::bufferize, " << mdate() << std::endl;
+		// std::cerr << "TFE updateDownloadRate in HTTPChunkBufferedSource::bufferize, " << mdate() << std::endl;
 		// always after RateBaseAdaptationLogic->updateDownloadRate()
     }
 
     /* LVP added, TFE */
-    std::cerr << "TFE buffered in HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << buffered << std::endl;
+    // std::cerr << "TFE buffered in HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << buffered << std::endl;
 
     vlc_cond_signal(&avail);
 }
@@ -464,8 +465,8 @@ block_t * HTTPChunkBufferedSource::read(size_t readsize)
 
     vlc_mutex_unlock(&lock);
 
-    /* LVP added, TFE */
-    //std::cerr << "TFE buffered in HTTPChunkBufferedSource::read, " << mdate() << ", " << buffered << std::endl;
+    /* LVP added */
+    //std::cerr << "LVP buffered in HTTPChunkBufferedSource::read, " << mdate() << ", " << buffered << std::endl;
 
     return p_block;
 }

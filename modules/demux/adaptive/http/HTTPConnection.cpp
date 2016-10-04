@@ -96,7 +96,7 @@ bool HTTPConnection::canReuse(const ConnectionParams &params_) const
 bool HTTPConnection::connect()
 {
     /* LVP added */
-    msg_Dbg(p_object, "LVP HTTPConnection connect!!");
+    msg_Dbg(p_object, "LVP HTTPConnection::connect!!");
 
     return socket->connect(p_object, params.getHostname().c_str(),
                                      params.getPort());
@@ -105,7 +105,7 @@ bool HTTPConnection::connect()
 bool HTTPConnection::connected() const
 {
     /* LVP added */
-    msg_Dbg(p_object, "LVP HTTPConnection connected (bool) is %d", socket->connected());
+    msg_Dbg(p_object, "LVP HTTPConnection::connected (bool) is %d", socket->connected());
 
     return socket->connected();
 }
@@ -119,7 +119,7 @@ void HTTPConnection::disconnect()
     socket->disconnect();
 
     /* LVP added */
-    msg_Dbg(p_object, "LVP HTTPConnection disconnected!!");
+    msg_Dbg(p_object, "LVP HTTPConnection::disconnected!!");
 }
 
 int HTTPConnection::request(const std::string &path, const BytesRange &range)
@@ -223,17 +223,22 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     {
         /* LVP added */
         msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
-        if (ret < 0) msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, ret < 0 ");
-        if ((size_t)ret < len) msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, ret < len ");
-        if (contentLength == bytesRead) msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, contentLength == bytesRead ");
+        if (ret < 0)
+            msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, ret < 0 ");
+        if ((size_t)ret < len)
+            msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, ret < len ");
+        if (contentLength == bytesRead)
+            msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, contentLength == bytesRead ");
 
         socket->disconnect();
         return ret;
     }
 
     /* LVP added */
-    if (contentLength == bytesRead) std::cerr << "TFE read HTTP response done, " << mdate() << ", " << contentLength << std::endl;
-    else std::cerr << "TFE read HTTP response in progress, " << mdate() << std::endl;
+    if (contentLength == bytesRead)
+        std::cerr << "TFE read HTTP response done, " << mdate() << ", " << contentLength << std::endl;
+    else
+        std::cerr << "TFE read HTTP response in progress, " << mdate() << std::endl;
     std::cerr << "TFE read, " << mdate() << ", " << ret << std::endl;
     std::cerr << "TFE bytesRead, " << mdate() << ", " << bytesRead << std::endl;
 
@@ -242,13 +247,16 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
 
 bool HTTPConnection::send(const std::string &data)
 {
+    /* LVP added, TFE */
+    std::cerr << "TFE send HTTP (no socket), " << mdate() << std::endl;
+
     return send(data.c_str(), data.length());
 }
 
 bool HTTPConnection::send(const void *buf, size_t size)
 {
     /* LVP added, TFE */
-    std::cerr << "TFE send HTTP request, " << mdate() << std::endl;
+    std::cerr << "TFE send HTTP on socket, " << mdate() << std::endl;
 
     return socket->send(p_object, buf, size);
 }
@@ -278,8 +286,6 @@ int HTTPConnection::parseReply()
 
     /* LVP added, TFE */
     std::cerr << "TFE HTTP replycode, " << mdate() << ", " << replycode << std::endl;
-    //std::cerr << "TFE mdate() is, " << mdate() << std::endl;
-    //std::cerr << "TFE time() is, " << std::time(nullptr) << std::endl;
 
     if (replycode != 200 && replycode != 206)
         return VLC_ENOOBJ;

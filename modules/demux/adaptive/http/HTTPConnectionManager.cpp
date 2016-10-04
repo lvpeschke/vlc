@@ -137,6 +137,9 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
             vlc_mutex_unlock(&lock);
             return NULL;
         }
+
+        /* LVP added, TFE */
+        std::cerr << "TFE new connection in HTTPConnectionManager, " << mdate() << ", " << connectionPool.size() << std::endl;
     }
 
     conn->setUsed(true);
