@@ -89,10 +89,10 @@ namespace adaptive
         avg = alpha * avg + (1.0 - alpha) * (*values.rbegin());
 
         /* LVP added, TFE */
-        std::cerr << "TFE diffsums, " << mdate() << ", " << diffsums << std::endl;
+        std::cerr << "TFE diffsums, " << mdate() << ", " << (double) diffsums.sum << std::endl;
         std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;
         std::cerr << "TFE alpha, " << mdate() << ", " << alpha << std::endl;
-        std::cerr << "TFE avg, " << mdate() << ", " << avg << std::endl;
+        std::cerr << "TFE avg, " << mdate() << ", " << (double) avg << std::endl;
 
         return avg;
     }
