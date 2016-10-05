@@ -35,8 +35,6 @@
 #include "../http/HTTPConnectionManager.h"
 #include "../http/Downloader.hpp"
 #include <cassert>
-/* LVP added */
-#include <iostream>
 
 using namespace adaptive::http;
 using namespace adaptive::playlist;
