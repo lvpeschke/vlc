@@ -84,6 +84,13 @@ namespace adaptive
         const T deltamax = omax - omin;
         double alpha = (diffsums.sum) ? 0.33 * ((double)deltamax / diffsums.sum) : 0.5;
         avg = alpha * avg + (1.0 - alpha) * (*values.rbegin());
+
+        /* LVP added, TFE */
+        std::cerr << "TFE diffsums, " << mdate() << ", " << diffsums << std::endl;
+        std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;
+        std::cerr << "TFE alpha, " << mdate() << ", " << alpha << std::endl;
+        std::cerr << "TFE avg, " << mdate() << ", " << avg << std::endl;
+
         return avg;
     }
 }

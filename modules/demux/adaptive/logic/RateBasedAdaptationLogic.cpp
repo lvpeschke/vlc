@@ -128,8 +128,9 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     vlc_mutex_lock(&lock);
     bpsAvg = average.push(bps);
 
-    BwDebug(msg_Dbg(p_obj, "alpha1 %lf alpha0 %lf dmax %ld ds %ld", alpha,
-                    (double)deltamax / diffsum, deltamax, diffsum));
+    /* LVP commented out */
+    /* BwDebug(msg_Dbg(p_obj, "alpha1 %lf alpha0 %lf dmax %ld ds %ld", alpha,
+                    (double)deltamax / diffsum, deltamax, diffsum)); */
     BwDebug(msg_Dbg(p_obj, "bw estimation bps %zu -> avg %zu",
                             bps / 8000, bpsAvg / 8000));
 
@@ -147,10 +148,6 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
     std::cerr << "TFE bpsCurrent, " << mdate() << ", " << currentBps << std::endl;
     std::cerr << "TFE bpsUsed, " << mdate() << ", " << usedBps << std::endl;
-
-    std::cerr << "TFE diffsum, " << mdate() << ", " << diffsum << std::endl;
-    std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;
-    std::cerr << "TFE alpha, " << mdate() << ", " << alpha << std::endl;
 }
 
 void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
