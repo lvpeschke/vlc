@@ -71,11 +71,11 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
 
     vlc_mutex_lock(&lock);
 
-    // TODO monitor the whole process
-
     std::map<ID, PredictiveStats>::iterator it = streams.find(adaptSet->getID());
     if(it == streams.end())
     {
+        /* LVP added, TFE */
+        std::cerr << "TFE predictive streams end rep highest, " << mdate() << std::endl;
         rep = selector.highest(adaptSet);
     }
     else
@@ -99,14 +99,25 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
                 i_max_bitrate = std::max(i_max_bitrate, other.last_download_rate);
             }
         }
+        /* LVP added, TFE */
+        std::cerr << "TFE predictive buflevel" << mdate() << ", " << f_buffering_level << std::endl;
+        std::cerr << "TFE predictive stats buflevel" << mdate() << ", " << stats.buffering_level << std::endl;
+        std::cerr << "TFE predictive stats buftarget" << mdate() << ", " << stats.buffering_target << std::endl;
+        std::cerr << "TFE predictive min buflevel" << mdate() << ", " << f_min_buffering_level << std::endl;
+        std::cerr << "TFE predictive max bitrate" << mdate() << ", " << i_max_bitrate << std::endl;
 
         if(stats.starting())
         {
+            /* LVP added, TFE */
+            std::cerr << "TFE predictive stats starting rep highest, " << mdate() << std::endl;
             rep = selector.highest(adaptSet);
         }
         else
         {
             const unsigned i_available_bw = getAvailableBw(i_max_bitrate, prevRep);
+            /* LVP added, TFE */
+            std::cerr << "TFE predictive availableBw, " << mdate() << ", " << i_available_bw << std::endl;
+
             if(f_buffering_level > 0.8)
             {
                 rep = selector.select(adaptSet, std::max((uint64_t) i_available_bw,
@@ -135,12 +146,13 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
             msg_Info(p_obj, "Stream %s buffering level %.2f%",
                  (*it).first.str().c_str(), (double) s.buffering_level / s.buffering_target);
         } );
-        // TODO
 
         BwDebug( if( rep != prevRep )
                     msg_Info(p_obj, "Stream %s new bandwidth usage %zu KiB/s",
                          adaptSet->getID().str().c_str(), rep->getBandwidth() / 8000); );
-        // TODO
+
+        /* LVP added, TFE */
+        std::cerr << "TFE predictive bandwidth usage (bps), " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
         stats.segments_count++;
     }
@@ -216,7 +228,9 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
             vlc_mutex_unlock(&lock);
             BwDebug(msg_Info(p_obj, "Stream %s is now known %sactive",
                              (event.u.buffering.enabled) ? "" : "in"));  // LVP corrected: inserted "?"
-            // TODO
+            /* LVP added, TFE */
+            std::cerr << "TFE predictive SegmentTrackerEvent BUFFERING_STATE (bool), "
+                      << mdate() << ", " << event.u.buffering.enabled << std::endl;
         }
         break;
 
@@ -227,8 +241,12 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
             PredictiveStats &stats = streams[id];
             stats.buffering_level = event.u.buffering_level.current;
             stats.buffering_target = event.u.buffering_level.target;
-            // TODO
             vlc_mutex_unlock(&lock);
+            /* LVP added, TFE */
+            std::cerr << "TFE predictive SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level current, "
+                      << mdate() << ", " << event.u.buffering_level.current << std::endl;
+            std::cerr << "TFE predictive SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level target, "
+                      << mdate() << ", " << event.u.buffering_level.target << std::endl;
         }
         break;
 
