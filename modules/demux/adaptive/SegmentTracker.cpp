@@ -61,6 +61,8 @@ SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, bool enabled)
     type = BUFFERING_STATE;
     u.buffering.enabled = enabled;
     u.buffering.id = &id;
+    /* LVP added, TFE */
+    std::cerr << "TFE SegmentTrackerEvent BUFFERING_STATE (bool), " << mdate() << ", " << enabled << std::endl;
 }
 
 SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t current, mtime_t target)
@@ -69,6 +71,11 @@ SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t current, mtime_t 
     u.buffering_level.current = current;
     u.buffering_level.target = target;
     u.buffering.id = &id;
+    /* LVP added, TFE */
+    std::cerr << "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level current, "
+              << mdate() << ", " << current << std::endl;
+    std::cerr << "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level target, "
+              << mdate() << ", " << target << std::endl;
 }
 
 SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t duration)
@@ -352,6 +359,9 @@ mtime_t SegmentTracker::getPlaybackTime() const
     {
         return time;
     }
+    /* LVP added, TFE */
+    std::cerr << "TFE SegmentTracker::getPlaybackTime() time & duration, "
+              << mdate() << ", " << time << ", " << duration << std::endl;
     return 0;
 }
 

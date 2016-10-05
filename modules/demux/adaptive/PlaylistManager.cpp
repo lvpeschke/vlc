@@ -376,6 +376,8 @@ mtime_t PlaylistManager::getFirstPlaybackTime() const
 
 mtime_t PlaylistManager::getCurrentPlaybackTime() const
 {
+    /* LVP added, TFE */
+    std::cerr << "TFE PlayListManager getCurrentPlaybackTime(), " << mdate() << ", " << demux.i_nzpcr << std::endl;
     return demux.i_nzpcr;
 }
 
