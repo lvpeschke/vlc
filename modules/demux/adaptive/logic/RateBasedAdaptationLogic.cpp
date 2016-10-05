@@ -108,8 +108,8 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     BwDebug(msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate"));
 
     if(unlikely(time == 0)){
-        /* LVP added */
-        std::cerr << "LVP unlikely(time==0) happened in ...Logic update download rate, " << std::endl;
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG unlikely(time==0) happened in ...Logic update download rate, " << std::endl;
         return;
     }
 
@@ -118,8 +118,8 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     dlsize += size;
 
     if(dllength < CLOCK_FREQ / 4){
-        /* LVP added */
-        std::cerr << "LVP dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << std::endl;
+        /* LVP added, TFE */
+        std::cerr << "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << std::endl;
         return;
     }
 
@@ -140,7 +140,7 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
                     (bpsAvg / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0));
     vlc_mutex_unlock(&lock);
 
-    /* LVP added, TFE */ // all in bps (bits per second)
+    /* LVP added, TFE */ // TODO all in bps (bits per second)?
     std::cerr << "TFE download rate updated, " << mdate() << std::endl;
     // always called by HTTPConnectionManager updateDownloadRate, chunkBuffered updateDownloadRate
     std::cerr << "TFE bpsObserved, " << mdate() << ", " << bps << std::endl;
@@ -165,6 +165,7 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%", 
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
+        /* LVP added, TFE */
 		std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }
