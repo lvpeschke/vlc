@@ -76,6 +76,8 @@ void DASHManager::scheduleNextUpdate()
         if(m > 0 && (m < minbuffer || minbuffer == 0))
             minbuffer = m;
     }
+	/* LVP added, TFE */
+	std::cerr << "TFE DASHManager::scheduleNextUpdate real minbuffer, " << mdate() << ", " << minbuffer << std::endl;
     minbuffer /= 2;
 
     if(playlist->minUpdatePeriod.Get() > minbuffer)
@@ -85,6 +87,9 @@ void DASHManager::scheduleNextUpdate()
         minbuffer = 5 * CLOCK_FREQ;
 
     nextPlaylistupdate = now + minbuffer / CLOCK_FREQ;
+	
+    /* LVP added, TFE */
+    std::cerr << "TFE DASHManager::scheduleNextUpdate final minbuffer, " << mdate() << ", " << nextPlaylistupdate << std::endl;
 
     msg_Dbg(p_demux, "Updated MPD, next update in %" PRId64 "s", (mtime_t) nextPlaylistupdate - now );
 }
@@ -146,7 +151,7 @@ bool DASHManager::updatePlaylist()
         block_Release(p_block);
 
         /* LVP added, TFE */
-        std::cerr << "TFE DASHManager::updatePlaylist mpd, " << mdate() << std::endl;
+        std::cerr << "TFE DASHManager::updatePlaylist, " << mdate() << std::endl;
     }
 
     return true;
