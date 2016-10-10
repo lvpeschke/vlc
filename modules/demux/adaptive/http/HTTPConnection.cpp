@@ -145,6 +145,7 @@ int HTTPConnection::request(const std::string &path, const BytesRange &range)
     std::string header = buildRequestHeader(path);
     if(connectionClose) {
         /* LVP added */
+		std::cerr << "TFE DEBUG HTTPConnection::request connectionClose true, " << mdate() << std::endl;
         msg_Dbg(p_object, "LVP HTTPConnection::request --> connectionClose is true");
         header.append("Connection: close\r\n");
     }
@@ -515,6 +516,9 @@ AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
     /* disable pipelined tls until we have ticket/resume session support */
     HTTPConnection *conn = new (std::nothrow)
             HTTPConnection(p_object, socket, sockettype != TLSSocket::TLS);
+    /* LVP added */
+    std::cerr << "TFE DEBUG ConnectionFactory::createConnection (HTTP), conn is " << conn 
+		      << " and persistent is set to " << (sockettype != TLSSocket::TLS) << std::endl;
     if(!conn)
     {
         delete socket;
