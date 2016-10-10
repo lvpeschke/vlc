@@ -249,8 +249,9 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
 bool HTTPConnection::send(const std::string &data)
 {
     /* LVP added, TFE */
-    std::cerr << "TFE send HTTP (no socket), " << mdate() << std::endl;
-
+    // std::cerr << "TFE send HTTP (no socket), " << mdate() << std::endl;
+	// useless: redirects to socket
+	
     return send(data.c_str(), data.length());
 }
 
