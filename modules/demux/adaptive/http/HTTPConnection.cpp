@@ -238,10 +238,12 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     /* LVP added */
     if (contentLength == bytesRead)
         std::cerr << "TFE read HTTP response done, " << mdate() << ", " << contentLength << std::endl;
+	/*
     else
         std::cerr << "TFE read HTTP response in progress, " << mdate() << std::endl;
     std::cerr << "TFE read, " << mdate() << ", " << ret << std::endl;
     std::cerr << "TFE bytesRead, " << mdate() << ", " << bytesRead << std::endl;
+	*/
 
     return ret;
 }
@@ -503,7 +505,7 @@ AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
                                                          const ConnectionParams &params)
 {
     /* LVP added */
-    msg_Dbg(p_object, "LVP entered ConnectionFactory::createConnection");
+    std::cerr << "TFE DEBUG ConnectionFactory::createConnection entered" << std::endl;
 
     if((params.getScheme() != "http" && params.getScheme() != "https") || params.getHostname().empty())
         return NULL;
@@ -517,17 +519,18 @@ AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
     /* disable pipelined tls until we have ticket/resume session support */
     HTTPConnection *conn = new (std::nothrow)
             HTTPConnection(p_object, socket, sockettype != TLSSocket::TLS);
-    /* LVP added */
-    std::cerr << "TFE DEBUG ConnectionFactory::createConnection (HTTP), conn is " << conn 
-		      << " and persistent is set to " << (sockettype != TLSSocket::TLS) << std::endl;
+
     if(!conn)
     {
+	    /* LVP added */
+	    std::cerr << "TFE DEBUG ConnectionFactory::createConnection no conn return NULL" << std::endl;
         delete socket;
         return NULL;
     }
 
     /* LVP added */
-    std::cerr << "LVP ConnectionFactory::createConnection, conn is " << conn << std::endl;
+    std::cerr << "TFE DEBUG ConnectionFactory::createConnection conn is " << conn 
+		      << " and persistent is set to " << (sockettype != TLSSocket::TLS) << std::endl;
 
     return conn;
 }

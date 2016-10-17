@@ -49,14 +49,15 @@ Socket::~Socket()
 
 bool Socket::connect(vlc_object_t *p_object, const std::string &hostname, int port)
 {
-
-    /* LVP added */
     msg_Dbg(p_object, "LVP entered Socket::connect on port %d", port);
 
     netfd = net_ConnectTCP(p_object, hostname.c_str(), port);
 
     if(netfd == -1)
         return false;
+	
+    /* LVP added */
+	std::cerr << "TFE socket connected, " << mdate() << ", " << port << std::endl;
 
     return true;
 }
@@ -90,7 +91,7 @@ ssize_t Socket::read(vlc_object_t *p_object, void *p_buffer, size_t len)
 
     /* LVP added */
     ssize_t ret = net_Read(p_object, netfd, p_buffer, len);
-    std::cerr << "LVP Socket::read (bytes), " << mdate() << ", " << ret << std::endl;
+    // std::cerr << "LVP Socket::read (bytes), " << mdate() << ", " << ret << std::endl;
     return ret;
 }
 
@@ -148,6 +149,9 @@ bool TLSSocket::connect(vlc_object_t *p_object, const std::string &hostname, int
         disconnect();
         return false;
     }
+	
+    /* LVP added */
+	std::cerr << "TFE TLS socket connected, " << mdate() << ", " << port << std::endl;
 
     return true;
 }

@@ -139,7 +139,12 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
         }
 
         /* LVP added, TFE */
-        std::cerr << "TFE new connection in HTTPConnectionManager, " << mdate() << ", " << connectionPool.size() << std::endl;
+        std::cerr << "TFE new connection in HTTPConnectionManager, " 
+			<< mdate() << ", " << connectionPool.size() << std::endl;
+    } else {
+        /* LVP added, TFE */
+        std::cerr << "TFE connection reused in HTTPConnectionManager, " 
+			<< mdate() << ", " << connectionPool.size() << std::endl;
     }
 
     conn->setUsed(true);

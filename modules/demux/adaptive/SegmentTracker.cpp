@@ -358,7 +358,7 @@ mtime_t SegmentTracker::getPlaybackTime() const
        rep->getPlaybackTimeDurationBySegmentNumber(next, &time, &duration))
     {
 	    /* LVP added, TFE */
-	    std::cerr << "TFE SegmentTracker::getPlaybackTime() time & duration, "
+	    std::cerr << "TFE SegmentTracker::getPlaybackTime time and duration, "
 	              << mdate() << ", " << time << ", " << duration << std::endl;
 		
         return time;
