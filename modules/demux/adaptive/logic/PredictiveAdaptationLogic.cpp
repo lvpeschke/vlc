@@ -102,9 +102,12 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
             }
         }
         /* LVP added, TFE */
-        std::cerr << "TFE predictive buflevel ratio, " << mdate() << ", " << adaptSet->getID() << ", " << f_buffering_level << std::endl;
-        std::cerr << "TFE predictive stats buflevel, " << mdate() << ", " << adaptSet->getID() << ", " << stats.buffering_level << std::endl;
-        std::cerr << "TFE predictive stats buftarget, " << mdate() << ", " << adaptSet->getID() << ", " << stats.buffering_target << std::endl;
+        std::cerr << "TFE predictive buflevel ratio, " << mdate() << ", " <<
+	    adaptSet->getID().str().c_str() << ", " << f_buffering_level << std::endl;
+        std::cerr << "TFE predictive stats buflevel, " << mdate() << ", " <<
+	    adaptSet->getID().str().c_str() << ", " << stats.buffering_level << std::endl;
+        std::cerr << "TFE predictive stats buftarget, " << mdate() << ", " <<
+	    adaptSet->getID().str().c_str() << ", " << stats.buffering_target << std::endl;
         std::cerr << "TFE predictive min buflevel, " << mdate() << ", " << f_min_buffering_level << std::endl;
         std::cerr << "TFE predictive max bitrate, " << mdate() << ", " << i_max_bitrate << std::endl;
 
@@ -175,7 +178,7 @@ void PredictiveAdaptationLogic::updateDownloadRate(const ID &id, size_t dlsize, 
 
         /* LVP added, TFE */
         std::cerr << "TFE predictive update last download rate, " << mdate()
-                  << ", " << id.str() << ", " << CLOCK_FREQ * dlsize * 8 / time << std::endl;
+                  << ", " << id.str().c_str() << ", " << CLOCK_FREQ * dlsize * 8 / time << std::endl;
     }
 
     vlc_mutex_unlock(&lock);
