@@ -109,7 +109,7 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
 
     if(unlikely(time == 0)){
         /* LVP added, TFE */
-        std::cerr << "TFE DEBUG unlikely(time==0) happened in ...Logic update download rate, " << std::endl;
+        std::cerr << "TFE DEBUG unlikely(time==0) happened in ...Logic update download rate, " << mdate() << std::endl;
         return;
     }
 
@@ -119,7 +119,7 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
 
     if(dllength < CLOCK_FREQ / 4){
         /* LVP added, TFE */
-        std::cerr << "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << std::endl;
+        std::cerr << "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << mdate() << std::endl;
         return;
     }
 
