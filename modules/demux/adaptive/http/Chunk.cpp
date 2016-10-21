@@ -35,10 +35,6 @@
 
 #include <algorithm>
 
-/* LVP added */
-#include <iostream>
-#include <ctime>
-
 using namespace adaptive::http;
 
 AbstractChunkSource::AbstractChunkSource()
@@ -188,8 +184,7 @@ block_t * HTTPChunkSource::read(size_t readsize)
 
     mtime_t time = mdate();
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
-    /* LVP added, TFE */
-    //std::cerr << "TFE read HTTP chunck source, " << mdate() << ", " << ret << std::endl;
+    /* LVP added */
     // not encountered
     time = mdate() - time;
     if(ret < 0)
@@ -205,8 +200,7 @@ block_t * HTTPChunkSource::read(size_t readsize)
         if((size_t)ret < readsize)
             eof = true;
         connManager->updateDownloadRate(sourceid, p_block->i_buffer, time);
-        /* LVP added, TFE */
-        //std::cerr << "TFE updateDownloadRate in chunk, " << mdate() << std::endl;
+        /* LVP added  */
         // not encountered
     }
 
@@ -320,7 +314,7 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
 
     ssize_t ret = connection->read(p_block->p_buffer, readsize);
     /* LVP added */
-    std::cerr << "LVP read HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << ret << std::endl;
+    // encountered, not null
     if(ret <= 0)
     {
         block_Release(p_block);
@@ -350,13 +344,12 @@ void HTTPChunkBufferedSource::bufferize(size_t readsize)
     if(rate.size)
     {
         connManager->updateDownloadRate(sourceid, rate.size, rate.time);
-		/* LVP added, TFE */
-		// std::cerr << "TFE updateDownloadRate in HTTPChunkBufferedSource::bufferize, " << mdate() << std::endl;
+		/* LVP added */
 		// always after RateBaseAdaptationLogic->updateDownloadRate()
     }
 
-    /* LVP added, TFE */
-    // std::cerr << "TFE buffered in HTTPChunkBufferedSource::bufferize, " << mdate() << ", " << buffered << std::endl;
+    /* LVP added */
+    // same as above
 
     vlc_cond_signal(&avail);
 }
@@ -414,8 +407,7 @@ block_t * HTTPChunkBufferedSource::readBlock()
 
     vlc_mutex_unlock(&lock);
 
-    /* LVP added, TFE */
-    //std::cerr << "TFE buffered in HTTPChunkBufferedSource::readBlock, " << mdate() << ", " << buffered << std::endl;
+    /* LVP added */
     // too often, 0 most of the time
 
     return p_block;
@@ -466,7 +458,7 @@ block_t * HTTPChunkBufferedSource::read(size_t readsize)
     vlc_mutex_unlock(&lock);
 
     /* LVP added */
-    //std::cerr << "LVP buffered in HTTPChunkBufferedSource::read, " << mdate() << ", " << buffered << std::endl;
+    // not used
 
     return p_block;
 }
