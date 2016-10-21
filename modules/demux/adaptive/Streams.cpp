@@ -32,9 +32,9 @@
 #include "plumbing/CommandsQueue.hpp"
 #include "tools/Debug.hpp"
 #include <vlc_demux.h>
-/* LVP added */
+/* LVP added
 #include <iostream>
-#include <ctime>
+#include <ctime>*/
 
 using namespace adaptive;
 using namespace adaptive::http;
@@ -417,13 +417,20 @@ AbstractStream::status AbstractStream::dequeue(mtime_t nz_deadline, mtime_t *pi_
                      description.c_str(), commandsqueue->getPCR(), commandsqueue->getFirstDTS(),
                      nz_deadline, commandsqueue->getBufferingLevel()));
 					 
-	/* LVP added, TFE */
-	std::cerr << "TFE stream, " << mdate() << ", " << description.c_str() << std::endl;
-	std::cerr << "TFE pcr, " << mdate() << ", " << commandsqueue->getPCR() << std::endl;
-	std::cerr << "TFE dts, " << mdate() << ", " << commandsqueue->getFirstDTS() << std::endl;
-	std::cerr << "TFE buffering level, " << mdate() << ", " << commandsqueue->getBufferingLevel() << std::endl;
-    std::cerr << "TFE nz deadline, " << mdate() << ", " << nz_deadline << std::endl; // ??
-	std::cerr << "TFE demuxed amount, " << mdate() << ", " << commandsqueue->getDemuxedAmount() << std::endl; // = bufferinglevel - getFirstDTS
+	/* LVP added, TFE & TFE DEBUG*/
+    // mdate, pcr, dts, buflevel, nz deadline, demuxed amount
+    // demuxed amount = bufferinglevel - getFirstDTS
+    msg_Info(p_realdemux, "TFE stream, %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64,
+            mdate(),
+            commandsqueue->getPCR(), commandsqueue->getFirstDTS(),
+            commandsqueue->getBufferingLevel(), nz_deadline, commandsqueue->getDemuxedAmount());
+    msg_Info(p_realdemux, "TFE DEBUG stream is %s, %" PRId64, description.c_str(), mdate());
+	//std::cerr << "TFE stream, " << mdate() << ", " << description.c_str() << std::endl;
+	//std::cerr << "TFE pcr, " << mdate() << ", " << commandsqueue->getPCR() << std::endl;
+	//std::cerr << "TFE dts, " << mdate() << ", " << commandsqueue->getFirstDTS() << std::endl;
+	//std::cerr << "TFE buffering level, " << mdate() << ", " << commandsqueue->getBufferingLevel() << std::endl;
+    //std::cerr << "TFE nz deadline, " << mdate() << ", " << nz_deadline << std::endl; // ??
+	//std::cerr << "TFE demuxed amount, " << mdate() << ", " << commandsqueue->getDemuxedAmount() << std::endl;
 
     if(nz_deadline + VLC_TS_0 <= commandsqueue->getBufferingLevel()) /* demuxed */
     {

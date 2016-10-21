@@ -62,7 +62,8 @@ SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, bool enabled)
     u.buffering.enabled = enabled;
     u.buffering.id = &id;
     /* LVP added, TFE */
-    std::cerr << "TFE SegmentTrackerEvent BUFFERING_STATE (bool), " << mdate() << ", " << enabled << std::endl;
+    msg_Info(p_obj, "TFE SegmentTrackerEvent BUFFERING_STATE bool, %" PRId64 ", %d", mdate(), enabled);
+    //std::cerr << "TFE SegmentTrackerEvent BUFFERING_STATE (bool), " << mdate() << ", " << enabled << std::endl;
 }
 
 SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t current, mtime_t target)
@@ -72,10 +73,12 @@ SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t current, mtime_t 
     u.buffering_level.target = target;
     u.buffering.id = &id;
     /* LVP added, TFE */
-    std::cerr << "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level current, "
-              << mdate() << ", " << current << std::endl;
-    std::cerr << "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level target, "
-              << mdate() << ", " << target << std::endl;
+    msg_Info(p_obj, "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE, %" PRId64 ", %" PRId64 ", %" PRId64,
+            mdate(), current, target);
+    //std::cerr << "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level current, "
+    //          << mdate() << ", " << current << std::endl;
+    //std::cerr << "TFE SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level target, "
+    //          << mdate() << ", " << target << std::endl;
 }
 
 SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, mtime_t duration)
@@ -147,16 +150,18 @@ void SegmentTracker::reset()
 SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
                                             AbstractConnectionManager *connManager)
 {
-    /* LVP added, TFE */
-    std::cerr << "TFE DEBUG SegmentTracker getNextChunk, " << mdate() << std::endl;
+    /* LVP added, TFE DEBUG */
+    msg_Info(p_obj, "TFE DEBUG SegmentTracker getNextChunk, %" PRId64, mdate());
+    //std::cerr << "TFE DEBUG SegmentTracker getNextChunk, " << mdate() << std::endl;
 
     BaseRepresentation *rep = NULL, *prevRep = NULL;
     ISegment *segment;
 
     if(!adaptationSet) {
 
-        /* LVP added, TFE */
-        std::cerr << "TFE DEBUG SegmentTracker getNextChunk no adaptation set, " << mdate() << std::endl;
+        /* LVP added, TFE DEBUG */
+        msg_Info(p_obj, "TFE DEBUG SegmentTracker getNextChunk no adaptation set, %" PRId64, mdate());
+        //std::cerr << "TFE DEBUG SegmentTracker getNextChunk no adaptation set, " << mdate() << std::endl;
 
         return NULL;
     }
@@ -179,8 +184,9 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
 
     if ( rep == NULL ) {
 
-        /* LVP added, TFE */
-        std::cerr << "TFE DEBUG SegmentTracker no rep 1, " << mdate() << std::endl;
+        /* LVP added, TFE DEBUG */
+        msg_Info(p_obj, "TFE DEBUG SegmentTracker no rep 1, %" PRId64, mdate());
+        //std::cerr << "TFE DEBUG SegmentTracker no rep 1, " << mdate() << std::endl;
 
         return NULL;
     }
@@ -244,8 +250,9 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
         init_sent = true;
         segment = rep->getSegment(BaseRepresentation::INFOTYPE_INIT);
         if(segment) {
-            /* LVP added, TFE */
-            std::cerr << "TFE DEBUG SegmentTracker getNextChunk no init sent but segment, " << mdate() << std::endl;
+            /* LVP added, TFE DEBUG */
+            msg_Info(p_obj, "TFE DEBUG SegmentTracker getNextChunk no init sent but segment, %" PRId64, mdate());
+            //std::cerr << "TFE DEBUG SegmentTracker getNextChunk no init sent but segment, " << mdate() << std::endl;
 
             return segment->toChunk(next, rep, connManager);
         }
@@ -256,8 +263,9 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
         index_sent = true;
         segment = rep->getSegment(BaseRepresentation::INFOTYPE_INDEX);
         if(segment) {
-            /* LVP added, TFE */
-            std::cerr << "TFE DEBUG SegmentTracker getNextChunk no index sent but segment, " << mdate() << std::endl;
+            /* LVP added, TFE DEBUG */
+            msg_Info(p_obj, "TFE DEBUG SegmentTracker getNextChunk no index sent but segment, %" PRId64, mdate());
+            //std::cerr << "TFE DEBUG SegmentTracker getNextChunk no index sent but segment, " << mdate() << std::endl;
 
             return segment->toChunk(next, rep, connManager);
         }
@@ -270,8 +278,9 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
     {
         reset();
 
-        /* LVP added, TFE */
-        std::cerr << "TFE DEBUG SegmentTracker getNextChunk no segment and reset, " << mdate() << std::endl;
+        /* LVP added, TFE DEBUG */
+        msg_Info(p_obj, "TFE DEBUG SegmentTracker getNextChunk no segment and reset, %" PRId64, mdate());
+        //std::cerr << "TFE DEBUG SegmentTracker getNextChunk no segment and reset, " << mdate() << std::endl;
 
         return NULL;
     }
@@ -313,7 +322,8 @@ SegmentChunk * SegmentTracker::getNextChunk(bool switch_allowed,
     }
 
     /* LVP added, TFE */
-    std::cerr << "TFE SegmentTracker getNextChunk done, " << mdate() <<  ", " << rep->getBandwidth()  << std::endl;
+    msg_Info(p_obj, "TFE SegmentTracker getNextChunk done, %" PRId64 ", %" PRId64, mdate(), rep->getBandwidth());
+    //std::cerr << "TFE SegmentTracker getNextChunk done, " << mdate() <<  ", " << rep->getBandwidth()  << std::endl;
 
     return chunk;
 }
@@ -358,8 +368,10 @@ mtime_t SegmentTracker::getPlaybackTime() const
        rep->getPlaybackTimeDurationBySegmentNumber(next, &time, &duration))
     {
 	    /* LVP added, TFE */
-	    std::cerr << "TFE SegmentTracker::getPlaybackTime time and duration, "
-	              << mdate() << ", " << time << ", " << duration << std::endl;
+        msg_Info(p_obj, "TFE SegmentTracker getPlaybackTime, %" PRId64 ", %" PRId64 ", %" PRId64,
+                mdate(), time, duration);
+	    //std::cerr << "TFE SegmentTracker::getPlaybackTime time and duration, "
+	    //          << mdate() << ", " << time << ", " << duration << std::endl;
 		
         return time;
     }
