@@ -90,7 +90,7 @@ namespace adaptive
 
         /* LVP added, TFE */
         // mdate, diffsums, deltamax, alpha, avg
-        msg_Info(p_obj, "TFE moving average push, %" PRId64 ", %f, %f, %f, %f",
+        msg_Info(NULL, "TFE moving average push, %" PRId64 ", %f, %f, %f, %f",
                 mdate(), (diffsums.sum ? (double) diffsums.sum : 0), (double) deltamax, alpha, (double) avg);
         //std::cerr << "TFE diffsums, " << mdate() << ", " << (double) diffsums.sum << std::endl;
         //std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;

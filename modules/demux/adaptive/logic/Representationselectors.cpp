@@ -88,7 +88,7 @@ BaseRepresentation * RepresentationSelector::select(BaseAdaptationSet *adaptSet,
     {
         if (candidate->getBandwidth() > bitrate) /* none matched, returned lowest */ {
             /* LVP added, TFE */
-            msg_Info(p_obj, "TFE base representation lowest possible, %" PRId64, mdate());
+            //msg_Info(p_obj, "TFE base representation lowest possible, %" PRId64, mdate());
             //std::cerr << "TFE base representation lowest possible, " << mdate() << std::endl;
             return candidate;
         }
@@ -152,10 +152,10 @@ BaseRepresentation * RepresentationSelector::select(std::vector<BaseRepresentati
     }
 
     /* LVP added, TFE */
-    if (candidate)
-        msg_Info(p_obj, "TFE base representation bw, %" PRId64 ", %" PRId64, mdate(), candidate->getBandwidth());
-    else
-        msg_Info(p_obj, "TFE base representation lowest bw, %" PRId64 ", %" PRId64, mdate(), candidate->getBandwidth());
+    //if (candidate)
+    //    msg_Info(p_obj, "TFE base representation bw, %" PRId64 ", %" PRId64, mdate(), candidate->getBandwidth());
+    //else
+    //    msg_Info(p_obj, "TFE base representation lowest bw, %" PRId64 ", %" PRId64, mdate(), candidate->getBandwidth());
     //if (candidate) std::cerr << "TFE base representation bw, " << mdate() << ", " << candidate->getBandwidth() << std::endl;
     //else std::cerr << "TFE base representation lowest bw, " << mdate() << ", " << lowest->getBandwidth() << std::endl;
 

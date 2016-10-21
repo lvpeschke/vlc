@@ -75,7 +75,7 @@ PlaylistManager::PlaylistManager( demux_t *p_demux_,
     cached.i_time = VLC_TS_INVALID;
 	
     /* LVP added, TFE */
-    msg_Info(p_obj, "TFE new playlist manager, %" PRId64, mdate());
+    msg_Info(p_demux, "TFE new playlist manager, %" PRId64, mdate());
     //std::cerr << "TFE new playlist manager, " << mdate() << std::endl;
 }
 
@@ -93,7 +93,7 @@ PlaylistManager::~PlaylistManager   ()
     vlc_mutex_destroy(&cached.lock);
 	
     /* LVP added, TFE */
-    msg_Info(p_obj, "TFE delete playlist manager, %" PRId64, mdate());
+    msg_Info(p_demux, "TFE delete playlist manager, %" PRId64, mdate());
     //std::cerr << "TFE delete playlist manager, " << mdate() << std::endl;
 }
 
@@ -377,7 +377,7 @@ mtime_t PlaylistManager::getFirstPlaybackTime() const
 mtime_t PlaylistManager::getCurrentPlaybackTime() const
 {
     /* LVP added, TFE */
-    msg_Info(p_obj, "TFE PlayListManager getCurrentPlaybackTime, %" PRId64 ", %" PRId64, mdate(), demux.i_nzpcr);
+    msg_Info(p_demux, "TFE PlayListManager getCurrentPlaybackTime, %" PRId64 ", %" PRId64, mdate(), demux.i_nzpcr);
     //std::cerr << "TFE PlayListManager getCurrentPlaybackTime(), " << mdate() << ", " << demux.i_nzpcr << std::endl;
     return demux.i_nzpcr;
 }
