@@ -101,7 +101,7 @@ static int vlc_http_file_resp(const struct vlc_http_resource *res,
 
 fail:
     /* LVP added */
-    fprintf(stderr, "LVP fail because vlc_http_file_resp failed with error %d\n", EIO);
+    //fprintf(stderr, "LVP fail because vlc_http_file_resp failed with error %d\n", EIO);
     errno = EIO;
     return -1;
 }
@@ -221,7 +221,7 @@ int vlc_http_file_seek(struct vlc_http_resource *res, uintmax_t offset)
         if (status != 206 && status != 416 && (offset != 0 || status >= 300))
         {
             /* LVP added */
-            fprintf(stderr, "LVP msg_destroy because the response status was %d\n", status);
+            //fprintf(stderr, "LVP msg_destroy because the response status was %d\n", status);
 
             vlc_http_msg_destroy(resp);
             return -1;
@@ -229,7 +229,7 @@ int vlc_http_file_seek(struct vlc_http_resource *res, uintmax_t offset)
         vlc_http_msg_destroy(res->response);
 		
         /* LVP added */
-        fprintf(stderr, "LVP msg_destroy because the response status was %d (2)\n", status);
+        //fprintf(stderr, "LVP msg_destroy because the response status was %d (2)\n", status);
     }
 
     res->response = resp;

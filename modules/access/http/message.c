@@ -193,7 +193,8 @@ void vlc_http_msg_destroy(struct vlc_http_msg *m)
     if (m->payload != NULL) {
         vlc_http_stream_close(m->payload, false);
         /* LVP added */
-        fprintf(stderr, "LVP msg_destroy vlc_http_stream_close: called\n");
+        // called once at the end
+        //fprintf(stderr, "LVP msg_destroy vlc_http_stream_close: called\n");
     }
 
     for (unsigned i = 0; i < m->count; i++)
@@ -234,7 +235,7 @@ vlc_http_req_create(const char *method, const char *scheme,
               || (path != NULL && m->path == NULL)))
     {
         /* LVP added */
-        fprintf(stderr, "LVP msg_destroy because problem while creating the request\n");
+        //fprintf(stderr, "LVP msg_destroy because problem while creating the request\n");
 
         vlc_http_msg_destroy(m);
         m = NULL;
@@ -274,7 +275,7 @@ struct vlc_http_msg *vlc_http_msg_iterate(struct vlc_http_msg *m)
     vlc_http_msg_destroy(m);
 
     /* LVP added */
-    fprintf(stderr, "LVP msg_destroy inside of msf_iterate\n");
+    //fprintf(stderr, "LVP msg_destroy inside of msg_iterate\n");
 
     return next;
 }
@@ -285,7 +286,7 @@ struct vlc_http_msg *vlc_http_msg_get_initial(struct vlc_http_stream *s)
     if (m == NULL) {
         vlc_http_stream_close(s, false);
         /* LVP added */
-        fprintf(stderr, "LVP msg_get_initial vlc_http_stream_close: called\n");
+        //fprintf(stderr, "LVP msg_get_initial vlc_http_stream_close: called\n");
     }
     return m;
 }
@@ -416,7 +417,7 @@ error:
     vlc_http_msg_destroy(m);
 
     /* LVP added */
-    fprintf(stderr, "LVP msg_destroy because problem while creating the header\n");
+    //fprintf(stderr, "LVP msg_destroy because problem while creating the header\n");
 
     return NULL;
 }
@@ -564,7 +565,7 @@ error:
         vlc_http_msg_destroy(m);
 
         /* LVP added */
-        fprintf(stderr, "LVP msg_destroy because problem while creating the h2 headers\n");
+        //fprintf(stderr, "LVP msg_destroy because problem while creating the h2 headers\n");
 
         m = NULL;
     }

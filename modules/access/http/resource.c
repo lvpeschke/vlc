@@ -95,7 +95,8 @@ retry:
     vlc_http_msg_destroy(req);
 	
     /* LVP added */
-    fprintf(stderr, "LVP msg_destroy in vlc_http_res_open because status 406 and negotiation fail\n");
+    // once at beginning
+    //fprintf(stderr, "LVP msg_destroy in vlc_http_res_open because status 406 and negotiation fail\n");
 
     resp = vlc_http_msg_get_final(resp);
     if (resp == NULL)
@@ -120,7 +121,7 @@ retry:
         vlc_http_msg_destroy(resp);
 
         /* LVP added */
-        fprintf(stderr, "LVP msg_destroy in resource_open because status 406 and negotiation success\n");
+        //fprintf(stderr, "LVP msg_destroy in resource_open because status 406 and negotiation success\n");
 
         res->negotiate = false;
         goto retry;
@@ -133,7 +134,7 @@ retry:
 fail:
 
     /* LVP added */
-    fprintf(stderr, "LVP msg_destroy because error in resource_open\n");
+    //fprintf(stderr, "LVP msg_destroy because error in resource_open\n");
 
     vlc_http_msg_destroy(resp);
     return NULL;

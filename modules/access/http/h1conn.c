@@ -104,12 +104,12 @@ static int vlc_http_minor(const char *msg)
 
     if (sscanf(msg, "HTTP/1.%1d", &minor) == 1) {
         /* LVP added */
-        fprintf(stderr, "LVP vlc_http_minor: passed, minor is %d\n", minor);
+        //fprintf(stderr, "LVP vlc_http_minor: passed, minor is %d\n", minor);
         return minor;
     }
 
     /* LVP added */
-    fprintf(stderr, "LVP vlc_http_minor: failed, minor is %d\n", minor);
+    //fprintf(stderr, "LVP vlc_http_minor: failed, minor is %d\n", minor);
 
     return -1;
 }
@@ -217,7 +217,7 @@ static struct vlc_http_msg *vlc_h1_stream_wait(struct vlc_http_stream *stream)
             if (vlc_http_next_token(str) != NULL)
             {
                 /* LVP added */
-                fprintf(stderr, "LVP msg_destroy because next token is not null (unsupported TE)\n");
+                //fprintf(stderr, "LVP msg_destroy because next token is not null (unsupported TE)\n");
 
                 vlc_http_msg_destroy(resp);
                 return vlc_h1_stream_fatal(conn); /* unsupported TE */
@@ -228,7 +228,7 @@ static struct vlc_http_msg *vlc_h1_stream_wait(struct vlc_http_stream *stream)
             if (unlikely(stream == NULL))
             {
                 /* LVP added */
-                fprintf(stderr, "LVP msg_destroy because the stream appears to be NULL ?\n");
+                //fprintf(stderr, "LVP msg_destroy because the stream appears to be NULL ?\n");
 
                 vlc_http_msg_destroy(resp);
                 return vlc_h1_stream_fatal(conn);
