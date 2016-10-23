@@ -188,8 +188,8 @@ FixedRateAdaptationLogic::FixedRateAdaptationLogic(size_t bps) :
 BaseRepresentation *FixedRateAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *)
 {
 
-    /* LVP added, TFE DEBUG */
-    msg_Info(p_obj, "TFE DEBUG getNextRep in FixedRate ???, %" PRId64, mdate());
+    /* LVP added */
+    //msg_Info(p_obj, "TFE DEBUG getNextRep in FixedRate ???, %" PRId64, mdate());
     //std::cerr << "TFE DEBUG getNextRep in FixedRate ???, " << mdate() << std::endl;
 
     if(adaptSet == NULL)

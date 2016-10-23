@@ -73,7 +73,7 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
 
     std::map<ID, PredictiveStats>::iterator it = streams.find(adaptSet->getID());
     /* LVP added, TFE */
-    msg_Info(p_obj, "TFE predictive number of streams, %" PRId64 ", %zu", mdate(), streams.sise());
+    msg_Info(p_obj, "TFE predictive number of streams, %" PRId64 ", %zu", mdate(), streams.size());
     //std::cerr << "TFE predictive number of streams, " << mdate() << ", " << streams.size() << std::endl;
     if(it == streams.end())
     {
