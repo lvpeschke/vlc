@@ -22,9 +22,9 @@
 
 #include <list>
 #include <algorithm>
-/* LVP added
+/* LVP added */
 #include <iostream>
-#include <ctime>*/
+#include <ctime>
 
 namespace adaptive
 {
@@ -90,8 +90,14 @@ namespace adaptive
 
         /* LVP added, TFE */
         // mdate, diffsums, deltamax, alpha, avg
-        msg_Info(p_obj, "TFE moving average push, %" PRId64 ", %f, %f, %f, %f",
-                mdate(), (diffsums.sum ? (double) diffsums.sum : 0), (double) deltamax, alpha, (double) avg);
+        std::cerr << "TFE moving average push, " << mdate()
+                  << ", " << (diffsums.sum ? (double) diffsums.sum : 0)
+                  << ", " << (double) deltamax
+                  << ", " << alpha
+                  << ", " <<  (double) avg
+                  << std::endl;
+        //msg_Info(p_obj, "TFE moving average push, %" PRId64 ", %f, %f, %f, %f",
+        //        mdate(), (diffsums.sum ? (double) diffsums.sum : 0), (double) deltamax, alpha, (double) avg);
         //std::cerr << "TFE diffsums, " << mdate() << ", " << (double) diffsums.sum << std::endl;
         //std::cerr << "TFE deltamax, " << mdate() << ", " << (double) deltamax << std::endl;
         //std::cerr << "TFE alpha, " << mdate() << ", " << alpha << std::endl;
