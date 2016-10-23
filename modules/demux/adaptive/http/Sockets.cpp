@@ -58,7 +58,7 @@ bool Socket::connect(vlc_object_t *p_object, const std::string &hostname, int po
         return false;
 	
     /* LVP added, TFE */
-    msg_Info(p_object, "TFE socket connected, %" PRId64 ", %d", mdate(), port);
+    ////msg_Info(p_object, "TFE socket connected, %" PRId64 ", %d", mdate(), port);
 	//std::cerr << "TFE socket connected, " << mdate() << ", " << port << std::endl;
 
     return true;

@@ -56,7 +56,7 @@ void AbstractConnectionManager::updateDownloadRate(const ID &sourceid, size_t si
 	if(rateObserver) {
         rateObserver->updateDownloadRate(sourceid, size, time);
 		/* LVP added, TFE */
-        msg_Info(p_object, "TFE updateDownloadRate in HTTPConnectionManager, %" PRId64, mdate());
+        ////msg_Info(p_object, "TFE updateDownloadRate in HTTPConnectionManager, %" PRId64, mdate());
 		//std::cerr << "TFE updateDownloadRate in HTTPConnectionManager, " << mdate() << std::endl;
 	}
 }
@@ -142,14 +142,14 @@ AbstractConnection * HTTPConnectionManager::getConnection(ConnectionParams &para
         }
 
         /* LVP added, TFE */
-        msg_Info(p_object, "TFE new connection in HTTPConnectionManager, %" PRId64 ", %zu",
-                mdate(), connectionPool.size());
+        ////msg_Info(p_object, "TFE new connection in HTTPConnectionManager, %" PRId64 ", %zu",
+        ////        mdate(), connectionPool.size());
         //std::cerr << "TFE new connection in HTTPConnectionManager, "
 		//	<< mdate() << ", " << connectionPool.size() << std::endl;
     } else {
         /* LVP added, TFE */
-        msg_Info(p_object, "TFE connection reused in HTTPConnectionManager, %" PRId64 ", %zu",
-                mdate(), connectionPool.size());
+        ////msg_Info(p_object, "TFE connection reused in HTTPConnectionManager, %" PRId64 ", %zu",
+        ////        mdate(), connectionPool.size());
         //std::cerr << "TFE connection reused in HTTPConnectionManager, "
 		//	<< mdate() << ", " << connectionPool.size() << std::endl;
     }

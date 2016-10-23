@@ -76,8 +76,8 @@ void DASHManager::scheduleNextUpdate()
             minbuffer = m;
     }
 	/* LVP added, TFE */
-    msg_Info(p_demux, "TFE DASHManager scheduleNextUpdate real minbuffer, %" PRId64 ", %" PRId64,
-            mdate(), minbuffer);
+    ////msg_Info(p_demux, "TFE DASHManager scheduleNextUpdate real minbuffer, %" PRId64 ", %" PRId64,
+    ////        mdate(), minbuffer);
 	//std::cerr << "TFE DASHManager::scheduleNextUpdate real minbuffer, " << mdate() << ", " << minbuffer << std::endl;
     minbuffer /= 2;
 
@@ -90,8 +90,8 @@ void DASHManager::scheduleNextUpdate()
     nextPlaylistupdate = now + minbuffer / CLOCK_FREQ;
 	
     /* LVP added, TFE */
-    msg_Info(p_demux, "TFE DASHManager scheduleNextUpdate, %" PRId64 ", %" PRId64 ", %" PRId64,
-            mdate(), (mtime_t) now, (mtime_t) nextPlaylistupdate);
+    ////msg_Info(p_demux, "TFE DASHManager scheduleNextUpdate, %" PRId64 ", %" PRId64 ", %" PRId64,
+    ////        mdate(), (mtime_t) now, (mtime_t) nextPlaylistupdate);
     //std::cerr << "TFE DASHManager::scheduleNextUpdate final minbuffer, " << mdate() << ", " << nextPlaylistupdate << std::endl;
 
     msg_Dbg(p_demux, "Updated MPD, next update in %" PRId64 "s", (mtime_t) nextPlaylistupdate - now );
@@ -154,7 +154,7 @@ bool DASHManager::updatePlaylist()
         block_Release(p_block);
 
         /* LVP added, TFE */
-        msg_Info(p_demux, "TFE DASHManager updatePlaylist, %" PRId64, mdate());
+        ////msg_Info(p_demux, "TFE DASHManager updatePlaylist, %" PRId64, mdate());
         //std::cerr << "TFE DASHManager::updatePlaylist, " << mdate() << std::endl;
     }
 

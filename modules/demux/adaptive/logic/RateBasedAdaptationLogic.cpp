@@ -69,13 +69,13 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     vlc_mutex_unlock(const_cast<vlc_mutex_t *>(&lock));
     if(availBps > usedBps) {
         /* LVP added, TFE DEBUG */
-        msg_Info(p_obj, "TFE DEBUG availBps > usedBps, %" PRId64 ", %zu, %zu", mdate(), availBps, usedBps);
+        ////msg_Info(p_obj, "TFE DEBUG availBps > usedBps, %" PRId64 ", %zu, %zu", mdate(), availBps, usedBps);
         //std::cerr << "TFE DEBUG availBps > usedBps, " << mdate() << ", " << availBps << ", " << usedBps << std::endl;
         availBps -= usedBps;
     }
     else {
         /* LVP added, TFE DEBUG */
-        msg_Info(p_obj, "TFE DEBUG availBps will be 0, %" PRId64 ", %zu, %zu", mdate(), availBps, usedBps);
+        ////msg_Info(p_obj, "TFE DEBUG availBps will be 0, %" PRId64 ", %zu, %zu", mdate(), availBps, usedBps);
         //std::cerr << "TFE DEBUG availBps will be 0, " << mdate() << ", " << availBps << ", " << usedBps << std::endl;
         availBps = 0;
     }
@@ -86,14 +86,14 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     if ( rep == NULL )
     {
         /* LVP added, TFE DEBUG */
-        msg_Info(p_obj, "TFE DEBUG rep is null, %" PRId64, mdate());
+        ////msg_Info(p_obj, "TFE DEBUG rep is null, %" PRId64, mdate());
         //std::cerr << "TFE DEBUG rep is null, " << mdate() << std::endl;
 
         rep = selector.select(adaptSet);
         if ( rep == NULL ) {
 
             /* LVP added, TFE DEBUG */
-            msg_Info(p_obj, "TFE DEBUG rep is still null, %" PRId64, mdate());
+            ////msg_Info(p_obj, "TFE DEBUG rep is still null, %" PRId64, mdate());
             //std::cerr << "TFE DEBUG rep is still null, " << mdate() << std::endl;
 
             return NULL;
@@ -102,7 +102,7 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     }
 
     /* LVP added, TFE */
-    msg_Info(p_obj, "TFE base representation, %" PRId64 ", %" PRId64, mdate(), rep->getBandwidth());
+    ////msg_Info(p_obj, "TFE base representation, %" PRId64 ", %" PRId64, mdate(), rep->getBandwidth());
     //std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
     return rep;
@@ -115,8 +115,8 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
 
     if(unlikely(time == 0)){
         /* LVP added, TFE DEBUG */
-        msg_Info(p_obj, "TFE DEBUG unlikely(time==0) happened in ... Logic update download rate, %" PRId64,
-                mdate());
+        ////msg_Info(p_obj, "TFE DEBUG unlikely(time==0) happened in ... Logic update download rate, %" PRId64,
+        ////        mdate());
         //std::cerr << "TFE DEBUG unlikely(time==0) happened in ...Logic update download rate, " << mdate() << std::endl;
         return;
     }
@@ -127,8 +127,8 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
 
     if(dllength < CLOCK_FREQ / 4){
         /* LVP added, TFE DEBUG */
-        msg_Info(p_obj, "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, %" PRId64,
-                mdate());
+        ////msg_Info(p_obj, "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, %" PRId64,
+        ////        mdate());
         //std::cerr << "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << mdate() << std::endl;
         return;
     }
@@ -150,8 +150,8 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     /* LVP added, TFE */
     // always called by HTTPConnectionManager updateDownloadRate, chunkBuffered updateDownloadRate
     // mdate, observed, avg, current, used
-    msg_Info(p_obj, "TFE update download rate, %" PRId64 ", %zu, %zu, %zu, %zu",
-            mdate(), bps, bpsAvg, currentBps, usedBps);
+    ////msg_Info(p_obj, "TFE update download rate, %" PRId64 ", %zu, %zu, %zu, %zu",
+    ////        mdate(), bps, bpsAvg, currentBps, usedBps);
     //std::cerr << "TFE download rate updated, " << mdate() << std::endl;
     //std::cerr << "TFE bpsObserved, " << mdate() << ", " << bps << std::endl;
     //std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
@@ -174,7 +174,7 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%", 
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
         /* LVP added, TFE */
-        msg_Info(p_obj, "TFE new bps, %" PRId64 ", %zu", mdate(), usedBps);
+        ////msg_Info(p_obj, "TFE new bps, %" PRId64 ", %zu", mdate(), usedBps);
 		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }

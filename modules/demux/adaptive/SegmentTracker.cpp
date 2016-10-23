@@ -62,7 +62,7 @@ SegmentTrackerEvent::SegmentTrackerEvent(const ID &id, bool enabled)
     u.buffering.id = &id;
     /* LVP added, TFE */
     std::cerr << "TFE SegmentTrackerEvent BUFFERING_STATE bool, " << mdate()
-              << ", " << (int) enabled << std::endl;
+              << ", " << enabled << std::endl;
     //msg_Info(NULL, "TFE SegmentTrackerEvent BUFFERING_STATE bool, %" PRId64 ", %d", mdate(), enabled);
     //std::cerr << "TFE SegmentTrackerEvent BUFFERING_STATE (bool), " << mdate() << ", " << enabled << std::endl;
 }
