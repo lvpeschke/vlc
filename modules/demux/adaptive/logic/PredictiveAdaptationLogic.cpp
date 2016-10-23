@@ -105,7 +105,7 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
             }
         }
         /* LVP added, TFE */
-        // stats: mdate, target, level, ratio, min buflevel, max bitrate
+        // stats: mdate, level, target, ratio, min buflevel, max bitrate
         ////msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %" PRId64 ", %" PRId64 ", %f, %f, %u",
         ////        mdate(),
         ////        stats.buffering_level, stats.buffering_target, f_buffering_level,
