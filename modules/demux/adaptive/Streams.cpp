@@ -35,6 +35,7 @@
 /* LVP added
 #include <iostream>
 #include <ctime>*/
+#include <cinttypes>
 
 using namespace adaptive;
 using namespace adaptive::http;

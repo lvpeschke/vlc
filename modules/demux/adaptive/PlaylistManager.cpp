@@ -42,6 +42,9 @@
 #include <algorithm>
 #include <ctime>
 
+/* LVP added */
+#include <cinttypes>
+
 using namespace adaptive::http;
 using namespace adaptive::logic;
 using namespace adaptive;

@@ -25,8 +25,8 @@
 
 #include <vlc_network.h>
 #include <cerrno>
-#include <iostream>
-/* LVP added (above) */
+/* LVP added*/
+#include <cinttypes>
 
 using namespace adaptive::http;
 

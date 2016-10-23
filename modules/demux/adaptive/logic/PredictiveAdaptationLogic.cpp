@@ -33,6 +33,7 @@
 /* LVP added
 #include <iostream>
 #include <ctime>*/
+#include <cinttypes>
 
 using namespace adaptive::logic;
 using namespace adaptive;

@@ -44,6 +44,8 @@
 
 #include <algorithm>
 #include <ctime>
+/* LVP added */
+#include <cinttypes>
 
 using namespace dash;
 using namespace dash::mpd;

@@ -35,6 +35,7 @@
 #include <iostream>
 #include <ctime>
 #include <cstdint>*/
+#include <cinttypes>
 
 using namespace adaptive::http;
 
