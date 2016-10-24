@@ -419,13 +419,14 @@ AbstractStream::status AbstractStream::dequeue(mtime_t nz_deadline, mtime_t *pi_
                      nz_deadline, commandsqueue->getBufferingLevel()));
 					 
 	/* LVP added, TFE & TFE DEBUG*/
-    // mdate, pcr, dts, buflevel, nz deadline, demuxed amount
+    // mdate, desc (text), pcr, dts, buflevel, nz deadline, demuxed amount
     // demuxed amount = bufferinglevel - getFirstDTS
-    ////msg_Info(p_realdemux, "TFE stream, %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64,
+    ////msg_Info(p_realdemux, "TFE stream, %" PRId64 ", %s, %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64,
     ////        mdate(),
+	////        (description && !description.empty() ? description.c_str() : "?"),
     ////        commandsqueue->getPCR(), commandsqueue->getFirstDTS(),
     ////        commandsqueue->getBufferingLevel(), nz_deadline, commandsqueue->getDemuxedAmount());
-    ////msg_Info(p_realdemux, "TFE DEBUG stream is %s, %" PRId64, description.c_str(), mdate());
+    //msg_Info(p_realdemux, "TFE DEBUG stream is %s, %" PRId64, description.c_str(), mdate());
 	//std::cerr << "TFE stream, " << mdate() << ", " << description.c_str() << std::endl;
 	//std::cerr << "TFE pcr, " << mdate() << ", " << commandsqueue->getPCR() << std::endl;
 	//std::cerr << "TFE dts, " << mdate() << ", " << commandsqueue->getFirstDTS() << std::endl;
