@@ -92,7 +92,7 @@ namespace adaptive
         // mdate, diffsums, deltamax, alpha, avg
         std::cerr << "TFE moving average push, " << mdate()
                   << ", " << (diffsums.sum ? (double) diffsums.sum : 0)
-	          << ", " << (double) deltamax
+                  << ", " << (double) deltamax
                   << ", " << alpha
                   << ", " <<  (double) avg
                   << std::endl;
