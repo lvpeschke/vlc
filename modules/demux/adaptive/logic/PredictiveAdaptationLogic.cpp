@@ -79,7 +79,8 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
     if(it == streams.end())
     {
         /* LVP added, TFE */
-        ////msg_Info(p_obj, "TFE predictive streams end rep highest, %" PRId64, mdate());
+        ////msg_Info(p_obj, "TFE predictive streams end rep highest, %" PRId64 ", %s",
+		////         mdate(), adaptSet->getID().str().c_str());
         //std::cerr << "TFE predictive streams end rep highest, " << mdate() << std::endl;
         rep = selector.highest(adaptSet);
     }
@@ -106,8 +107,9 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
         }
         /* LVP added, TFE */
         // stats: mdate, level, target, ratio, min buflevel, max bitrate
-        ////msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %" PRId64 ", %" PRId64 ", %f, %f, %u",
+        ////msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %s, %" PRId64 ", %" PRId64 ", %f, %f, %u",
         ////        mdate(),
+		////        adaptSet->getID().str().c_str(),
         ////        stats.buffering_level, stats.buffering_target, f_buffering_level,
         ////        f_min_buffering_level, i_max_bitrate);
         //std::cerr << "TFE predictive stats buflevel, " << mdate() << ", " <<
@@ -122,7 +124,8 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
         if(stats.starting())
         {
             /* LVP added, TFE */
-            ////msg_Info(p_obj, "TFE predictive stats starting rep highest, %" PRId64, mdate());
+            ////msg_Info(p_obj, "TFE predictive stats starting rep highest, %" PRId64 ", %s",
+			////         mdate(), adaptSet->getID().str().c_str());
             //std::cerr << "TFE predictive stats starting rep highest, " << mdate() << std::endl;
             rep = selector.highest(adaptSet);
         }
@@ -189,8 +192,8 @@ void PredictiveAdaptationLogic::updateDownloadRate(const ID &id, size_t dlsize, 
         stats.last_download_rate = stats.average.push(CLOCK_FREQ * dlsize * 8 / time);
 
         /* LVP added, TFE & TFE DEBUG */
-        ////msg_Info(p_obj, "TFE predictive update last download rate, %" PRId64 ", %u",
-        ////        mdate(), (CLOCK_FREQ * dlsize * 8 / time));  // TODO watch time (u)
+        ////msg_Info(p_obj, "TFE predictive update last download rate, %" PRId64 ", %s, %u",
+        ////        mdate(), id.str().c_str(), (CLOCK_FREQ * dlsize * 8 / time));  // TODO watch time (u)
         ////msg_Info(p_obj, "TFE DEBUG predictive update last download rate is for stream %s, %" PRId64,
         ////        id.str().c_str(), mdate());
         //std::cerr << "TFE predictive update last download rate, " << mdate()
@@ -248,11 +251,11 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                     streams.erase(it);
             }
             vlc_mutex_unlock(&lock);
-            BwDebug(msg_Info(p_obj, "Stream %s is now known %sactive",
-                             (event.u.buffering.enabled) ? "" : "in"));  // LVP corrected: inserted "?"
+            //BwDebug(msg_Info(p_obj, "Stream %s is now known %sactive",
+            //                 (event.u.buffering.enabled) ? "" : "in"));
             /* LVP added, TFE */
-            ////msg_Info(p_obj, "TFE predictive SegmentTrackerEvent BUFFERING_STATE bool, %" PRId64 ", %d",
-            ////        mdate(), event.u.buffering.enabled);
+            ////msg_Info(p_obj, "TFE predictive SegmentTrackerEvent BUFFERING_STATE bool, %" PRId64 ", %s, %d",
+            ////        mdate(), id.str().c_str(), event.u.buffering.enabled);
             //std::cerr << "TFE predictive SegmentTrackerEvent BUFFERING_STATE (bool), "
             //          << mdate() << ", " << event.u.buffering.enabled << std::endl;
         }
@@ -267,8 +270,8 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
             stats.buffering_target = event.u.buffering_level.target;
             vlc_mutex_unlock(&lock);
             /* LVP added, TFE */
-            ////msg_Info(p_obj, "TFE predictive SegmentTrackerEvent BUFFERING_LEVEL_CHANGE, %" PRId64 ", %" PRId64 ", %" PRId64,
-            ////        mdate(), event.u.buffering_level.current, event.u.buffering_level.target);
+            ////msg_Info(p_obj, "TFE predictive SegmentTrackerEvent BUFFERING_LEVEL_CHANGE, %" PRId64 ", %s, %" PRId64 ", %" PRId64,
+            ////        mdate(), id.str().c_str(), event.u.buffering_level.current, event.u.buffering_level.target);
             //std::cerr << "TFE predictive SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level current, "
             //          << mdate() << ", " << event.u.buffering_level.current << std::endl;
             //std::cerr << "TFE predictive SegmentTrackerEvent BUFFERING_LEVEL_CHANGE buffering level target, "

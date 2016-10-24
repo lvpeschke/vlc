@@ -102,7 +102,7 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     }
 
     /* LVP added, TFE */
-    ////msg_Info(p_obj, "TFE base representation, %" PRId64 ", %" PRId64, mdate(), rep->getBandwidth());
+    ////msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %" PRId64, mdate(), rep->getBandwidth());
     //std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
     return rep;
@@ -111,7 +111,7 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
 void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime_t time)
 {
     /* LVP added */
-    msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate");
+    //msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate");
 
     if(unlikely(time == 0)){
         /* LVP added, TFE DEBUG */
@@ -150,7 +150,7 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     /* LVP added, TFE */
     // always called by HTTPConnectionManager updateDownloadRate, chunkBuffered updateDownloadRate
     // mdate, observed, avg, current, used
-    ////msg_Info(p_obj, "TFE update download rate, %" PRId64 ", %zu, %zu, %zu, %zu",
+    ////msg_Info(p_obj, "TFE rblogic update download rate, %" PRId64 ", %zu, %zu, %zu, %zu",
     ////        mdate(), bps, bpsAvg, currentBps, usedBps);
     //std::cerr << "TFE download rate updated, " << mdate() << std::endl;
     //std::cerr << "TFE bpsObserved, " << mdate() << ", " << bps << std::endl;
@@ -174,10 +174,22 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%", 
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
         /* LVP added, TFE */
-        ////msg_Info(p_obj, "TFE new bps, %" PRId64 ", %zu", mdate(), usedBps);
+        ////msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %zu", mdate(), usedBps);
 		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }
+	/* LVP added, TFE */
+	else if(event.type == SegmentTrackerEvent::BUFFERING_STATE)
+	{
+    	////msg_Info(p_obj, "TFE rblogic BUFFERING_STATE bool, %" PRId64 ", %d",
+        ////        mdate(), event.u.buffering.enabled);
+	}
+	else if(event.type == SegmentTrackerEvent::BUFFERING_LEVEL_CHANGE)
+	{
+        ////msg_Info(p_obj, "TFE rblogic BUFFERING_LEVEL_CHANGE, %" PRId64 ", %" PRId64 ", %" PRId64,
+        ////        mdate(), event.u.buffering_level.current, event.u.buffering_level.target);
+	}
+	
 }
 
 FixedRateAdaptationLogic::FixedRateAdaptationLogic(size_t bps) :
