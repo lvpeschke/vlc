@@ -58,8 +58,8 @@ bool Socket::connect(vlc_object_t *p_object, const std::string &hostname, int po
         return false;
 	
     /* LVP added, TFE */
-    ////msg_Info(p_object, "TFE socket connected, %" PRId64 ", %d", mdate(), port);
-	//std::cerr << "TFE socket connected, " << mdate() << ", " << port << std::endl;
+    msg_Info(p_object, "TFE socket connected, %" PRId64 ", %d", mdate(), port);
+    //std::cerr << "TFE socket connected, " << mdate() << ", " << port << std::endl;
 
     return true;
 }
@@ -148,7 +148,7 @@ bool TLSSocket::connect(vlc_object_t *p_object, const std::string &hostname, int
 	
     /* LVP added */
     msg_Info(p_object, "TFE TLS socket connected, %" PRId64 ", %d", mdate(), port);
-	//std::cerr << "TFE TLS socket connected, " << mdate() << ", " << port << std::endl;
+    //std::cerr << "TFE TLS socket connected, " << mdate() << ", " << port << std::endl;
 
     return true;
 }

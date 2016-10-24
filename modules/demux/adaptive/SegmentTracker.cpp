@@ -29,6 +29,8 @@
 #include "playlist/Segment.h"
 #include "playlist/SegmentChunk.hpp"
 #include "logic/AbstractAdaptationLogic.h"
+/* LVP added */
+#include <iostream>
 
 using namespace adaptive;
 using namespace adaptive::logic;
