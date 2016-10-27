@@ -102,7 +102,11 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     }
 
     /* LVP added, TFE */
-    msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %" PRIu64, mdate(), rep->getBandwidth());
+	// TODO which to keep (3 %s)
+    msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %s, %s, %s, %" PRIu64,
+            mdate(),
+            adaptSet->getID().str().c_str(), adaptSet->getMimeType(), adaptSet->description,
+            rep->getBandwidth());
     //std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
     return rep;
@@ -171,23 +175,26 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         if(event.u.switching.next)
             usedBps += event.u.switching.next->getBandwidth();
 
-        BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%", 
+        BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
         /* LVP added, TFE */
-        msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %zu", mdate(), usedBps);
-	//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
+        msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %s, %zu",
+                mdate(), event.u.buffering.id->str().c_str(), usedBps);
+		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }
 	/* LVP added, TFE */
 	else if(event.type == SegmentTrackerEvent::BUFFERING_STATE)
 	{
-    	msg_Info(p_obj, "TFE rblogic BUFFERING_STATE bool, %" PRId64 ", %d",
-                mdate(), event.u.buffering.enabled);
+    	msg_Info(p_obj, "TFE rblogic BUFFERING_STATE bool, %" PRId64 ", %s, %d",
+                mdate(), event.u.buffering.id->str().c_str(), event.u.buffering.enabled);
 	}
 	else if(event.type == SegmentTrackerEvent::BUFFERING_LEVEL_CHANGE)
 	{
-        msg_Info(p_obj, "TFE rblogic BUFFERING_LEVEL_CHANGE, %" PRId64 ", %" PRId64 ", %" PRId64,
-                mdate(), event.u.buffering_level.current, event.u.buffering_level.target);
+        msg_Info(p_obj, "TFE rblogic BUFFERING_LEVEL_CHANGE, %" PRId64 ", %s, %" PRId64 ", %" PRId64,
+                mdate(),
+                event.u.buffering.id->str().c_str(),
+                event.u.buffering_level.current, event.u.buffering_level.target);
 	}
 	
 }

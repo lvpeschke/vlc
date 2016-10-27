@@ -107,15 +107,15 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
         }
         /* LVP added, TFE */
         // stats: mdate, level, target, ratio, min buflevel, max bitrate
-	msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %s, %" PRId64 ", %" PRId64 ", %f, %f, %u",
+	    msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %s, %" PRId64 ", %" PRId64 ", %f, %f, %u",
                 mdate(),
-		adaptSet->getID().str().c_str(),
+                adaptSet->getID().str().c_str(),
                 stats.buffering_level, stats.buffering_target, f_buffering_level,
-	        f_min_buffering_level, i_max_bitrate);
+                f_min_buffering_level, i_max_bitrate);
         //std::cerr << "TFE predictive stats buflevel, " << mdate() << ", " <<
-	//adaptSet->getID().str().c_str() << ", " << stats.buffering_level << std::endl;
+	    //adaptSet->getID().str().c_str() << ", " << stats.buffering_level << std::endl;
         //std::cerr << "TFE predictive stats buftarget, " << mdate() << ", " <<
-	//adaptSet->getID().str().c_str() << ", " << stats.buffering_target << std::endl;
+	    //adaptSet->getID().str().c_str() << ", " << stats.buffering_target << std::endl;
         //std::cerr << "TFE predictive buflevel ratio, " << mdate() << ", " <<
         //          adaptSet->getID().str().c_str() << ", " << f_buffering_level << std::endl;
         //std::cerr << "TFE predictive min buflevel, " << mdate() << ", " << f_min_buffering_level << std::endl;
@@ -170,8 +170,8 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
                          adaptSet->getID().str().c_str(), rep->getBandwidth() / 8000); );
 
         /* LVP added, TFE */
-        msg_Info(p_obj, "TFE predictive bandwidth usage bps, %" PRId64 ", %" PRIu64,
-                mdate(), rep->getBandwidth());
+        msg_Info(p_obj, "TFE predictive bandwidth usage bps, %" PRId64 ", %s, %" PRIu64,
+                mdate(), adaptSet->getID().str().c_str(), rep->getBandwidth());
         //std::cerr << "TFE predictive bandwidth usage bps, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
         stats.segments_count++;
@@ -223,10 +223,11 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                 usedBps -= event.u.switching.prev->getBandwidth();
             if(event.u.switching.next)
                 usedBps += event.u.switching.next->getBandwidth();
-
+				
             BwDebug(msg_Info(p_obj, "New total bandwidth usage %zu KiB/s", (usedBps / 8000)));
             /* LVP added, TFE */
-            msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %" PRIu64, mdate(), usedBps);
+            msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %" PRIu64,
+                    mdate(), event.u.buffering.id->str().c_str(), usedBps);
             //std::cerr << "TFE predictive new bps, " << mdate() << ", " << usedBps << std::endl;
             vlc_mutex_unlock(&lock);
         }
