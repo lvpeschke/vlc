@@ -103,9 +103,9 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
 
     /* LVP added, TFE */
 	// TODO which to keep (3 %s)
-    msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %s, %s, %s, %" PRIu64,
+    msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ",%s, %" PRIu64,
             mdate(),
-            adaptSet->getID().str().c_str(), adaptSet->getMimeType(), adaptSet->description,
+            adaptSet->getID().str().c_str(),
             rep->getBandwidth());
     //std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
