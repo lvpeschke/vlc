@@ -179,7 +179,7 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
         /* LVP added, TFE */
         msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %s, %zu",
-                mdate(), event.u.buffering.id->str().c_str(), usedBps);
+                mdate(), event.u.switching.next->getID().str().c_str(), usedBps);
 		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }
