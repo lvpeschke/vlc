@@ -103,7 +103,7 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
 
     /* LVP added, TFE */
 	// TODO which to keep (3 %s)
-    msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ",%s, %" PRIu64,
+    msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %s, %" PRIu64,
             mdate(),
             adaptSet->getID().str().c_str(),
             rep->getBandwidth());
@@ -169,6 +169,16 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 {
     if(event.type == SegmentTrackerEvent::SWITCHING)
     {
+        /* LVP added */
+        char* id;
+        if(event.u.switching.next) {
+            id = event.u.switching.next->getAdaptationSet()->getID().str().c_str();
+        } else if(event.u.switching.prev) {
+            id = event.u.switching.prev->getAdaptationSet()->getID().str().c_str();
+        } else {
+            id = "";
+        }
+
         vlc_mutex_lock(&lock);
         if(event.u.switching.prev)
             usedBps -= event.u.switching.prev->getBandwidth();
@@ -179,7 +189,7 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
         /* LVP added, TFE */
         msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %s, %zu",
-                mdate(), event.u.switching.next->getID().str().c_str(), usedBps);
+                mdate(), id, usedBps);
 		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }
