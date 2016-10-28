@@ -172,9 +172,9 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         /* LVP added */
         std::string id;
         if(event.u.switching.next) {
-            id = event.u.switching.next->getAdaptationSet()->getID().str().c_str();
+            id = event.u.switching.next->getAdaptationSet()->getID().str();
         } else if(event.u.switching.prev) {
-            id = event.u.switching.prev->getAdaptationSet()->getID().str().c_str();
+            id = event.u.switching.prev->getAdaptationSet()->getID().str();
         } else {
             id = "";
         }
@@ -192,7 +192,7 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         msg_Info(p_obj, "TFE A rblogic new bps, %" PRId64 ", %zu",
                 mdate(), usedBps);
         msg_Info(p_obj, "TFE B rblogic new bps, %" PRId64 ", %s, %zu",
-                mdate(), id, usedBps);
+                mdate(), id.c_str(), usedBps);
 		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);
     }

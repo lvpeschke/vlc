@@ -221,9 +221,9 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
             /* LVP added */
             std::string id;
             if(event.u.switching.next) {
-                id = event.u.switching.next->getAdaptationSet()->getID().str().c_str();
+                id = event.u.switching.next->getAdaptationSet()->getID().str();
             } else if(event.u.switching.prev) {
-                id = event.u.switching.prev->getAdaptationSet()->getID().str().c_str();
+                id = event.u.switching.prev->getAdaptationSet()->getID().str();
             } else {
                 id = "";
             }
@@ -240,7 +240,7 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
             msg_Info(p_obj, "TFE A predictive new bps, %" PRId64 ", %" PRIu64,
                     mdate(), usedBps);
             msg_Info(p_obj, "TFE B predictive new bps, %" PRId64 ", %s, %" PRIu64,
-                    mdate(), id, usedBps);
+                    mdate(), id.c_str(), usedBps);
             //std::cerr << "TFE predictive new bps, " << mdate() << ", " << usedBps << std::endl;
             vlc_mutex_unlock(&lock);
         }
