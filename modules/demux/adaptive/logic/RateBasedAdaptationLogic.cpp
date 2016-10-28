@@ -186,14 +186,16 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 	/* LVP added, TFE */
 	else if(event.type == SegmentTrackerEvent::BUFFERING_STATE)
 	{
+        const ID &id = *event.u.buffering.id;
     	msg_Info(p_obj, "TFE rblogic BUFFERING_STATE bool, %" PRId64 ", %s, %d",
-                mdate(), event.u.buffering.id->str().c_str(), event.u.buffering.enabled);
+                mdate(), id.str().c_str(), event.u.buffering.enabled);
 	}
 	else if(event.type == SegmentTrackerEvent::BUFFERING_LEVEL_CHANGE)
 	{
+        const ID &id = *event.u.buffering.id;
         msg_Info(p_obj, "TFE rblogic BUFFERING_LEVEL_CHANGE, %" PRId64 ", %s, %" PRId64 ", %" PRId64,
                 mdate(),
-                event.u.buffering.id->str().c_str(),
+                id.str().c_str(),
                 event.u.buffering_level.current, event.u.buffering_level.target);
 	}
 	
