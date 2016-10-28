@@ -70,13 +70,11 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     if(availBps > usedBps) {
         /* LVP added, TFE DEBUG */
         msg_Info(p_obj, "TFE DEBUG availBps > usedBps, %" PRId64 ", %zu, %zu", mdate(), availBps, usedBps);
-        //std::cerr << "TFE DEBUG availBps > usedBps, " << mdate() << ", " << availBps << ", " << usedBps << std::endl;
         availBps -= usedBps;
     }
     else {
         /* LVP added, TFE DEBUG */
         msg_Info(p_obj, "TFE DEBUG availBps will be 0, %" PRId64 ", %zu, %zu", mdate(), availBps, usedBps);
-        //std::cerr << "TFE DEBUG availBps will be 0, " << mdate() << ", " << availBps << ", " << usedBps << std::endl;
         availBps = 0;
     }
 
@@ -87,14 +85,12 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     {
         /* LVP added, TFE DEBUG */
         msg_Info(p_obj, "TFE DEBUG rep is null, %" PRId64, mdate());
-        //std::cerr << "TFE DEBUG rep is null, " << mdate() << std::endl;
 
         rep = selector.select(adaptSet);
         if ( rep == NULL ) {
 
             /* LVP added, TFE DEBUG */
             msg_Info(p_obj, "TFE DEBUG rep is still null, %" PRId64, mdate());
-            //std::cerr << "TFE DEBUG rep is still null, " << mdate() << std::endl;
 
             return NULL;
         }
@@ -102,26 +98,20 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     }
 
     /* LVP added, TFE */
-	// TODO which to keep (3 %s)
     msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %s, %" PRIu64,
             mdate(),
             adaptSet->getID().str().c_str(),
             rep->getBandwidth());
-    //std::cerr << "TFE base representation, " << mdate() << ", " << rep->getBandwidth() << std::endl;
 
     return rep;
 }
 
 void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime_t time)
 {
-    /* LVP added */
-    //msg_Dbg(p_obj, "LVP entered RateBasedAdaptationLogic::updateDownloadRate");
-
     if(unlikely(time == 0)){
         /* LVP added, TFE DEBUG */
         msg_Info(p_obj, "TFE DEBUG unlikely(time==0) happened in ... Logic update download rate, %" PRId64,
                 mdate());
-        //std::cerr << "TFE DEBUG unlikely(time==0) happened in ...Logic update download rate, " << mdate() << std::endl;
         return;
     }
 
@@ -133,7 +123,6 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
         /* LVP added, TFE DEBUG */
         msg_Info(p_obj, "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, %" PRId64,
                 mdate());
-        //std::cerr << "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, " << mdate() << std::endl;
         return;
     }
 
@@ -156,11 +145,6 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     // mdate, observed, avg, current, used
     msg_Info(p_obj, "TFE rblogic update download rate, %" PRId64 ", %zu, %zu, %zu, %zu",
             mdate(), bps, bpsAvg, currentBps, usedBps);
-    //std::cerr << "TFE download rate updated, " << mdate() << std::endl;
-    //std::cerr << "TFE bpsObserved, " << mdate() << ", " << bps << std::endl;
-    //std::cerr << "TFE bpsAvg, " << mdate() << ", " << bpsAvg << std::endl;
-    //std::cerr << "TFE bpsCurrent, " << mdate() << ", " << currentBps << std::endl;
-    //std::cerr << "TFE bpsUsed, " << mdate() << ", " << usedBps << std::endl;
 
     vlc_mutex_unlock(&lock);
 }
@@ -190,7 +174,6 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                 mdate(), usedBps);
         msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %s, %zu",
                 mdate(), (id.empty()) ? "\0" : id.c_str(), usedBps);
-        //std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
     }
 	/* LVP added, TFE */
 	else if(event.type == SegmentTrackerEvent::BUFFERING_STATE)
@@ -218,11 +201,6 @@ FixedRateAdaptationLogic::FixedRateAdaptationLogic(size_t bps) :
 
 BaseRepresentation *FixedRateAdaptationLogic::getNextRepresentation(BaseAdaptationSet *adaptSet, BaseRepresentation *)
 {
-
-    /* LVP added */
-    //msg_Info(p_obj, "TFE DEBUG getNextRep in FixedRate ???, %" PRId64, mdate());
-    //std::cerr << "TFE DEBUG getNextRep in FixedRate ???, " << mdate() << std::endl;
-
     if(adaptSet == NULL)
         return NULL;
 
