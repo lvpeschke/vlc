@@ -170,7 +170,7 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
     if(event.type == SegmentTrackerEvent::SWITCHING)
     {
         /* LVP added */
-        char* id;
+        std::string id;
         if(event.u.switching.next) {
             id = event.u.switching.next->getAdaptationSet()->getID().str().c_str();
         } else if(event.u.switching.prev) {
@@ -188,7 +188,10 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
         /* LVP added, TFE */
-        msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %s, %zu",
+        // TODO here
+        msg_Info(p_obj, "TFE A rblogic new bps, %" PRId64 ", %zu",
+                mdate(), usedBps);
+        msg_Info(p_obj, "TFE B rblogic new bps, %" PRId64 ", %s, %zu",
                 mdate(), id, usedBps);
 		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
         vlc_mutex_unlock(&lock);

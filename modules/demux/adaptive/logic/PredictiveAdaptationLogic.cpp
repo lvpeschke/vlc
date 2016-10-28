@@ -219,7 +219,7 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
     case SegmentTrackerEvent::SWITCHING:
         {
             /* LVP added */
-            char* id;
+            std::string id;
             if(event.u.switching.next) {
                 id = event.u.switching.next->getAdaptationSet()->getID().str().c_str();
             } else if(event.u.switching.prev) {
@@ -236,7 +236,10 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 				
             BwDebug(msg_Info(p_obj, "New total bandwidth usage %zu KiB/s", (usedBps / 8000)));
             /* LVP added, TFE */
-            msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %" PRIu64,
+            // TODO here
+            msg_Info(p_obj, "TFE A predictive new bps, %" PRId64 ", %" PRIu64,
+                    mdate(), usedBps);
+            msg_Info(p_obj, "TFE B predictive new bps, %" PRId64 ", %s, %" PRIu64,
                     mdate(), id, usedBps);
             //std::cerr << "TFE predictive new bps, " << mdate() << ", " << usedBps << std::endl;
             vlc_mutex_unlock(&lock);
