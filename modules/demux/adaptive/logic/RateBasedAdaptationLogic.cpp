@@ -169,16 +169,6 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 {
     if(event.type == SegmentTrackerEvent::SWITCHING)
     {
-        /* LVP added */
-        std::string id;
-        if(event.u.switching.next) {
-            id = event.u.switching.next->getAdaptationSet()->getID().str();
-        } else if(event.u.switching.prev) {
-            id = event.u.switching.prev->getAdaptationSet()->getID().str();
-        } else {
-            id = "";
-        }
-
         vlc_mutex_lock(&lock);
         if(event.u.switching.prev)
             usedBps -= event.u.switching.prev->getBandwidth();
@@ -187,14 +177,20 @@ void RateBasedAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 
         BwDebug(msg_Info(p_obj, "New bandwidth usage %zu KiB/s %u%%",
                         (usedBps / 8000), (bpsAvg) ? (unsigned)(usedBps * 100.0 / bpsAvg) : 0 ));
+        vlc_mutex_unlock(&lock);
+
         /* LVP added, TFE */
         // TODO here
-        msg_Info(p_obj, "TFE A rblogic new bps, %" PRId64 ", %zu",
+        const std::string id;
+        if(event.u.switching.next) {
+            id = event.u.switching.next->getAdaptationSet()->getID().str();
+        } else if(event.u.switching.prev) {
+            id = event.u.switching.prev->getAdaptationSet()->getID().str();
+        msg_Info(p_obj, "TFE OLD rblogic new bps, %" PRId64 ", %zu",
                 mdate(), usedBps);
-        msg_Info(p_obj, "TFE B rblogic new bps, %" PRId64 ", %s, %zu",
-                mdate(), id.c_str(), usedBps);
-		//std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
-        vlc_mutex_unlock(&lock);
+        msg_Info(p_obj, "TFE rblogic new bps, %" PRId64 ", %s, %zu",
+                mdate(), (id.empty()) ? "\0" : id.c_str(), usedBps);
+        //std::cerr << "TFE new bps, " << mdate() << ", " << usedBps << std::endl;
     }
 	/* LVP added, TFE */
 	else if(event.type == SegmentTrackerEvent::BUFFERING_STATE)

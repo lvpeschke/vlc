@@ -218,16 +218,6 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
     {
     case SegmentTrackerEvent::SWITCHING:
         {
-            /* LVP added */
-            std::string id;
-            if(event.u.switching.next) {
-                id = event.u.switching.next->getAdaptationSet()->getID().str();
-            } else if(event.u.switching.prev) {
-                id = event.u.switching.prev->getAdaptationSet()->getID().str();
-            } else {
-                id = "";
-            }
-
             vlc_mutex_lock(&lock);
             if(event.u.switching.prev)
                 usedBps -= event.u.switching.prev->getBandwidth();
@@ -235,14 +225,22 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
                 usedBps += event.u.switching.next->getBandwidth();
 				
             BwDebug(msg_Info(p_obj, "New total bandwidth usage %zu KiB/s", (usedBps / 8000)));
+            vlc_mutex_unlock(&lock);
+
             /* LVP added, TFE */
             // TODO here
-            msg_Info(p_obj, "TFE A predictive new bps, %" PRId64 ", %" PRIu64,
+            const std::string id;
+            if(event.u.switching.next) {
+                id = event.u.switching.next->getAdaptationSet()->getID().str();
+            } else if(event.u.switching.prev) {
+                id = event.u.switching.prev->getAdaptationSet()->getID().str();
+            }
+            msg_Info(p_obj, "TFE OLD predictive new bps, %" PRId64 ", %" PRIu64,
                     mdate(), usedBps);
-            msg_Info(p_obj, "TFE B predictive new bps, %" PRId64 ", %s, %" PRIu64,
-                    mdate(), id.c_str(), usedBps);
+            msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %" PRIu64,
+                    mdate(), (id.empty()) ? "\0" : id.c_str(), usedBps);
             //std::cerr << "TFE predictive new bps, " << mdate() << ", " << usedBps << std::endl;
-            vlc_mutex_unlock(&lock);
+
         }
         break;
 
