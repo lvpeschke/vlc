@@ -78,8 +78,8 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
     if(it == streams.end())
     {
         /* LVP added, TFE */
-        msg_Info(p_obj, "TFE predictive streams end rep highest, %" PRId64 ", %s",
-	         mdate(), adaptSet->getID().str().c_str());
+        msg_Info(p_obj, "TFE predictive streams end rep highest, %" PRId64 ", %s, %s",
+	         mdate(), adaptSet->getID().str().c_str(), adaptSet->getMimeType().c_str());
         rep = selector.highest(adaptSet);
     }
     else
@@ -104,17 +104,18 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
             }
         }
         /* LVP added, TFE */
-	    msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %s, %" PRId64 ", %" PRId64 ", %f, %f, %u",
+	    msg_Info(p_obj, "TFE predictive stats, %" PRId64 ", %s, %s, %" PRId64 ", %" PRId64 ", %f, %f, %u",
                 mdate(),
                 adaptSet->getID().str().c_str(),
+                adaptSet->getMimeType().c_str(),
                 stats.buffering_level, stats.buffering_target, f_buffering_level,
                 f_min_buffering_level, i_max_bitrate);
 
         if(stats.starting())
         {
             /* LVP added, TFE */
-            msg_Info(p_obj, "TFE predictive stats starting rep highest, %" PRId64 ", %s",
-	             mdate(), adaptSet->getID().str().c_str());
+            msg_Info(p_obj, "TFE predictive stats starting rep highest, %" PRId64 ", %s, %s",
+	             mdate(), adaptSet->getID().str().c_str(), adaptSet->getMimeType().c_str());
             rep = selector.highest(adaptSet);
         }
         else
@@ -157,8 +158,8 @@ BaseRepresentation *PredictiveAdaptationLogic::getNextRepresentation(BaseAdaptat
                          adaptSet->getID().str().c_str(), rep->getBandwidth() / 8000); );
 
         /* LVP added, TFE */
-        msg_Info(p_obj, "TFE predictive bandwidth usage bps, %" PRId64 ", %s, %" PRIu64,
-                mdate(), adaptSet->getID().str().c_str(), rep->getBandwidth());
+        msg_Info(p_obj, "TFE predictive bandwidth usage bps, %" PRId64 ", %s, %s, %" PRIu64,
+                mdate(), adaptSet->getID().str().c_str(), adaptSet->getMimeType().c_str(), rep->getBandwidth());
 
         stats.segments_count++;
     }
@@ -210,18 +211,22 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
             vlc_mutex_unlock(&lock);
 
             /* LVP added, TFE */
-            // TODO here
-            const std::string id;
             if(event.u.switching.next) {
-                id = event.u.switching.next->getAdaptationSet()->getID().str();
+                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %s, %zu",
+                        mdate(),
+                        event.u.switching.next->getAdaptationSet()->getID().str().c_str(),
+                        event.u.switching.next->getMimeType().c_str(),
+                        usedBps);
             } else if(event.u.switching.prev) {
-                id = event.u.switching.prev->getAdaptationSet()->getID().str();
+                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %s, %zu",
+                        mdate(),
+                        event.u.switching.prev->getAdaptationSet()->getID().str().c_str(),
+                        event.u.switching.prev->getMimeType().c_str(),
+                        usedBps);
+            } else {
+                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", , , %zu",
+                        mdate(), usedBps);
             }
-            msg_Info(p_obj, "TFE OLD predictive new bps, %" PRId64 ", %" PRIu64,
-                    mdate(), usedBps);
-            msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %" PRIu64,
-                    mdate(), (id.empty()) ? "\0" : id.c_str(), usedBps);
-
         }
         break;
 
