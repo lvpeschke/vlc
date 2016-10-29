@@ -179,8 +179,8 @@ void PredictiveAdaptationLogic::updateDownloadRate(const ID &id, size_t dlsize, 
         stats.last_download_rate = stats.average.push(CLOCK_FREQ * dlsize * 8 / time);
 
         /* LVP added, TFE & TFE DEBUG */
-        msg_Info(p_obj, "TFE predictive update last download rate, %" PRId64 ", %s, %zu",
-                mdate(), id.str().c_str(), (CLOCK_FREQ * dlsize * 8 / time));  // TODO watch time (u)
+        msg_Info(p_obj, "TFE predictive update last download rate, %" PRId64 ", %s, %lu",
+                mdate(), id.str().c_str(), (CLOCK_FREQ * dlsize * 8 / time));
     }
 
     vlc_mutex_unlock(&lock);
@@ -212,19 +212,19 @@ void PredictiveAdaptationLogic::trackerEvent(const SegmentTrackerEvent &event)
 
             /* LVP added, TFE */
             if(event.u.switching.next) {
-                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %s, %zu",
+                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %s, %u",
                         mdate(),
                         event.u.switching.next->getAdaptationSet()->getID().str().c_str(),
                         event.u.switching.next->getMimeType().c_str(),
                         usedBps);
             } else if(event.u.switching.prev) {
-                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %s, %zu",
+                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", %s, %s, %u",
                         mdate(),
                         event.u.switching.prev->getAdaptationSet()->getID().str().c_str(),
                         event.u.switching.prev->getMimeType().c_str(),
                         usedBps);
             } else {
-                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", , , %zu",
+                msg_Info(p_obj, "TFE predictive new bps, %" PRId64 ", , , %u",
                         mdate(), usedBps);
             }
         }
