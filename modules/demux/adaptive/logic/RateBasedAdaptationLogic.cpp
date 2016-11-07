@@ -120,6 +120,10 @@ void RateBasedAdaptationLogic::updateDownloadRate(const ID &, size_t size, mtime
     dllength += time;
     dlsize += size;
 
+    /* LVP added, TFE */
+    msg_Info(p_obj, "TFE rblogic update download rate input, %" PRId64 ", %" PRId64 ", %zu, %" PRId64 ", %zu, %" PRId64,
+            mdate(), time, size, dllength, dlsize, CLOCK_FREQ / 4);
+
     if(dllength < CLOCK_FREQ / 4){
         /* LVP added, TFE DEBUG */
         msg_Info(p_obj, "TFE DEBUG dllength < CLOCK_FREQ / 4 happened in ... Logic update download rate, %" PRId64,

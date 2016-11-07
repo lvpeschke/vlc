@@ -175,6 +175,10 @@ void PredictiveAdaptationLogic::updateDownloadRate(const ID &id, size_t dlsize, 
     std::map<ID, PredictiveStats>::iterator it = streams.find(id);
     if(it != streams.end())
     {
+        /* LVP added, TFE */
+        msg_Info(p_obj, "TFE predictive update last download rate input, %" PRId64 ", %s, %" PRId64 ", %zu",
+                mdate(), id.str().c_str(), time, dlsize);
+
         PredictiveStats &stats = (*it).second;
         stats.last_download_rate = stats.average.push(CLOCK_FREQ * dlsize * 8 / time);
 
