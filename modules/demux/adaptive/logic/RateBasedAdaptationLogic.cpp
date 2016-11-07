@@ -101,7 +101,7 @@ BaseRepresentation *RateBasedAdaptationLogic::getNextRepresentation(BaseAdaptati
     msg_Info(p_obj, "TFE rblogic base representation, %" PRId64 ", %s, %s, %" PRIu64,
             mdate(),
             adaptSet->getID().str().c_str(),
-            adaptSet->getMimeType().c_str(),
+            rep->getMimeType().c_str(), // adaptSet->getMimeType().c_str(),
             rep->getBandwidth());
 
     return rep;
