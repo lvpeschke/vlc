@@ -230,10 +230,10 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
         bytesRead += ret;
 
 
-    /* LVP reverse commit 874a409499639af8068458e4d8f22ff3202ff074 */
-    if(ret < 0 || (size_t)ret < len) /* set EOF */
-    //if(ret < 0 || (size_t)ret < len || /* set EOF */
-    //   contentLength == bytesRead )
+    /* LVP disabled: reverse commit 874a409499639af8068458e4d8f22ff3202ff074 */
+    // if(ret < 0 || (size_t)ret < len) /* set EOF */
+    if(ret < 0 || (size_t)ret < len || /* set EOF */
+       contentLength == bytesRead )
     {
         /* LVP added */
         msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
@@ -251,13 +251,6 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
     /* LVP added, TFE */
     if (contentLength == bytesRead)
         msg_Info(p_object, "TFE read HTTP response done, %" PRId64 ", %zu", mdate(), contentLength);
-        //std::cerr << "TFE read HTTP response done, " << mdate() << ", " << contentLength << std::endl;
-    /*
-    else
-        std::cerr << "TFE read HTTP response in progress, " << mdate() << std::endl;
-	std::cerr << "TFE read, " << mdate() << ", " << ret << std::endl;
-	std::cerr << "TFE bytesRead, " << mdate() << ", " << bytesRead << std::endl;
-    */
 
     return ret;
 }
@@ -304,7 +297,6 @@ int HTTPConnection::parseReply()
 
     /* LVP added, TFE */
     msg_Info(p_object, "TFE HTTP replycode, %" PRId64 ", %d", mdate(), replycode);
-    //std::cerr << "TFE HTTP replycode, " << mdate() << ", " << replycode << std::endl;
 
     if (replycode != 200 && replycode != 206)
         return VLC_ENOOBJ;
@@ -572,7 +564,6 @@ AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
 {
     /* LVP added, TFE DEBUG */
     msg_Info(p_object, "TFE DEBUG ConnectionFactory::createConnection entered, %" PRId64, mdate());
-    //std::cerr << "TFE DEBUG ConnectionFactory::createConnection entered" << std::endl;
 
     if((params.getScheme() != "http" && params.getScheme() != "https") || params.getHostname().empty())
         return NULL;
@@ -598,8 +589,6 @@ AbstractConnection * ConnectionFactory::createConnection(vlc_object_t *p_object,
     /* LVP added, TFE DEBUG */
     msg_Info(p_object, "TFE DEBUG ConnectionFactory::createConnection conn persistent set to %s, %" PRId64,
             (sockettype != TLSSocket::TLS) ? "true" : "false", mdate());
-    //std::cerr << "TFE DEBUG ConnectionFactory::createConnection conn is " << conn
-    //	      << " and persistent is set to " << (sockettype != TLSSocket::TLS) << std::endl;
 
     return conn;
 }
