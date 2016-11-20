@@ -368,6 +368,12 @@ static const struct action actions[] =
     { "uncrop-right", ACTIONID_UNCROP_RIGHT, },
     { "uncrop-top", ACTIONID_UNCROP_TOP, },
     { "unzoom", ACTIONID_UNZOOM, },
+    { "viewpoint-fov-in", ACTIONID_VIEWPOINT_FOV_IN, },
+    { "viewpoint-fov-out", ACTIONID_VIEWPOINT_FOV_OUT, },
+    { "viewpoint-roll-anticlock", ACTIONID_VIEWPOINT_ROLL_ANTICLOCK, },
+    { "viewpoint-roll-clock", ACTIONID_VIEWPOINT_ROLL_CLOCK, },
+    { "viewpoint-zoom-in", ACTIONID_VIEWPOINT_ZOOM_IN, },
+    { "viewpoint-zoom-out", ACTIONID_VIEWPOINT_ZOOM_OUT, },
     { "vol-down", ACTIONID_VOL_DOWN, },
     { "vol-mute", ACTIONID_VOL_MUTE, },
     { "vol-up", ACTIONID_VOL_UP, },
@@ -446,8 +452,8 @@ static void vlc_AddWheelMapping (void **map, uint32_t kmore, uint32_t kless,
     switch (mode)
     {
         case 0: /* volume up/down */
-            amore = ACTIONID_VOL_UP;
-            aless = ACTIONID_VOL_DOWN;
+            amore = ACTIONID_COMBO_VOL_ZOOM_UP;
+            aless = ACTIONID_COMBO_VOL_ZOOM_DOWN;
             break;
         case 2: /* position latter/earlier */
             amore = ACTIONID_JUMP_FORWARD_EXTRASHORT;

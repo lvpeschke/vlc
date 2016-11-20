@@ -119,7 +119,7 @@ static NSString *const vertexShaderString = @" \
 \
  void main() \
  { \
-    gl_Position = position * transformMatrix; \
+    gl_Position = transformMatrix * position; \
     texCoordVarying = texCoord; \
  } \
 ";
@@ -262,7 +262,8 @@ static int Open(vlc_object_t *this)
             sys->gl.getProcAddress = OurGetProcAddress;
             sys->gl.sys = sys;
 
-            sys->vgl = vout_display_opengl_New(&vd->fmt, &subpicture_chromas, &sys->gl);
+            sys->vgl = vout_display_opengl_New(&vd->fmt, &subpicture_chromas, &sys->gl,
+                                               &vd->cfg->viewpoint);
             if (!sys->vgl) {
                 sys->gl.sys = NULL;
                 goto bailout;
@@ -424,6 +425,10 @@ static int Control(vout_display_t *vd, int query, va_list ap)
             }
             return VLC_SUCCESS;
         }
+
+        case VOUT_DISPLAY_CHANGE_VIEWPOINT:
+            return vout_display_opengl_SetViewpoint(sys->vgl,
+                &va_arg (ap, const vout_display_cfg_t* )->viewpoint);
 
         case VOUT_DISPLAY_RESET_PICTURES:
             vlc_assert_unreachable ();

@@ -142,8 +142,6 @@ VLC_API char *vlc_uri_resolve(const char *base, const char *ref) VLC_MALLOC;
  */
 VLC_API char *vlc_uri_fixup(const char *) VLC_MALLOC;
 
-/** @} */
-
 struct vlc_url_t
 {
     char *psz_protocol;
@@ -157,7 +155,47 @@ struct vlc_url_t
     char *psz_buffer; /* to be freed */
 };
 
-VLC_API void vlc_UrlParse (vlc_url_t *, const char *);
-VLC_API void vlc_UrlClean (vlc_url_t *);
+/**
+ * Parses an URI or IRI.
+ *
+ * Extracts the following parts from an URI string:
+ *  - scheme (i.e. protocol),
+ *  - user (deprecated),
+ *  - password (also deprecated),
+ *  - host name or IP address literal,
+ *  - port number,
+ *  - path (including the filename preceded by any and all directories)
+ *  - request parameters (excluding the leading question mark '?').
+ *
+ * The function accepts URIs, as well as UTF-8-encoded IRIs. For IRIs, the hier
+ * part (specifically, the host name) is assumed to be an IDN and is decoded to
+ * ASCII according, so it can be used for DNS resolution. If the host is an
+ * IPv6 address literal, brackets are stripped.
+ *
+ * Any missing part is set to nul. For historical reasons, the target structure
+ * is always initialized, even if parsing the URI string fails.
+ *
+ * On error, errno is set to one of the following value:
+ *  - ENOMEM in case of memory allocation failure,
+ *  - EINVAL in case of syntax error in the input string.
+ *
+ * \bug The URI fragment is discarded if present.
+ *
+ * \note This function allocates memory. vlc_UrlClean() must be used free
+ * associated the allocations, even if the function fails.
+ *
+ * \param url structure of URL parts [OUT]
+ * \param str nul-terminated URL string to split
+ * \retval 0 success
+ * \retval -1 failure
+ */
+VLC_API int vlc_UrlParse(vlc_url_t *url, const char *str);
+
+/**
+ * Releases resources allocated by vlc_UrlParse().
+ */
+VLC_API void vlc_UrlClean(vlc_url_t *);
+
+/** @} */
 
 #endif

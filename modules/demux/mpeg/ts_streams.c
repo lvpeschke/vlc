@@ -174,6 +174,8 @@ ts_pes_es_t * ts_pes_es_New( ts_pmt_t *p_program )
         p_es->b_interlaced = false;
         es_format_Init( &p_es->fmt, UNKNOWN_ES, 0 );
         p_es->fmt.i_group = p_program->i_number;
+        p_es->metadata.i_format = 0;
+        p_es->metadata.i_service_id = 0;
     }
     return p_es;
 }
@@ -271,10 +273,12 @@ ts_pes_t *ts_pes_New( demux_t *p_demux, ts_pmt_t *p_program )
     }
     pes->i_stream_type = 0;
     pes->transport = TS_TRANSPORT_PES;
-    pes->i_data_size = 0;
-    pes->i_data_gathered = 0;
-    pes->p_data = NULL;
-    pes->pp_last = &pes->p_data;
+    pes->gather.i_data_size = 0;
+    pes->gather.i_gathered = 0;
+    pes->gather.p_data = NULL;
+    pes->gather.pp_last = &pes->gather.p_data;
+    pes->gather.i_saved = 0;
+    pes->b_broken_PUSI_conformance = false;
     pes->b_always_receive = false;
     pes->p_sections_proc = NULL;
     pes->p_prepcr_outqueue = NULL;
@@ -288,8 +292,8 @@ void ts_pes_Del( demux_t *p_demux, ts_pes_t *pes )
 {
     ts_pes_ChainDelete_es( p_demux, pes->p_es );
 
-    if( pes->p_data )
-        block_ChainRelease( pes->p_data );
+    if( pes->gather.p_data )
+        block_ChainRelease( pes->gather.p_data );
 
     if( pes->p_sections_proc )
         ts_sections_processor_ChainDelete( pes->p_sections_proc );

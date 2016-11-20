@@ -187,7 +187,7 @@ libmkv_plugin_la_SOURCES = \
 	demux/mkv/mkv.hpp demux/mkv/mkv.cpp \
 	demux/windows_audio_commons.h
 libmkv_plugin_la_SOURCES += packetizer/dts_header.h packetizer/dts_header.c
-libmkv_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
+libmkv_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CFLAGS_mkv)
 libmkv_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(demuxdir)'
 libmkv_plugin_la_LIBADD = $(LIBS_mkv)
 if HAVE_ZLIB
@@ -246,6 +246,7 @@ libts_plugin_la_SOURCES = demux/mpeg/ts.c demux/mpeg/ts.h \
         demux/mpeg/sections.c demux/mpeg/sections.h \
         demux/mpeg/mpeg4_iod.c demux/mpeg/mpeg4_iod.h \
         demux/mpeg/ts_sl.c demux/mpeg/ts_sl.h \
+        demux/mpeg/ts_metadata.c demux/mpeg/ts_metadata.h \
         demux/mpeg/ts_hotfixes.c demux/mpeg/ts_hotfixes.h \
         demux/mpeg/ts_strings.h demux/mpeg/ts_streams_private.h \
         demux/mpeg/pes.h \
@@ -416,7 +417,8 @@ libadaptive_hls_SOURCES = \
     demux/hls/HLSManager.cpp \
     demux/hls/HLSStreams.hpp \
     demux/hls/HLSStreams.cpp
-libadaptive_hls_SOURCES += meta_engine/ID3Tag.h
+libadaptive_hls_SOURCES += meta_engine/ID3Tag.h \
+                           meta_engine/ID3Meta.h
 
 libadaptive_smooth_SOURCES = \
     demux/smooth/mp4/IndexReader.cpp \

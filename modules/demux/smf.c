@@ -337,6 +337,7 @@ int HandleMessage (demux_t *p_demux, mtrk_t *tr, es_out_t *out)
         if (datalen == 0)
         {
             msg_Err (p_demux, "malformatted MIDI event");
+            block_Release(block);
             return -1; /* implicit running status requires non-empty payload */
         }
 
@@ -616,6 +617,11 @@ static int Open (vlc_object_t *obj)
     }
     else
     {
+        if (ppqn == 0)
+        {
+            msg_Err(demux, "invalid SMF file PPQN: %u", ppqn);
+            return VLC_EGENERIC;
+        }
         msg_Dbg (demux, " %u pulses per quarter note", ppqn);
     }
 

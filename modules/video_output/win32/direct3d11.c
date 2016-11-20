@@ -30,7 +30,6 @@
 # include "config.h"
 #endif
 
-#include <assert.h>
 #include <vlc_common.h>
 #include <vlc_plugin.h>
 #include <vlc_vout_display.h>
@@ -96,6 +95,7 @@ struct picture_sys_t
     ID3D11VideoDecoderOutputView  *decoder; /* may be NULL for pictures from the pool */
     ID3D11Texture2D               *texture;
     ID3D11DeviceContext           *context;
+    unsigned                      slice_index;
 };
 #endif
 
@@ -552,6 +552,11 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
     if ( vd->sys->pool != NULL )
         return vd->sys->pool;
 
+    if (pool_size > 30) {
+        msg_Err(vd, "Avoid crashing when using ID3D11VideoDecoderOutputView with too many slices");
+        return NULL;
+    }
+
 #ifdef HAVE_ID3D11VIDEODECODER
     picture_t**       pictures = NULL;
     unsigned          picture_count = 0;
@@ -576,22 +581,27 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
     texDesc.Format = vd->sys->picQuadConfig.textureFormat;
     texDesc.SampleDesc.Count = 1;
     texDesc.MiscFlags = 0; //D3D11_RESOURCE_MISC_SHARED;
-    texDesc.ArraySize = 1;
-    texDesc.Usage = D3D11_USAGE_DYNAMIC;
-    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    texDesc.Usage = D3D11_USAGE_DEFAULT;
+    texDesc.BindFlags = D3D11_BIND_DECODER;
+    texDesc.CPUAccessFlags = 0;
+
+    texDesc.ArraySize = pool_size;
+
+    ID3D11Texture2D *texture;
+    hr = ID3D11Device_CreateTexture2D( vd->sys->d3ddevice, &texDesc, NULL, &texture );
+    if (FAILED(hr)) {
+        msg_Err(vd, "CreateTexture2D failed for the %d pool. (hr=0x%0lx)", pool_size, hr);
+        goto error;
+    }
 
     for (picture_count = 0; picture_count < pool_size; picture_count++) {
         picture_sys_t *picsys = calloc(1, sizeof(*picsys));
         if (unlikely(picsys == NULL))
             goto error;
 
-        hr = ID3D11Device_CreateTexture2D( vd->sys->d3ddevice, &texDesc, NULL, &picsys->texture );
-        if (FAILED(hr)) {
-            msg_Err(vd, "CreateTexture2D %d failed on picture %d of the pool. (hr=0x%0lx)", pool_size, picture_count, hr);
-            goto error;
-        }
-
+        ID3D11Texture2D_AddRef(texture);
+        picsys->texture = texture;
+        picsys->slice_index = picture_count;
         picsys->context = vd->sys->d3dcontext;
 
         picture_resource_t resource = {
@@ -610,8 +620,10 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
         /* each picture_t holds a ref to the context and release it on Destroy */
         ID3D11DeviceContext_AddRef(picsys->context);
     }
-    msg_Dbg(vd, "ID3D11VideoDecoderOutputView succeed with %d surfaces (%dx%d)",
-            pool_size, vd->fmt.i_width, vd->fmt.i_height);
+    ID3D11Texture2D_Release(texture);
+
+    msg_Dbg(vd, "ID3D11VideoDecoderOutputView succeed with %d surfaces (%dx%d) texture 0x%p context 0x%p",
+            pool_size, vd->fmt.i_width, vd->fmt.i_height, texture, vd->sys->d3dcontext);
 
     picture_pool_configuration_t pool_cfg;
     memset(&pool_cfg, 0, sizeof(pool_cfg));
@@ -645,6 +657,8 @@ static void DestroyDisplayPoolPicture(picture_t *picture)
 
     if (p_sys->texture)
         ID3D11Texture2D_Release(p_sys->texture);
+    if (p_sys->context)
+        ID3D11DeviceContext_Release(p_sys->context);
 
     free(p_sys);
     free(picture);
@@ -851,19 +865,31 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             WaitForSingleObjectEx( sys->context_lock, INFINITE, FALSE );
         }
         D3D11_BOX box;
-        box.left   = picture->format.i_x_offset;
-        box.right  = picture->format.i_x_offset + picture->format.i_visible_width;
-        box.top    = picture->format.i_y_offset;
-        box.bottom = picture->format.i_y_offset + picture->format.i_visible_height;
+        picture_sys_t *p_sys = picture->p_sys;
+        D3D11_TEXTURE2D_DESC texDesc;
+        ID3D11Texture2D_GetDesc( p_sys->texture, &texDesc );
+        if (texDesc.Format == DXGI_FORMAT_NV12 || texDesc.Format == DXGI_FORMAT_P010)
+        {
+            box.left   = (picture->format.i_x_offset + 1) & ~1;
+            box.right  = (picture->format.i_x_offset + picture->format.i_visible_width) & ~1;
+            box.top    = (picture->format.i_y_offset + 1) & ~1;
+            box.bottom = (picture->format.i_y_offset + picture->format.i_visible_height) & ~1;
+        }
+        else
+        {
+            box.left   = picture->format.i_x_offset;
+            box.right  = picture->format.i_x_offset + picture->format.i_visible_width;
+            box.top    = picture->format.i_y_offset;
+            box.bottom = picture->format.i_y_offset + picture->format.i_visible_height;
+        }
         box.back = 1;
         box.front = 0;
 
-        picture_sys_t *p_sys = picture->p_sys;
         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
                                                   (ID3D11Resource*) sys->picQuad.pTexture,
                                                   0, 0, 0, 0,
                                                   (ID3D11Resource*) p_sys->texture,
-                                                  0, &box);
+                                                  p_sys->slice_index, &box);
     }
 #endif
 
@@ -891,7 +917,8 @@ static void DisplayD3DPicture(vout_display_sys_t *sys, d3d_quad_t *quad)
         ID3D11DeviceContext_PSSetShaderResources(sys->d3dcontext, 1, 1, &quad->d3dresViewUV);
 
     ID3D11DeviceContext_IASetVertexBuffers(sys->d3dcontext, 0, 1, &quad->pVertexBuffer, &stride, &offset);
-    ID3D11DeviceContext_DrawIndexed(sys->d3dcontext, 6, 0, 0);
+    ID3D11DeviceContext_IASetIndexBuffer(sys->d3dcontext, quad->pIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+    ID3D11DeviceContext_DrawIndexed(sys->d3dcontext, quad->indexCount, 0, 0);
 }
 
 static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpicture)
@@ -917,7 +944,8 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
     if (subpicture) {
         // draw the additional vertices
         for (int i = 0; i < sys->d3dregion_count; ++i) {
-            DisplayD3DPicture(sys, (d3d_quad_t *) sys->d3dregions[i]->p_sys);
+            if (sys->d3dregions[i])
+                DisplayD3DPicture(sys, (d3d_quad_t *) sys->d3dregions[i]->p_sys);
         }
     }
 
@@ -1489,32 +1517,6 @@ static int Direct3D11CreateResources(vout_display_t *vd, video_format_t *fmt)
     ID3D11DeviceContext_IASetInputLayout(sys->d3dcontext, pVertexLayout);
     ID3D11SamplerState_Release(pVertexLayout);
 
-    /* create the index of the vertices */
-    WORD indices[] = {
-      3, 1, 0,
-      2, 1, 3,
-    };
-
-    D3D11_BUFFER_DESC quadDesc = {
-        .Usage = D3D11_USAGE_DEFAULT,
-        .ByteWidth = sizeof(WORD) * 6,
-        .BindFlags = D3D11_BIND_INDEX_BUFFER,
-        .CPUAccessFlags = 0,
-    };
-
-    D3D11_SUBRESOURCE_DATA quadIndicesInit = {
-        .pSysMem = indices,
-    };
-
-    ID3D11Buffer* pIndexBuffer = NULL;
-    hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &quadDesc, &quadIndicesInit, &pIndexBuffer);
-    if(FAILED(hr)) {
-        msg_Err(vd, "Could not Create the common quad indices. (hr=0x%lX)", hr);
-        return VLC_EGENERIC;
-    }
-    ID3D11DeviceContext_IASetIndexBuffer(sys->d3dcontext, pIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
-    ID3D11Buffer_Release(pIndexBuffer);
-
     ID3D11DeviceContext_IASetPrimitiveTopology(sys->d3dcontext, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     ID3DBlob* pPSBlob = NULL;
@@ -1666,11 +1668,13 @@ static int AllocQuad(vout_display_t *vd, const video_format_t *fmt, d3d_quad_t *
     vout_display_sys_t *sys = vd->sys;
     D3D11_MAPPED_SUBRESOURCE mappedResource;
     HRESULT hr;
+    quad->vertexCount = 4;
+    quad->indexCount = 2 * 3;
 
     D3D11_BUFFER_DESC bd;
     memset(&bd, 0, sizeof(bd));
     bd.Usage = D3D11_USAGE_DYNAMIC;
-    bd.ByteWidth = sizeof(d3d_vertex_t) * 4;
+    bd.ByteWidth = sizeof(d3d_vertex_t) * quad->vertexCount;
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
@@ -1678,6 +1682,20 @@ static int AllocQuad(vout_display_t *vd, const video_format_t *fmt, d3d_quad_t *
     if(FAILED(hr)) {
       msg_Err(vd, "Failed to create vertex buffer. (hr=%lX)", hr);
       goto error;
+    }
+
+    /* create the index of the vertices */
+    D3D11_BUFFER_DESC quadDesc = {
+        .Usage = D3D11_USAGE_DYNAMIC,
+        .ByteWidth = sizeof(WORD) * quad->indexCount,
+        .BindFlags = D3D11_BIND_INDEX_BUFFER,
+        .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+    };
+
+    hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &quadDesc, NULL, &quad->pIndexBuffer);
+    if(FAILED(hr)) {
+        msg_Err(vd, "Could not create the quad indices. (hr=0x%lX)", hr);
+        goto error;
     }
 
     D3D11_TEXTURE2D_DESC texDesc;
@@ -1703,6 +1721,11 @@ static int AllocQuad(vout_display_t *vd, const video_format_t *fmt, d3d_quad_t *
         i_extra = (texDesc.Height  * p_chroma_desc->p[plane].h.num) % p_chroma_desc->p[plane].h.den;
         if ( i_extra )
             texDesc.Height -= p_chroma_desc->p[plane].h.den / p_chroma_desc->p[plane].h.num - i_extra;
+    }
+    if (texDesc.Format == DXGI_FORMAT_NV12 || texDesc.Format == DXGI_FORMAT_P010)
+    {
+        texDesc.Width  &= ~1;
+        texDesc.Height &= ~1;
     }
 
     hr = ID3D11Device_CreateTexture2D(sys->d3ddevice, &texDesc, NULL, &quad->pTexture);
@@ -1796,6 +1819,25 @@ static int AllocQuad(vout_display_t *vd, const video_format_t *fmt, d3d_quad_t *
         else {
             msg_Err(vd, "Failed to lock the subpicture vertex buffer (hr=0x%lX)", hr);
         }
+
+        /* create the vertex indices */
+        hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+        if (SUCCEEDED(hr)) {
+            WORD *dst_data = mappedResource.pData;
+
+            dst_data[0] = 3;
+            dst_data[1] = 1;
+            dst_data[2] = 0;
+
+            dst_data[3] = 2;
+            dst_data[4] = 1;
+            dst_data[5] = 3;
+
+            ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer, 0);
+        }
+        else {
+            msg_Err(vd, "Failed to lock the index buffer (hr=0x%lX)", hr);
+        }
     }
 
     return VLC_SUCCESS;
@@ -1811,6 +1853,11 @@ static void ReleaseQuad(d3d_quad_t *quad)
     {
         ID3D11Buffer_Release(quad->pVertexBuffer);
         quad->pVertexBuffer = NULL;
+    }
+    if (quad->pIndexBuffer)
+    {
+        ID3D11Buffer_Release(quad->pIndexBuffer);
+        quad->pIndexBuffer = NULL;
     }
     if (quad->pTexture)
     {
@@ -1920,10 +1967,8 @@ static void UpdateQuadOpacity(vout_display_t *vd, const d3d_quad_t *quad, float 
     if (SUCCEEDED(hr)) {
         d3d_vertex_t *dst_data = mappedResource.pData;
 
-        dst_data[0].opacity = opacity;
-        dst_data[1].opacity = opacity;
-        dst_data[2].opacity = opacity;
-        dst_data[3].opacity = opacity;
+        for (size_t i=0; i<quad->vertexCount; ++i)
+            dst_data[i].opacity = opacity;
 
         ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer, 0);
     }
@@ -1952,6 +1997,9 @@ static int Direct3D11MapSubpicture(vout_display_t *vd, int *subpicture_region_co
 
     int i = 0;
     for (subpicture_region_t *r = subpicture->p_region; r; r = r->p_next, i++) {
+        if (!r->fmt.i_width || !r->fmt.i_height)
+            continue; // won't render anything, keep the cache for later
+
         for (int j = 0; j < sys->d3dregion_count; j++) {
             picture_t *cache = sys->d3dregions[j];
             if (cache != NULL && ((d3d_quad_t *) cache->p_sys)->pTexture) {
@@ -1990,7 +2038,7 @@ static int Direct3D11MapSubpicture(vout_display_t *vd, int *subpicture_region_co
             (*region)[i] = picture_NewFromResource(&r->fmt, &picres);
             if ((*region)[i] == NULL) {
                 msg_Err(vd, "Failed to create %dx%d picture for OSD",
-                        r->fmt.i_visible_width, r->fmt.i_visible_height);
+                        r->fmt.i_width, r->fmt.i_height);
                 ReleaseQuad(d3dquad);
                 continue;
             }
@@ -2017,12 +2065,12 @@ static int Direct3D11MapSubpicture(vout_display_t *vd, int *subpicture_region_co
 
         d3d_quad_t *quad = (d3d_quad_t *) quad_picture->p_sys;
 
-        quad->cropViewport.Width =  (FLOAT) r->fmt.i_visible_width * RECTHeight(sys->rect_dest) / subpicture->i_original_picture_height;
-        quad->cropViewport.Height = (FLOAT) r->fmt.i_visible_height * RECTWidth(sys->rect_dest) / subpicture->i_original_picture_width;
+        quad->cropViewport.Width =  (FLOAT) r->fmt.i_visible_width  * RECTWidth(sys->rect_dest)  / subpicture->i_original_picture_width;
+        quad->cropViewport.Height = (FLOAT) r->fmt.i_visible_height * RECTHeight(sys->rect_dest) / subpicture->i_original_picture_height;
         quad->cropViewport.MinDepth = 0.0f;
         quad->cropViewport.MaxDepth = 1.0f;
-        quad->cropViewport.TopLeftX = r->i_x * RECTHeight(sys->rect_dest) / subpicture->i_original_picture_height;
-        quad->cropViewport.TopLeftY = r->i_y * RECTWidth(sys->rect_dest) / subpicture->i_original_picture_width;
+        quad->cropViewport.TopLeftX = sys->rect_dest.left + (FLOAT) r->i_x * RECTWidth(sys->rect_dest) / subpicture->i_original_picture_width;
+        quad->cropViewport.TopLeftY = sys->rect_dest.top  + (FLOAT) r->i_y * RECTHeight(sys->rect_dest) / subpicture->i_original_picture_height;
 
         UpdateQuadOpacity(vd, quad, r->i_alpha / 255.0f );
     }

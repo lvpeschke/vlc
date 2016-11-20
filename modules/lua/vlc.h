@@ -91,6 +91,9 @@ void Close_Extension( vlc_object_t * );
 int Open_LuaSD( vlc_object_t * );
 void Close_LuaSD( vlc_object_t * );
 
+// Script probe
+int vlclua_probe_sd( vlc_object_t *, const char *name );
+
 /*****************************************************************************
  * Lua debug
  *****************************************************************************/
@@ -199,17 +202,6 @@ int vlclua_fd_init( lua_State *, vlclua_dtable_t * );
 void vlclua_fd_interrupt( vlclua_dtable_t * );
 void vlclua_fd_cleanup( vlclua_dtable_t * );
 struct vlc_interrupt *vlclua_set_interrupt( lua_State *L );
-
-/**
- * Per-interface private state
- */
-struct intf_sys_t
-{
-    char *psz_filename;
-    lua_State *L;
-    vlc_thread_t thread;
-    vlclua_dtable_t dtable;
-};
 
 #endif /* VLC_LUA_H */
 

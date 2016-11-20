@@ -67,6 +67,8 @@ OpenDecoder(vlc_object_t *p_this)
         break;
     case VLC_CODEC_A52:
     case VLC_CODEC_EAC3:
+    case VLC_CODEC_MLP:
+    case VLC_CODEC_TRUEHD:
     case VLC_CODEC_DTS:
     case VLC_CODEC_SPDIFL:
     case VLC_CODEC_SPDIFB:
@@ -82,10 +84,7 @@ OpenDecoder(vlc_object_t *p_this)
     p_dec->fmt_out.audio = p_dec->fmt_in.audio;
     p_dec->fmt_out.audio.i_format = p_dec->fmt_out.i_codec;
 
-    if (p_dec->fmt_out.audio.i_physical_channels == 0
-     || p_dec->fmt_out.audio.i_original_channels == 0
-     || p_dec->fmt_out.audio.i_bytes_per_frame == 0
-     || p_dec->fmt_out.audio.i_frame_length == 0
+    if (p_dec->fmt_out.audio.i_channels == 0
      || decoder_UpdateAudioFormat(p_dec))
     {
         es_format_Init(&p_dec->fmt_out, UNKNOWN_ES, 0);

@@ -127,12 +127,10 @@ int module_get_score( const module_t *m )
  */
 const char *module_gettext (const module_t *m, const char *str)
 {
-    if (m->parent != NULL)
-        m = m->parent;
     if (unlikely(str == NULL || *str == '\0'))
         return "";
 #ifdef ENABLE_NLS
-    const char *domain = m->domain;
+    const char *domain = m->plugin->textdomain;
     return dgettext ((domain != NULL) ? domain : PACKAGE_NAME, str);
 #else
     (void)m;
@@ -174,7 +172,7 @@ static int module_load (vlc_object_t *obj, module_t *m,
 {
     int ret = VLC_SUCCESS;
 
-    if (module_Map (obj, m))
+    if (module_Map(obj, m->plugin))
         return VLC_EGENERIC;
 
     if (m->pf_activate != NULL)
@@ -422,8 +420,17 @@ bool module_exists (const char * psz_name)
  */
 module_config_t *module_config_get( const module_t *module, unsigned *restrict psize )
 {
+    const vlc_plugin_t *plugin = module->plugin;
+
+    if (plugin->module != module)
+    {   /* For backward compatibility, pretend non-first modules have no
+         * configuration items. */
+        *psize = 0;
+        return NULL;
+    }
+
     unsigned i,j;
-    unsigned size = module->confsize;
+    size_t size = plugin->conf.size;
     module_config_t *config = malloc( size * sizeof( *config ) );
 
     assert( psize != NULL );
@@ -434,7 +441,7 @@ module_config_t *module_config_get( const module_t *module, unsigned *restrict p
 
     for( i = 0, j = 0; i < size; i++ )
     {
-        const module_config_t *item = module->p_config + i;
+        const module_config_t *item = plugin->conf.items + i;
         if( item->b_internal /* internal option */
          || item->b_removed /* removed option */ )
             continue;

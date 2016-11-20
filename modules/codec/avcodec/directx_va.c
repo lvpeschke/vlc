@@ -332,7 +332,7 @@ int directx_va_Setup(vlc_va_t *va, directx_sys_t *dx_sys, AVCodecContext *avctx)
     fmt.i_frame_rate = avctx->framerate.num;
     fmt.i_frame_rate_base = avctx->framerate.den;
 
-    if (dx_sys->pf_create_decoder_surfaces(va, dx_sys->codec_id, &fmt, avctx->active_thread_type & FF_THREAD_FRAME))
+    if (dx_sys->pf_create_decoder_surfaces(va, dx_sys->codec_id, &fmt))
         return VLC_EGENERIC;
 
     if (avctx->coded_width != dx_sys->surface_width ||
@@ -390,7 +390,7 @@ int directx_va_Get(vlc_va_t *va, directx_sys_t *dx_sys, picture_t *pic, uint8_t 
 
     for (i = 0; i < dx_sys->surface_count; i++) {
         vlc_va_surface_t *surface = &dx_sys->surface[i];
-        if ((old == -1 || surface->order < dx_sys->surface[old].order) && !surface->refcount)
+        if (((old == -1 || surface->order < dx_sys->surface[old].order)) && !surface->refcount)
             old = i;
         if (old_used == -1 || surface->order < dx_sys->surface[old_used].order)
             old_used = i;
@@ -406,7 +406,7 @@ int directx_va_Get(vlc_va_t *va, directx_sys_t *dx_sys, picture_t *pic, uint8_t 
     vlc_va_surface_t *surface = &dx_sys->surface[i];
 
     surface->refcount = 1;
-    surface->order = dx_sys->surface_order++;
+    surface->order = ++dx_sys->surface_order;
     *data = (void *)dx_sys->hw_surface[i];
     pic->context = surface;
 
@@ -415,7 +415,7 @@ int directx_va_Get(vlc_va_t *va, directx_sys_t *dx_sys, picture_t *pic, uint8_t 
     return VLC_SUCCESS;
 }
 
-void directx_va_Release(void *opaque, uint8_t *data)
+void directx_va_Release(void *opaque)
 {
     picture_t *pic = opaque;
     vlc_va_surface_t *surface = pic->context;
@@ -424,7 +424,6 @@ void directx_va_Release(void *opaque, uint8_t *data)
     surface->refcount--;
     pic->context = NULL;
     picture_Release(pic);
-    (void) data;
 
     vlc_mutex_unlock( surface->p_lock );
 }

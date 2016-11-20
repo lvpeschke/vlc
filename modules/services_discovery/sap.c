@@ -103,7 +103,7 @@
     static int  OpenDemux ( vlc_object_t * );
     static void CloseDemux ( vlc_object_t * );
 
-VLC_SD_PROBE_HELPER("sap", "Network streams (SAP)", SD_CAT_LAN)
+VLC_SD_PROBE_HELPER("sap", N_("Network streams (SAP)"), SD_CAT_LAN)
 
 vlc_module_begin ()
     set_shortname( N_("SAP"))
@@ -301,6 +301,7 @@ static int Open( vlc_object_t *p_this )
     p_sys->i_timeout = var_CreateGetInteger( p_sd, "sap-timeout" );
 
     p_sd->p_sys  = p_sys;
+    p_sd->description = _("Network streams (SAP)");
 
     p_sys->pi_fd = NULL;
     p_sys->i_fd = 0;
@@ -402,7 +403,7 @@ static int OpenDemux( vlc_object_t *p_this )
 
 error:
     FREENULL( psz_sdp );
-    if( p_sdp ) FreeSDP( p_sdp ); p_sdp = NULL;
+    if( p_sdp ) FreeSDP( p_sdp );
     vlc_stream_Seek( p_demux->s, 0 );
     return errval;
 }

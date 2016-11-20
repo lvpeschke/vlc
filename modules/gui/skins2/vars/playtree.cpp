@@ -36,7 +36,7 @@
 #include "../utils/ustring.hpp"
 
 Playtree::Playtree( intf_thread_t *pIntf )
-    : VarTree( pIntf ), m_pPlaylist( pIntf->p_sys->p_playlist )
+    : VarTree( pIntf ), m_pPlaylist( pl_Get(pIntf) )
 {
     getPositionVar().addObserver( this );
     buildTree();
@@ -59,15 +59,7 @@ void Playtree::delSelected()
                 playlist_ItemGetById( m_pPlaylist, it->getId() );
             if( pItem )
             {
-                if( pItem->i_children == -1 )
-                {
-                    playlist_DeleteFromInput( m_pPlaylist, pItem->p_input,
-                                              pl_Locked );
-                }
-                else
-                {
-                    playlist_NodeDelete( m_pPlaylist, pItem, true, false );
-                }
+                playlist_NodeDelete( m_pPlaylist, pItem, false );
             }
             playlist_Unlock( m_pPlaylist );
 
@@ -205,40 +197,43 @@ void Playtree::onDelete( int i_id )
     }
 }
 
-void Playtree::onAppend( playlist_add_t *p_add )
+void Playtree::onAppend( int i_id )
 {
-    Iterator it_node = findById( p_add->i_node );
+    playlist_item_t *pItem;
+
+    playlist_Lock( m_pPlaylist );
+    pItem = playlist_ItemGetById( m_pPlaylist, i_id );
+    if( !pItem || !pItem->p_parent )
+    {
+        playlist_Unlock( m_pPlaylist );
+        return;
+    }
+
+    Iterator it_node = findById( pItem->p_parent->i_id );
     if( it_node != m_children.end() )
     {
-        playlist_Lock( m_pPlaylist );
-        playlist_item_t *pItem =
-            playlist_ItemGetById( m_pPlaylist, p_add->i_item );
-        if( !pItem )
-        {
-            playlist_Unlock( m_pPlaylist );
-            return;
-        }
-
-        int pos;
-        for( pos = 0; pos < pItem->p_parent->i_children; pos++ )
-            if( pItem->p_parent->pp_children[pos] == pItem ) break;
-
-        UString *pName = getTitle( pItem->p_input );
-        playlist_item_t* current = playlist_CurrentPlayingItem( m_pPlaylist );
-
-        Iterator it = it_node->add(
-            p_add->i_item, UStringPtr( pName ), false, pItem == current,
-            false, pItem->i_flags & PLAYLIST_RO_FLAG, pos );
-
-        m_allItems[pItem->i_id] = &*it;
-
         playlist_Unlock( m_pPlaylist );
-
-        tree_update descr(
-            tree_update::ItemInserted,
-            IteratorVisible( it, this ) );
-        notify( &descr );
+        return;
     }
+
+    int pos;
+    for( pos = 0; pos < pItem->p_parent->i_children; pos++ )
+        if( pItem->p_parent->pp_children[pos] == pItem ) break;
+
+    UString *pName = getTitle( pItem->p_input );
+    playlist_item_t* current = playlist_CurrentPlayingItem( m_pPlaylist );
+
+    Iterator it = it_node->add(
+        i_id, UStringPtr( pName ), false, pItem == current,
+        false, pItem->i_flags & PLAYLIST_RO_FLAG, pos );
+
+    m_allItems[i_id] = &*it;
+
+    playlist_Unlock( m_pPlaylist );
+
+    tree_update descr( tree_update::ItemInserted,
+                       IteratorVisible( it, this ) );
+    notify( &descr );
 }
 
 void Playtree::buildNode( playlist_item_t *pNode, VarTree &rTree )
@@ -288,7 +283,7 @@ void Playtree::insertItems( VarTree& elem, const std::list<std::string>& files, 
     {
         for( Iterator it = m_children.begin(); it != m_children.end(); ++it )
         {
-            if( it->getId() == m_pPlaylist->p_local_category->i_id )
+            if( it->getId() == m_pPlaylist->p_playing->i_id )
             {
                 p_elem = &*it;
                 break;
@@ -296,15 +291,15 @@ void Playtree::insertItems( VarTree& elem, const std::list<std::string>& files, 
         }
     }
 
-    if( p_elem->getId() == m_pPlaylist->p_local_category->i_id )
+    if( p_elem->getId() == m_pPlaylist->p_playing->i_id )
     {
-        p_node = m_pPlaylist->p_local_category;
+        p_node = m_pPlaylist->p_playing;
         i_pos = 0;
         p_elem->setExpanded( true );
     }
-    else if( p_elem->getId() == m_pPlaylist->p_ml_category->i_id )
+    else if( p_elem->getId() == m_pPlaylist->p_media_library->i_id )
     {
-        p_node = m_pPlaylist->p_ml_category;
+        p_node = m_pPlaylist->p_media_library;
         i_pos = 0;
         p_elem->setExpanded( true );
     }
@@ -343,12 +338,12 @@ void Playtree::insertItems( VarTree& elem, const std::list<std::string>& files, 
         if( pItem == NULL)
             continue;
 
-        int i_mode = PLAYLIST_APPEND;
+        int i_mode = 0;
         if( first && start )
             i_mode |= PLAYLIST_GO;
 
         playlist_NodeAddInput( m_pPlaylist, pItem, p_node,
-                               i_mode, i_pos, pl_Locked );
+                               i_mode, i_pos );
     }
 
 fin:

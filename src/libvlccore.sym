@@ -117,7 +117,6 @@ filter_chain_GetFmtOut
 filter_chain_GetLength
 filter_chain_MouseFilter
 filter_chain_MouseEvent
-filter_chain_New
 filter_chain_NewVideo
 filter_chain_Reset
 filter_chain_SubFilter
@@ -338,12 +337,10 @@ playlist_ChildSearchName
 playlist_Clear
 playlist_Control
 playlist_CurrentInput
+playlist_CurrentInputLocked
 playlist_CurrentPlayingItem
 playlist_Deactivate
-playlist_DeleteFromInput
 playlist_Export
-playlist_GetNextLeaf
-playlist_GetPrevLeaf
 playlist_GetNodeDuration
 playlist_Import
 playlist_IsServicesDiscoveryLoaded
@@ -353,11 +350,8 @@ playlist_LiveSearchUpdate
 playlist_Lock
 playlist_NodeAddCopy
 playlist_NodeAddInput
-playlist_NodeAppend
 playlist_NodeCreate
 playlist_NodeDelete
-playlist_NodeInsert
-playlist_NodeRemoveItem
 playlist_RecursiveNodeSort
 playlist_ServicesDiscoveryAdd
 playlist_ServicesDiscoveryControl
@@ -376,11 +370,6 @@ playlist_MuteGet
 sdp_AddAttribute
 sdp_AddMedia
 secstotimestr
-services_discovery_AddItem
-services_discovery_EventManager
-services_discovery_GetLocalizedName
-services_discovery_RemoveAll
-services_discovery_RemoveItem
 sout_AccessOutControl
 sout_AccessOutDelete
 sout_AccessOutNew
@@ -667,8 +656,6 @@ vlc_sd_Destroy
 vlc_sd_GetNames
 vlc_sd_probe_Add
 vlc_sdp_Start
-vlc_sd_Start
-vlc_sd_Stop
 vlc_testcancel
 vlc_thread_self
 vlc_thread_id

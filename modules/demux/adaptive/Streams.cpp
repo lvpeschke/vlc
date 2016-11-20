@@ -50,6 +50,7 @@ AbstractStream::AbstractStream(demux_t * demux_)
     disabled = false;
     discontinuity = false;
     needrestart = false;
+    inrestart = false;
     segmentTracker = NULL;
     demuxersource = NULL;
     commandsqueue = NULL;
@@ -221,26 +222,36 @@ bool AbstractStream::startDemux()
     demuxersource->Reset();
     demuxer = createDemux(format);
     if(!demuxer && format != StreamFormat())
-        msg_Err(p_realdemux, "Failed to create demuxer");
+        msg_Err(p_realdemux, "Failed to create demuxer %p %s", (void *)demuxer,
+                format.str().c_str());
 
     return !!demuxer;
 }
 
 bool AbstractStream::restartDemux()
 {
+    bool b_ret = true;
     if(!demuxer)
     {
-        return startDemux();
+        b_ret = startDemux();
     }
     else if(demuxer->needsRestartOnSeek())
     {
+        inrestart = true;
         /* Push all ES as recycling candidates */
         fakeesout->recycleAll();
-        /* Restart with ignoring pushes to queue */
-        return demuxer->restart(commandsqueue);
+        /* Restart with ignoring es_Del pushes to queue when terminating demux */
+        commandsqueue->setDrop(true);
+        demuxer->destroy();
+        commandsqueue->setDrop(false);
+        b_ret = demuxer->create();
+        inrestart = false;
     }
-    commandsqueue->Commit();
-    return true;
+    else
+    {
+        commandsqueue->Commit();
+    }
+    return b_ret;
 }
 
 void AbstractStream::setDisabled(bool b)
@@ -392,9 +403,6 @@ AbstractStream::status AbstractStream::dequeue(mtime_t nz_deadline, mtime_t *pi_
 
     *pi_pcr = nz_deadline;
 
-    if (isDisabled())
-        return AbstractStream::status_eof;
-
     if(commandsqueue->isFlushing())
     {
         *pi_pcr = commandsqueue->Process(p_realdemux->out, VLC_TS_0 + nz_deadline);
@@ -408,7 +416,7 @@ AbstractStream::status AbstractStream::dequeue(mtime_t nz_deadline, mtime_t *pi_
         }
     }
 
-    if(commandsqueue->isEOF())
+    if(isDisabled() || commandsqueue->isEOF())
     {
         *pi_pcr = nz_deadline;
         return AbstractStream::status_eof;
@@ -568,7 +576,7 @@ void AbstractStream::trackerEvent(const SegmentTrackerEvent &event)
             break;
 
         case SegmentTrackerEvent::SWITCHING:
-            if(demuxer && demuxer->needsRestartOnSwitch())
+            if(demuxer && demuxer->needsRestartOnSwitch() && !inrestart)
             {
                 needrestart = true;
             }

@@ -38,13 +38,14 @@ typedef struct
     uint32_t     i_sample_count; /* how many samples in this chunk */
     uint32_t     i_sample_first; /* index of the first sample in this chunk */
     uint32_t     i_sample; /* index of the next sample to read in this chunk */
+    uint32_t     i_virtual_run_number; /* chunks interleaving sequence */
 
     /* now provide way to calculate pts, dts, and offset without too
         much memory and with fast access */
 
     /* with this we can calculate dts/pts without waste memory */
     uint64_t     i_first_dts;   /* DTS of the first sample */
-    uint64_t     i_last_dts;    /* DTS of the last sample */
+    uint64_t     i_duration;    /* total duration of all samples */
 
     uint32_t     i_entries_dts;
     uint32_t     *p_sample_count_dts;
@@ -82,6 +83,7 @@ typedef struct
 
     es_format_t fmt;
     uint32_t    i_block_flags;
+    uint32_t    i_next_block_flags;
     uint8_t     rgi_chans_reordering[AOUT_CHAN_MAX];
     bool        b_chans_reorder;
     es_out_id_t *p_es;

@@ -16,12 +16,12 @@ endif
 libspdif_plugin_la_SOURCES = codec/spdif.c
 codec_LTLIBRARIES += libspdif_plugin.la
 
-libliba52_plugin_la_SOURCES = codec/liba52.c
-libliba52_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CPPFLAGS_liba52)
-libliba52_plugin_la_LIBADD = $(LIBM) $(LIBS_liba52)
-libliba52_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)'
-EXTRA_LTLIBRARIES += libliba52_plugin.la
-codec_LTLIBRARIES += $(LTLIBliba52)
+liba52_plugin_la_SOURCES = codec/a52.c
+liba52_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(CPPFLAGS_a52)
+liba52_plugin_la_LIBADD = $(LIBM) $(LIBS_a52)
+liba52_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)'
+EXTRA_LTLIBRARIES += liba52_plugin.la
+codec_LTLIBRARIES += $(LTLIBa52)
 
 libdca_plugin_la_SOURCES = codec/dca.c
 libdca_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(DCA_CFLAGS)
@@ -63,11 +63,11 @@ endif
 liblpcm_plugin_la_SOURCES = codec/lpcm.c
 codec_LTLIBRARIES += liblpcm_plugin.la
 
-libmpeg_audio_plugin_la_SOURCES = codec/mpeg_audio.c
-libmpeg_audio_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
-codec_LTLIBRARIES += libmpeg_audio_plugin.la
+libmad_plugin_la_SOURCES = codec/mad.c
+libmad_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(MAD_CFLAGS)
+libmad_plugin_la_LIBADD = $(AM_LIBADD) $(MAD_LIBS)
 if HAVE_MAD
-libmpeg_audio_plugin_la_CPPFLAGS += -DHAVE_MPGA_FILTER
+audio_filter_LTLIBRARIES += libmad_plugin.la
 endif
 
 libmpg123_plugin_la_SOURCES = codec/mpg123.c

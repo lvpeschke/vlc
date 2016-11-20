@@ -118,7 +118,7 @@ NativeSurface_getHandle(JNIEnv *p_env, jobject jsurf)
 {
     jclass clz;
     jfieldID fid;
-    intptr_t p_surface_handle = NULL;
+    intptr_t p_surface_handle = 0;
 
     clz = (*p_env)->GetObjectClass(p_env, jsurf);
     if ((*p_env)->ExceptionCheck(p_env))
@@ -286,27 +286,27 @@ LoadNativeWindowAPI(AWindowHandler *p_awh)
 static int
 LoadNativeWindowPrivAPI(native_window_priv_api_t *native)
 {
-    native->connect = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_connect");
-    native->disconnect = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_disconnect");
-    native->setUsage = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_setUsage");
-    native->setBuffersGeometry = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_setBuffersGeometry");
-    native->getMinUndequeued = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_getMinUndequeued");
-    native->getMaxBufferCount = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_getMaxBufferCount");
-    native->setBufferCount = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_setBufferCount");
-    native->setCrop = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_setCrop");
-    native->dequeue = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_dequeue");
-    native->lock = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_lock");
-    native->lockData = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_lockData");
-    native->unlockData = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_unlockData");
-    native->queue = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_queue");
-    native->cancel = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_cancel");
-    native->setOrientation = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_setOrientation");
-
-    return native->connect && native->disconnect && native->setUsage &&
-        native->setBuffersGeometry && native->getMinUndequeued &&
-        native->getMaxBufferCount && native->setBufferCount && native->setCrop &&
-        native->dequeue && native->lock && native->lockData && native->unlockData &&
-        native->queue && native->cancel && native->setOrientation ? 0 : -1;
+#define LOAD(symbol) do { \
+if ((native->symbol = dlsym(RTLD_DEFAULT, "ANativeWindowPriv_" #symbol)) == NULL) \
+    return -1; \
+} while(0)
+    LOAD(connect);
+    LOAD(disconnect);
+    LOAD(setUsage);
+    LOAD(setBuffersGeometry);
+    LOAD(getMinUndequeued);
+    LOAD(getMaxBufferCount);
+    LOAD(setBufferCount);
+    LOAD(setCrop);
+    LOAD(dequeue);
+    LOAD(lock);
+    LOAD(lockData);
+    LOAD(unlockData);
+    LOAD(queue);
+    LOAD(cancel);
+    LOAD(setOrientation);
+    return 0;
+#undef LOAD
 }
 
 /*
@@ -503,10 +503,35 @@ AWindowHandler_new(vlc_object_t *p_obj)
 }
 
 static void
-AWindowHandler_releaseSurfaceEnv(AWindowHandler *p_awh, JNIEnv *p_env,
-                                 enum AWindow_ID id)
+AWindowHandler_releaseANativeWindowEnv(AWindowHandler *p_awh, JNIEnv *p_env,
+                                       enum AWindow_ID id, bool b_clear)
 {
-    AWindowHandler_releaseANativeWindow(p_awh, id);
+    assert(id < AWindow_Max);
+
+    if (p_awh->views[id].p_anw)
+    {
+        /* Clear the surface starting Android M (anwp is NULL in that case).
+         * Don't do it earlier because MediaCodec may not be able to connect to
+         * the surface anymore. */
+        if (b_clear && p_awh->anw_api.setBuffersGeometry
+         && AWindowHandler_getANativeWindowPrivAPI(p_awh) == NULL)
+        {
+            /* Clear the surface by displaying a 1x1 black RGB buffer */
+            ANativeWindow *p_anw = p_awh->views[id].p_anw;
+            p_awh->anw_api.setBuffersGeometry(p_anw, 1, 1,
+                                              WINDOW_FORMAT_RGB_565);
+            ANativeWindow_Buffer buf;
+            if (p_awh->anw_api.winLock(p_anw, &buf, NULL) == 0)
+            {
+                uint16_t *p_bit = buf.bits;
+                p_bit[0] = 0x0000;
+                p_awh->anw_api.unlockAndPost(p_anw);
+            }
+        }
+        p_awh->pf_winRelease(p_awh->views[id].p_anw);
+        p_awh->views[id].p_anw = NULL;
+    }
+
     if (p_awh->views[id].jsurface)
     {
         (*p_env)->DeleteGlobalRef(p_env, p_awh->views[id].jsurface);
@@ -523,8 +548,10 @@ AWindowHandler_destroy(AWindowHandler *p_awh)
     {
         if (p_awh->event.b_registered)
             JNI_CALL(CallBooleanMethod, setCallback, (jlong)0LL);
-        AWindowHandler_releaseSurfaceEnv(p_awh, p_env, AWindow_Video);
-        AWindowHandler_releaseSurfaceEnv(p_awh, p_env, AWindow_Subtitles);
+        AWindowHandler_releaseANativeWindowEnv(p_awh, p_env, AWindow_Video,
+                                               false);
+        AWindowHandler_releaseANativeWindowEnv(p_awh, p_env, AWindow_Subtitles,
+                                               false);
         (*p_env)->DeleteGlobalRef(p_env, p_awh->jobj);
     }
 
@@ -551,41 +578,22 @@ AWindowHandler_getANativeWindowPrivAPI(AWindowHandler *p_awh)
         return &p_awh->anwpriv_api;
 }
 
-jobject
-AWindowHandler_getSurface(AWindowHandler *p_awh, enum AWindow_ID id)
+static int
+WindowHandler_NewSurfaceEnv(AWindowHandler *p_awh, JNIEnv *p_env,
+                            enum AWindow_ID id)
 {
-    assert(id < AWindow_Max);
-
     jobject jsurface;
-    JNIEnv *p_env;
-
-    if (p_awh->views[id].jsurface)
-        return p_awh->views[id].jsurface;
-
-    p_env = AWindowHandler_getEnv(p_awh);
-    if (!p_env)
-        return NULL;
 
     if (id == AWindow_Video)
         jsurface = JNI_CALL(CallObjectMethod, getVideoSurface);
     else
         jsurface = JNI_CALL(CallObjectMethod, getSubtitlesSurface);
     if (!jsurface)
-        return NULL;
+        return VLC_EGENERIC;
 
     p_awh->views[id].jsurface = (*p_env)->NewGlobalRef(p_env, jsurface);
     (*p_env)->DeleteLocalRef(p_env, jsurface);
-    return p_awh->views[id].jsurface;
-}
-
-void
-AWindowHandler_releaseSurface(AWindowHandler *p_awh, enum AWindow_ID id)
-{
-    assert(id < AWindow_Max);
-
-    JNIEnv *p_env = AWindowHandler_getEnv(p_awh);
-    if (p_env)
-        AWindowHandler_releaseSurfaceEnv(p_awh, p_env, id);
+    return VLC_SUCCESS;
 }
 
 ANativeWindow *
@@ -593,7 +601,6 @@ AWindowHandler_getANativeWindow(AWindowHandler *p_awh, enum AWindow_ID id)
 {
     assert(id < AWindow_Max);
 
-    jobject jsurf;
     JNIEnv *p_env;
 
     if (p_awh->views[id].p_anw)
@@ -603,24 +610,34 @@ AWindowHandler_getANativeWindow(AWindowHandler *p_awh, enum AWindow_ID id)
     if (!p_env)
         return NULL;
 
-    jsurf = AWindowHandler_getSurface(p_awh, id);
-    if (!jsurf)
+    if (WindowHandler_NewSurfaceEnv(p_awh, p_env, id) != VLC_SUCCESS)
         return NULL;
+    assert(p_awh->views[id].jsurface != NULL);
 
-    p_awh->views[id].p_anw = p_awh->pf_winFromSurface(p_env, jsurf);
+    p_awh->views[id].p_anw = p_awh->pf_winFromSurface(p_env,
+                                                      p_awh->views[id].jsurface);
     return p_awh->views[id].p_anw;
 }
 
-void AWindowHandler_releaseANativeWindow(AWindowHandler *p_awh,
-                                         enum AWindow_ID id)
+jobject
+AWindowHandler_getSurface(AWindowHandler *p_awh, enum AWindow_ID id)
 {
     assert(id < AWindow_Max);
 
-    if (p_awh->views[id].p_anw)
-    {
-        p_awh->pf_winRelease(p_awh->views[id].p_anw);
-        p_awh->views[id].p_anw = NULL;
-    }
+    if (p_awh->views[id].jsurface)
+        return p_awh->views[id].jsurface;
+
+    AWindowHandler_getANativeWindow(p_awh, id);
+    return p_awh->views[id].jsurface;
+}
+
+
+void AWindowHandler_releaseANativeWindow(AWindowHandler *p_awh,
+                                         enum AWindow_ID id, bool b_clear)
+{
+    JNIEnv *p_env = AWindowHandler_getEnv(p_awh);
+    if (p_env)
+        AWindowHandler_releaseANativeWindowEnv(p_awh, p_env, id, b_clear);
 }
 
 static inline AWindowHandler *jlong_AWindowHandler(jlong handle)

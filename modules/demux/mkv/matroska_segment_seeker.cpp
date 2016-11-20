@@ -68,7 +68,9 @@ SegmentSeeker::add_cluster( KaxCluster * const p_cluster )
         /* fpos     */ p_cluster->GetElementPosition(),
         /* pts      */ mtime_t( p_cluster->GlobalTimecode() / INT64_C( 1000 ) ),
         /* duration */ mtime_t( -1 ),
-        /* size     */ p_cluster->GetEndPosition() - p_cluster->GetElementPosition()
+        /* size     */ p_cluster->IsFiniteSize()
+            ? p_cluster->GetEndPosition() - p_cluster->GetElementPosition()
+            : UINT64_MAX
     };
 
     add_cluster_position( cinfo.fpos );
@@ -313,9 +315,7 @@ SegmentSeeker::index_unsearched_range( matroska_segment_c& ms, Range search_area
         matroska_segment_c::tracks_map_t::iterator i_track = ms.tracks.end();
 
         if( ms.BlockGet( block, simpleblock, &b_key_picture, &b_discardable_picture, &i_block_duration ) )
-        {
-            throw std::runtime_error( "Unable to BlockGet in SegmentSeeker::index_unsearched_range, EOF?" );
-        }
+            break;
 
         if( simpleblock ) {
             block_pos = simpleblock->GetElementPosition();
@@ -425,7 +425,8 @@ SegmentSeeker::mkv_jump_to( matroska_segment_c& ms, fptr_t fpos )
         ms.ep->reconstruct( &ms.es, ms.segment, &ms.sys.demuxer );
     }
 
-    while( ms.cluster == NULL || ms.cluster->GetEndPosition() < fpos )
+    while( ms.cluster == NULL || (
+          ms.cluster->IsFiniteSize() && ms.cluster->GetEndPosition() < fpos ) )
     {
         if( !( ms.cluster = static_cast<KaxCluster*>( ms.ep->Get() ) ) )
         {

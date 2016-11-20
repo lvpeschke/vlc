@@ -30,7 +30,7 @@
 
 static int Open (vlc_object_t *);
 
-VLC_SD_PROBE_HELPER("disc", "Discs", SD_CAT_DEVICES)
+VLC_SD_PROBE_HELPER("disc", N_("Discs"), SD_CAT_DEVICES)
 
 /*
  * Module descriptor
@@ -55,6 +55,8 @@ vlc_module_end ()
 static int Open (vlc_object_t *obj)
 {
     services_discovery_t *sd = (services_discovery_t *)obj;
+
+    sd->description = _("Discs");
 
     LONG drives = GetLogicalDrives ();
     char mrl[12] = "file:///A:/", name[3] = "A:";

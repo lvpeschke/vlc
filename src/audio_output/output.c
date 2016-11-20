@@ -232,7 +232,7 @@ audio_output_t *aout_New (vlc_object_t *parent)
     char *str;
 
     /* Visualizations */
-    var_Create (aout, "visual", VLC_VAR_STRING | VLC_VAR_HASCHOICE);
+    var_Create (aout, "visual", VLC_VAR_STRING);
     text.psz_string = _("Visualizations");
     var_Change (aout, "visual", VLC_VAR_SETTEXT, &text, NULL);
     val.psz_string = (char *)"";
@@ -304,7 +304,7 @@ audio_output_t *aout_New (vlc_object_t *parent)
     if (likely(cfg != NULL))
         for (unsigned i = 0; i < cfg->list_count; i++)
         {
-            val.psz_string = cfg->list.psz[i];
+            val.psz_string = (char *)cfg->list.psz[i];
             text.psz_string = vlc_gettext(cfg->list_text[i]);
             var_Change (aout, "audio-replay-gain-mode", VLC_VAR_ADDCHOICE,
                             &val, &text);
@@ -445,6 +445,7 @@ int aout_OutputNew (audio_output_t *aout, audio_sample_format_t *restrict fmt)
     }
 
     aout_FormatPrepare (fmt);
+    assert (fmt->i_bytes_per_frame > 0 && fmt->i_frame_length > 0);
     aout_FormatPrint (aout, "output", fmt);
     return 0;
 }
@@ -480,6 +481,13 @@ int aout_OutputTimeGet (audio_output_t *aout, mtime_t *delay)
 void aout_OutputPlay (audio_output_t *aout, block_t *block)
 {
     aout_OutputAssertLocked (aout);
+#ifndef NDEBUG
+    aout_owner_t *owner = aout_owner (aout);
+    assert (owner->mixer_format.i_frame_length > 0);
+    assert (block->i_buffer == 0 || block->i_buffer / block->i_nb_samples ==
+            owner->mixer_format.i_bytes_per_frame /
+            owner->mixer_format.i_frame_length);
+#endif
     aout->play (aout, block);
 }
 

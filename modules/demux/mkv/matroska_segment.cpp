@@ -492,8 +492,8 @@ bool matroska_segment_c::PreloadClusters(uint64 i_cluster_pos)
 
         E_CASE( KaxCluster, kcluster )
         {
-            vars.obj->ParseCluster( &kcluster, false );
-            vars.obj->IndexAppendCluster( &kcluster );
+            if( vars.obj->ParseCluster( &kcluster, false ) )
+                vars.obj->IndexAppendCluster( &kcluster );
         }
 
         E_CASE_DEFAULT( el )
@@ -633,9 +633,10 @@ bool matroska_segment_c::Preload( )
             }
             msg_Dbg( &sys.demuxer, "|   + Cluster" );
 
-            cluster = kc_ptr;
+            if( !ParseCluster( kc_ptr ) )
+                break;
 
-            ParseCluster( cluster );
+            cluster = kc_ptr;
             IndexAppendCluster( cluster );
 
             // add first cluster as trusted seekpoint for all tracks
@@ -686,7 +687,8 @@ bool matroska_segment_c::Preload( )
 
     b_preloaded = true;
 
-    EnsureDuration();
+    if( cluster )
+        EnsureDuration();
 
     return true;
 }
@@ -979,53 +981,53 @@ void matroska_segment_c::EnsureDuration()
 
     bool b_seekable;
 
-    vlc_stream_Control( sys.demuxer.s, STREAM_CAN_FASTSEEK, &b_seekable );
-    if ( !b_seekable )
+    if( vlc_stream_Control( sys.demuxer.s, STREAM_CAN_FASTSEEK, &b_seekable ) ||
+        !b_seekable )
     {
         msg_Warn( &sys.demuxer, "could not look for the segment duration" );
         return;
     }
 
     uint64 i_current_position = es.I_O().getFilePointer();
-    uint64 i_last_cluster_pos = 0;
+    uint64 i_last_cluster_pos = cluster->GetElementPosition();
 
     // find the last Cluster from the Cues
+
     if ( b_cues && _seeker._cluster_positions.size() )
-    {
         i_last_cluster_pos = *_seeker._cluster_positions.rbegin();
-    }
+    else if( !cluster->IsFiniteSize() )
+        return;
 
-    // find the last Cluster manually
-    if ( !i_last_cluster_pos && cluster != NULL )
+    es.I_O().setFilePointer( i_last_cluster_pos, seek_beginning );
+
+    EbmlParser eparser ( &es, segment, &sys.demuxer, var_InheritBool(
+          &sys.demuxer, "mkv-use-dummy" ) );
+
+    // locate the definitely last cluster in the stream
+
+    while( EbmlElement* el = eparser.Get() )
     {
-        es.I_O().setFilePointer( cluster->GetElementPosition(), seek_beginning );
-
-        EbmlElement* el;
-        EbmlParser ep( &es, segment, &sys.demuxer,
-                             var_InheritBool( &sys.demuxer, "mkv-use-dummy" ) );
-
-        while( ( el = ep.Get() ) != NULL )
+        if( !el->IsFiniteSize() && el->GetElementPosition() != i_last_cluster_pos )
         {
-            if ( MKV_IS_ID( el, KaxCluster ) )
-            {
-                i_last_cluster_pos = el->GetElementPosition();
-            }
+            es.I_O().setFilePointer( i_current_position, seek_beginning );
+            return;
         }
+
+        if( MKV_IS_ID( el, KaxCluster ) )
+            i_last_cluster_pos = el->GetElementPosition();
     }
 
     // find the last timecode in the Cluster
-    if ( i_last_cluster_pos )
+
+    eparser.Reset( &sys.demuxer );
+    es.I_O().setFilePointer( i_last_cluster_pos, seek_beginning );
+
+    EbmlElement* el = eparser.Get();
+    MKV_CHECKED_PTR_DECL( p_last_cluster, KaxCluster, el );
+
+    if( p_last_cluster &&
+        ParseCluster( p_last_cluster, false, SCOPE_PARTIAL_DATA ) )
     {
-        es.I_O().setFilePointer( i_last_cluster_pos, seek_beginning );
-
-        EbmlParser eparser (
-            &es , segment, &sys.demuxer, var_InheritBool( &sys.demuxer, "mkv-use-dummy" ) );
-
-        KaxCluster *p_last_cluster = static_cast<KaxCluster*>( eparser.Get() );
-        if( p_last_cluster == NULL )
-            return;
-        ParseCluster( p_last_cluster, false, SCOPE_PARTIAL_DATA );
-
         // use the last block + duration
         uint64 i_last_timecode = p_last_cluster->GlobalTimecode();
         for( unsigned int i = 0; i < p_last_cluster->ListSize(); i++ )
@@ -1137,9 +1139,11 @@ int matroska_segment_c::BlockGet( KaxBlock * & pp_block, KaxSimpleBlock * & pp_s
         int64_t            & i_duration;
         bool               & b_key_picture;
         bool               & b_discardable_picture;
+        bool                 b_cluster_timecode;
+
     } payload = {
         this, ep, &sys.demuxer, pp_block, pp_simpleblock,
-        *pi_duration, *pb_key_picture, *pb_discardable_picture
+        *pi_duration, *pb_key_picture, *pb_discardable_picture, true
     };
 
     MKV_SWITCH_CREATE( EbmlTypeDispatcher, BlockGetHandler_l1, BlockPayload )
@@ -1149,7 +1153,7 @@ int matroska_segment_c::BlockGet( KaxBlock * & pp_block, KaxSimpleBlock * & pp_s
         E_CASE( KaxCluster, kcluster )
         {
             vars.obj->cluster = &kcluster;
-
+            vars.b_cluster_timecode = false;
             vars.ep->Down ();
         }
         E_CASE( KaxCues, kcue )
@@ -1173,6 +1177,7 @@ int matroska_segment_c::BlockGet( KaxBlock * & pp_block, KaxSimpleBlock * & pp_s
             ktimecode.ReadData( vars.obj->es.I_O(), SCOPE_ALL_DATA );
             vars.obj->cluster->InitTimecode( static_cast<uint64>( ktimecode ), vars.obj->i_timescale );
             vars.obj->IndexAppendCluster( vars.obj->cluster );
+            vars.b_cluster_timecode = true;
         }
         E_CASE( KaxClusterSilentTracks, ksilent )
         {
@@ -1187,6 +1192,12 @@ int matroska_segment_c::BlockGet( KaxBlock * & pp_block, KaxSimpleBlock * & pp_s
         }
         E_CASE( KaxSimpleBlock, ksblock )
         {
+            if( vars.b_cluster_timecode == false )
+            {
+                msg_Warn( vars.p_demuxer, "ignoring SimpleBlock prior to mandatory Timecode" );
+                return;
+            }
+
             vars.simpleblock = &ksblock;
             vars.simpleblock->ReadData( vars.obj->es.I_O() );
             vars.simpleblock->SetParent( *vars.obj->cluster );

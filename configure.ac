@@ -118,6 +118,7 @@ case "${host_os}" in
     CFLAGS="${CFLAGS} -pthread"
     CPPFLAGS="${CPPFLAGS} -I/usr/local/include"
     LDFLAGS="${LDFLAGS} -L/usr/local/lib"
+    ac_cv_ld_z_defs=no
     ;;
   openbsd*)
     SYS=openbsd
@@ -493,7 +494,7 @@ AS_IF([test "${enable_shared}" = "no" -a "${enable_vlc}" != "no"], [
 dnl
 dnl Gettext stuff
 dnl
-AM_GNU_GETTEXT_VERSION([0.19.7])
+AM_GNU_GETTEXT_VERSION([0.19.8])
 AM_GNU_GETTEXT([external], [need-formatstring-macros])
 
 dnl
@@ -596,13 +597,14 @@ dnl Check for system libs needed
 need_libc=false
 
 dnl Check for usual libc functions
-AC_CHECK_DECLS([nanosleep],,,[#include <time.h>])
-AC_CHECK_FUNCS([daemon fcntl flock fstatvfs fork getenv getpwuid_r isatty lstat memalign mkostemp mmap open_memstream openat pread posix_fadvise posix_madvise setlocale stricmp strnicmp strptime uselocale pthread_cond_timedwait_monotonic_np pthread_condattr_setclock])
-AC_REPLACE_FUNCS([atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv memrchr nrand48 poll posix_memalign recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tdestroy timegm timespec_get strverscmp])
+AC_CHECK_FUNCS([daemon fcntl flock fstatvfs fork getenv getpwuid_r isatty lstat memalign mkostemp mmap open_memstream openat pread posix_fadvise posix_madvise setlocale stricmp strnicmp strptime tdestroy uselocale pthread_cond_timedwait_monotonic_np pthread_condattr_setclock])
+AC_REPLACE_FUNCS([atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv memrchr nrand48 poll posix_memalign recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tfind timegm timespec_get strverscmp])
 AC_REPLACE_FUNCS([gettimeofday])
 AC_CHECK_FUNC(fdatasync,,
   [AC_DEFINE(fdatasync, fsync, [Alias fdatasync() to fsync() if missing.])
 ])
+
+VLC_REPLACE_DECL([realpath], [#include <stdlib.h>])
 
 dnl mingw64 implements those as static inline, not functions with C linkage
 VLC_REPLACE_DECL([asprintf], [#include <stdio.h>])
@@ -749,6 +751,11 @@ AC_CHECK_LIB(m,lrintf, [
 AC_CHECK_LIB(m,nanf,
   AC_DEFINE(HAVE_NANF, 1, [Define to 1 if you have the NANF function])
 )
+AC_CHECK_LIB(m,sincos, [
+  AC_DEFINE(HAVE_SINCOS, 1, [Define to 1 if you have the sincos function.])
+], [
+  AC_LIBOBJ([sincos])
+])
 
 dnl Check for dynamic plugins
 LIBDL=""
@@ -1516,8 +1523,8 @@ AS_IF([test "${enable_altivec}" = "yes"], [
     CPPFLAGS="${CPPFLAGS} ${ac_cv_c_altivec}"
     AC_DEFINE(CAN_COMPILE_C_ALTIVEC, 1, [Define to 1 if C AltiVec extensions are available.])
     VLC_ADD_CFLAGS([libvlccore],[${ac_cv_c_altivec}])
-    ALTIVEC_CFLAGS="$ALTIVEC_FLAGS ${ac_cv_c_altivec} ${ac_cv_c_altivec_abi}"
-    VLC_ADD_CFLAGS([deinterlace],[${ac_cv_c_altivec} ${ac_cv_c_altivec_abi}])
+    ALTIVEC_CFLAGS="$ALTIVEC_CFLAGS ${ac_cv_c_altivec}"
+    VLC_ADD_CFLAGS([deinterlace],[${ac_cv_c_altivec}])
     have_altivec="yes"
   ])
   AC_CHECK_HEADERS(altivec.h)
@@ -2631,7 +2638,7 @@ dnl
 AC_ARG_ENABLE(vpx,
     AS_HELP_STRING([--enable-vpx],[libvpx VP8/VP9 encoder and decoder (default auto)]))
 AS_IF([test "${enable_vpx}" != "no"],[
-    PKG_CHECK_MODULES([VPX], [vpx >= 1.4.0], [
+    PKG_CHECK_MODULES([VPX], [vpx >= 1.5.0], [
         VLC_ADD_PLUGIN([vpx])
         VLC_ADD_CPPFLAGS([vpx], [${VPX_CFLAGS}])
         VLC_ADD_LIBS([vpx], [${VPX_LIBS}])
@@ -2649,7 +2656,7 @@ AS_IF([test "${enable_vpx}" != "no"],[
         ], [], [${VPX_LIBS}])
     ], [
     AS_IF([test "${enable_vpx}" = "yes"],[
-        AC_MSG_ERROR([libvpx 1.4.0 or higher was not found])
+        AC_MSG_ERROR([libvpx 1.5.0 or higher was not found])
     ])])
 ])
 
@@ -2682,13 +2689,13 @@ then
       CPPFLAGS_test="-I${with_a52}/include"
     fi
     VLC_SAVE_FLAGS
-    CPPFLAGS="${CPPFLAGS} ${CPPFLAGS_test} ${CPPFLAGS_liba52}"
-    LDFLAGS="${LDFLAGS} ${LDFLAGS_test} ${LIBS_liba52}"
+    CPPFLAGS="${CPPFLAGS} ${CPPFLAGS_test} ${CPPFLAGS_a52}"
+    LDFLAGS="${LDFLAGS} ${LDFLAGS_test} ${LIBS_a52}"
     AC_CHECK_HEADERS(a52dec/a52.h, [
       AC_CHECK_LIB(a52, a52_free, [
-        VLC_ADD_PLUGIN([liba52])
-        VLC_ADD_LIBS([liba52],[${LDFLAGS_test} -la52])
-        VLC_ADD_CPPFLAGS([liba52],[${CPPFLAGS_test}])
+        VLC_ADD_PLUGIN([a52])
+        VLC_ADD_LIBS([a52],[${LDFLAGS_test} -la52])
+        VLC_ADD_CPPFLAGS([a52],[${CPPFLAGS_test}])
       ],[
         AC_MSG_ERROR([Could not find liba52 on your system: you may get it from http://liba52.sf.net/. Alternatively you can use --disable-a52 to disable the a52 plugin.])
         ], [$LIBM])
@@ -3235,7 +3242,7 @@ if test "${enable_freetype}" != "no"; then
       VLC_ADD_LIBS([skins2],[${FREETYPE_LIBS}])
 
       dnl fontconfig support
-      if test "${SYS}" != "mingw32"; then
+      if test "${SYS}" != "mingw32" -a "${SYS}" != "darwin" ; then
           if test "${enable_fontconfig}" != "no"; then
             AC_CHECK_HEADERS(fontconfig/fontconfig.h, [
               have_fontconfig="yes"
@@ -3314,7 +3321,7 @@ AS_IF([test "${enable_directx}" != "no"], [
 
   dnl OpenGL
   AC_CHECK_HEADERS(GL/wglew.h, [
-    VLC_ADD_PLUGIN([glwin32, wgl])
+    VLC_ADD_PLUGIN([glwin32 wgl])
   ],, [
     #include <windows.h>
     #include <GL/gl.h>
@@ -4107,7 +4114,12 @@ PKG_ENABLE_MODULES_VLC([SECRET], [], [libsecret-1 >= 0.18], [use libsecret for k
 dnl
 dnl  kwallet
 dnl
-PKG_ENABLE_MODULES_VLC([KWALLET], [], [dbus-1 >= 1.6.0], [use kwallet for keystore], [auto])
+AC_ARG_ENABLE(kwallet,
+  [AS_HELP_STRING([--enable-kwallet],
+    [use kwallet (via D-Bus) for keystore (default enabled)])])
+AS_IF([test "${enable_kwallet}" != "no" -a "${have_dbus}" = "yes"], [
+  VLC_ADD_PLUGIN([kwallet])
+])
 
 dnl
 dnl  Developers helper modules (should be hidden from configure help)

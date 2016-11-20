@@ -1,5 +1,5 @@
 /*****************************************************************************
- * adaptive.cpp: Adaptative streaming module
+ * adaptive.cpp: Adaptive streaming module
  *****************************************************************************
  * Copyright © 2015 - VideoLAN and VLC Authors
  *
@@ -70,17 +70,26 @@ static void Close   (vlc_object_t *);
 #define ADAPT_BW_TEXT N_("Fixed Bandwidth in KiB/s")
 #define ADAPT_BW_LONGTEXT N_("Preferred bandwidth for non adaptive streams")
 
-#define ADAPT_LOGIC_TEXT N_("Adaptation Logic")
+#define ADAPT_LOGIC_TEXT N_("Adaptive Logic")
 
 #define ADAPT_ACCESS_TEXT N_("Use regular HTTP modules")
 #define ADAPT_ACCESS_LONGTEXT N_("Connect using http access instead of custom http code")
 
-static const int pi_logics[] = {AbstractAdaptationLogic::Default,
+static const AbstractAdaptationLogic::LogicType pi_logics[] = {
+                                AbstractAdaptationLogic::Default,
                                 AbstractAdaptationLogic::Predictive,
                                 AbstractAdaptationLogic::RateBased,
                                 AbstractAdaptationLogic::FixedRate,
                                 AbstractAdaptationLogic::AlwaysLowest,
                                 AbstractAdaptationLogic::AlwaysBest};
+
+static const char *const ppsz_logics_values[] = {
+                                "",
+                                "predictive",
+                                "rate",
+                                "fixedrate",
+                                "lowest",
+                                "highest"};
 
 static const char *const ppsz_logics[] = { N_("Default"),
                                            N_("Predictive"),
@@ -89,15 +98,20 @@ static const char *const ppsz_logics[] = { N_("Default"),
                                            N_("Lowest Bandwidth/Quality"),
                                            N_("Highest Bandwidth/Quality")};
 
+static_assert( ARRAY_SIZE( pi_logics ) == ARRAY_SIZE( ppsz_logics ),
+    "pi_logics and ppsz_logics shall have the same number of elements" );
+
+static_assert( ARRAY_SIZE( pi_logics ) == ARRAY_SIZE( ppsz_logics_values ),
+    "pi_logics and ppsz_logics_values shall have the same number of elements" );
+
 vlc_module_begin ()
-        set_shortname( N_("Adaptative"))
+        set_shortname( N_("Adaptive"))
         set_description( N_("Unified adaptive streaming for DASH/HLS") )
         set_capability( "demux", 12 )
         set_category( CAT_INPUT )
         set_subcategory( SUBCAT_INPUT_DEMUX )
-        add_integer( "adaptive-logic",  AbstractAdaptationLogic::Default,
-                                          ADAPT_LOGIC_TEXT, NULL, false )
-            change_integer_list( pi_logics, ppsz_logics )
+        add_string( "adaptive-logic",  "", ADAPT_LOGIC_TEXT, NULL, false )
+            change_string_list( ppsz_logics_values, ppsz_logics )
         add_integer( "adaptive-width",  0, ADAPT_WIDTH_TEXT,  ADAPT_WIDTH_TEXT,  true )
         add_integer( "adaptive-height", 0, ADAPT_HEIGHT_TEXT, ADAPT_HEIGHT_TEXT, true )
         add_integer( "adaptive-bw",     250, ADAPT_BW_TEXT,     ADAPT_BW_LONGTEXT,     false )
@@ -120,6 +134,9 @@ static int Open(vlc_object_t *p_obj)
 {
     demux_t *p_demux = (demux_t*) p_obj;
 
+    if(!p_demux->s->psz_url)
+        return VLC_EGENERIC;
+
     std::string mimeType;
 
     char *psz_mime = stream_ContentType(p_demux->s);
@@ -130,8 +147,21 @@ static int Open(vlc_object_t *p_obj)
     }
 
     PlaylistManager *p_manager = NULL;
-    AbstractAdaptationLogic::LogicType logic =
-            static_cast<AbstractAdaptationLogic::LogicType>(var_InheritInteger(p_obj, "adaptive-logic"));
+
+    char *psz_logic = var_InheritString(p_obj, "adaptive-logic");
+    AbstractAdaptationLogic::LogicType logic = AbstractAdaptationLogic::Default;
+    if( psz_logic )
+    {
+        for(size_t i=0;i<ARRAY_SIZE(pi_logics); i++)
+        {
+            if(!strcmp(psz_logic, ppsz_logics_values[i]))
+            {
+                logic = pi_logics[i];
+                break;
+            }
+        }
+        free( psz_logic );
+    }
 
     std::string playlisturl(p_demux->s->psz_url);
 

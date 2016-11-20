@@ -84,6 +84,7 @@ FakeESOutID * FakeESOut::createNewID( const es_format_t *p_fmt )
     es_format_Init( &fmtcopy, 0, 0 );
     es_format_Copy( &fmtcopy, p_fmt );
     fmtcopy.i_group = 0; /* Always ignore group for adaptive */
+    fmtcopy.i_id = -1;
 
     vlc_mutex_lock(&lock);
 
@@ -277,6 +278,10 @@ void FakeESOut::recycle( FakeESOutID *id )
 es_out_id_t * FakeESOut::esOutAdd_Callback(es_out_t *fakees, const es_format_t *p_fmt)
 {
     FakeESOut *me = (FakeESOut *) fakees->p_sys;
+
+    if( p_fmt->i_cat != VIDEO_ES && p_fmt->i_cat != AUDIO_ES && p_fmt->i_cat != SPU_ES )
+        return NULL;
+
     /* Feed the slave demux/stream_Demux with FakeESOutID struct,
      * we'll create real ES later on main demux on execution */
     FakeESOutID *es_id = me->createNewID( p_fmt );
@@ -347,6 +352,19 @@ int FakeESOut::esOutControl_Callback(es_out_t *fakees, int i_query, va_list args
             int64_t  pcr = static_cast<int64_t>(va_arg( args, int64_t ));
             pcr += me->getTimestampOffset();
             AbstractCommand *command = me->commandsqueue->factory()->createEsOutControlPCRCommand( i_group, pcr );
+            if( likely(command) )
+            {
+                me->commandsqueue->Schedule( command );
+                return VLC_SUCCESS;
+            }
+        }
+        break;
+
+        case ES_OUT_SET_GROUP_META:
+        {
+            static_cast<void>(va_arg( args, int )); /* ignore group */
+            const vlc_meta_t *p_meta = static_cast<const vlc_meta_t *>(va_arg( args, const vlc_meta_t * ));
+            AbstractCommand *command = me->commandsqueue->factory()->createEsOutMetaCommand( -1, p_meta );
             if( likely(command) )
             {
                 me->commandsqueue->Schedule( command );

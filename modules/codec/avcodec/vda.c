@@ -49,11 +49,10 @@ static int Open( vlc_va_t *, AVCodecContext *, enum PixelFormat,
 static void Close( vlc_va_t * , AVCodecContext *);
 static int Get( vlc_va_t *, picture_t *, uint8_t ** );
 static int Extract( vlc_va_t *, picture_t *, uint8_t * );
-static void Release( void *opaque, uint8_t *data );
+static void Release( void *opaque );
 
 static void copy420YpCbCr8Planar(picture_t *p_pic,
                                  CVPixelBufferRef buffer,
-                                 unsigned i_width,
                                  unsigned i_height)
 {
     uint8_t *pp_plane[2];
@@ -86,7 +85,6 @@ vlc_module_end ()
 struct vlc_va_sys_t
 {
     AVVDAContext *vdactx;
-    int i_width;
     int i_height;
 };
 
@@ -101,8 +99,6 @@ static int Open(vlc_va_t *va,
 
     (void) fmt;
     (void) p_sys;
-
-    size_t i_profile = 0xFFFF, i_level = 0xFFFF;
 
     switch (avctx->codec_id) {
         case AV_CODEC_ID_H264:
@@ -134,7 +130,6 @@ static int Open(vlc_va_t *va,
 
     sys->vdactx = av_vda_alloc_context();
     sys->vdactx->cv_pix_fmt_type = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-    sys->i_width = avctx->width;
     sys->i_height = avctx->height;
 
     int i_ret = av_vda_default_init2(avctx, sys->vdactx);
@@ -171,10 +166,9 @@ static int Get( vlc_va_t *va, picture_t *p_picture, uint8_t **data )
 }
 
 // Never called
-static void Release( void *opaque, uint8_t *data )
+static void Release( void *opaque )
 {
     VLC_UNUSED(opaque);
-    (void) data;
 }
 
 static int Extract( vlc_va_t *va, picture_t *p_picture, uint8_t *data )
@@ -183,18 +177,13 @@ static int Extract( vlc_va_t *va, picture_t *p_picture, uint8_t *data )
 
     CVPixelBufferRef cv_buffer = (CVPixelBufferRef)data;
 
-    if( !cv_buffer )
+    if( !cv_buffer || !CVPixelBufferGetDataSize(cv_buffer) )
     {
         msg_Dbg( va, "Frame buffer is empty.");
         return VLC_EGENERIC;
     }
-    if (!CVPixelBufferGetDataSize(cv_buffer) > 0)
-    {
-        msg_Dbg( va, "Empty frame buffer");
-        return VLC_EGENERIC;
-    }
 
-    copy420YpCbCr8Planar( p_picture, cv_buffer, sys->i_width, sys->i_height );
+    copy420YpCbCr8Planar( p_picture, cv_buffer, sys->i_height );
 
     return VLC_SUCCESS;
 }

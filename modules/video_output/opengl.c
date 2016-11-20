@@ -37,6 +37,7 @@
 #include <vlc_subpicture.h>
 #include <vlc_opengl.h>
 #include <vlc_memory.h>
+#include <vlc_vout.h>
 
 #include "opengl.h"
 
@@ -95,6 +96,8 @@
 #   define SUPPORTS_SHADERS
 #   define SUPPORTS_FIXED_PIPELINE
 #endif
+
+#define SPHERE_RADIUS 1.f
 
 typedef struct {
     GLuint   texture;
@@ -205,7 +208,10 @@ struct vout_display_opengl_t {
     /* View point */
     float f_teta;
     float f_phi;
+    float f_roll;
+    float f_fov;
     float f_zoom;
+    float f_zoom_min;
 };
 
 static inline int GetAlignedSize(unsigned size)
@@ -246,15 +252,15 @@ static void BuildVertexShader(vout_display_opengl_t *vgl,
         "attribute vec3 VertexPosition;"
         "uniform mat4 OrientationMatrix;"
         "uniform mat4 ProjectionMatrix;"
-        "uniform mat4 ViewMatrix;"
         "uniform mat4 XRotMatrix;"
         "uniform mat4 YRotMatrix;"
+        "uniform mat4 ZRotMatrix;"
         "uniform mat4 ZoomMatrix;"
         "void main() {"
         " TexCoord0 = MultiTexCoord0;"
         " TexCoord1 = MultiTexCoord1;"
         " TexCoord2 = MultiTexCoord2;"
-        " gl_Position = OrientationMatrix * ProjectionMatrix * ZoomMatrix * XRotMatrix * YRotMatrix * vec4(VertexPosition, 1.0);"
+        " gl_Position = OrientationMatrix * ProjectionMatrix * ZoomMatrix * ZRotMatrix * XRotMatrix * YRotMatrix * vec4(VertexPosition, 1.0);"
         "}";
 
     *shader = vgl->CreateShader(GL_VERTEX_SHADER);
@@ -424,7 +430,8 @@ static void BuildXYZFragmentShader(vout_display_opengl_t *vgl,
 
 vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
                                                const vlc_fourcc_t **subpicture_chromas,
-                                               vlc_gl_t *gl)
+                                               vlc_gl_t *gl,
+                                               const vlc_viewpoint_t *viewpoint)
 {
     vout_display_opengl_t *vgl = calloc(1, sizeof(*vgl));
     if (!vgl)
@@ -441,6 +448,8 @@ vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
         free(vgl);
         return NULL;
     }
+
+    vgl->f_fov = -1.f; /* In order to init vgl->f_zoom_min */
 
     const char *extensions = (const char *)glGetString(GL_EXTENSIONS);
 #if !USE_OPENGL_ES
@@ -564,6 +573,7 @@ vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
     bool need_fs_yuv = false;
     bool need_fs_xyz = false;
     bool need_fs_rgba = USE_OPENGL_ES == 2;
+    bool need_vs = fmt->projection_mode != PROJECTION_MODE_RECTANGULAR;
     float yuv_range_correction = 1.0;
 
     if (max_texture_units >= 3 && supports_shaders && vlc_fourcc_IsYUV(fmt->i_chroma)) {
@@ -628,7 +638,7 @@ vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
     vgl->shader[1] =
     vgl->shader[2] = -1;
     vgl->local_count = 0;
-    if (supports_shaders && (need_fs_yuv || need_fs_xyz|| need_fs_rgba)) {
+    if (supports_shaders && (need_vs || need_fs_yuv || need_fs_xyz|| need_fs_rgba)) {
 #ifdef SUPPORTS_SHADERS
         if (need_fs_xyz)
             BuildXYZFragmentShader(vgl, &vgl->shader[0]);
@@ -653,11 +663,13 @@ vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
             free(infolog);
         }
 
+        /* YUV/XYZ & Vertex shaders */
         vgl->program[0] = vgl->CreateProgram();
         vgl->AttachShader(vgl->program[0], vgl->shader[0]);
         vgl->AttachShader(vgl->program[0], vgl->shader[2]);
         vgl->LinkProgram(vgl->program[0]);
 
+        /* RGB & Vertex shaders */
         vgl->program[1] = vgl->CreateProgram();
         vgl->AttachShader(vgl->program[1], vgl->shader[1]);
         vgl->AttachShader(vgl->program[1], vgl->shader[2]);
@@ -687,13 +699,6 @@ vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
 #else
         (void)yuv_range_correction;
 #endif
-    }
-
-    if (vgl->fmt.projection_mode == PROJECTION_MODE_EQUIRECTANGULAR
-        || vgl->fmt.projection_mode == PROJECTION_MODE_CUBEMAP_LAYOUT_STANDARD)
-    {
-        vgl->f_teta = vgl->fmt.f_pose_roll_degrees / 180. * M_PI;
-        vgl->f_phi  = vgl->fmt.f_pose_yaw_degrees  / 180. * M_PI;
     }
 
     /* */
@@ -731,6 +736,13 @@ vout_display_opengl_t *vout_display_opengl_New(video_format_t *fmt,
     vgl->region_count = 0;
     vgl->region = NULL;
     vgl->pool = NULL;
+
+    if (vgl->fmt.projection_mode != PROJECTION_MODE_RECTANGULAR
+     && vout_display_opengl_SetViewpoint(vgl, viewpoint) != VLC_SUCCESS)
+    {
+        vout_display_opengl_Delete(vgl);
+        return NULL;
+    }
 
     *fmt = vgl->fmt;
     if (subpicture_chromas) {
@@ -774,6 +786,39 @@ void vout_display_opengl_Delete(vout_display_opengl_t *vgl)
     if (vgl->pool)
         picture_pool_Release(vgl->pool);
     free(vgl);
+}
+
+int vout_display_opengl_SetViewpoint(vout_display_opengl_t *vgl,
+                                     const vlc_viewpoint_t *p_vp)
+{
+#define RAD(d) ((float) ((d) * M_PI / 180.f))
+    float f_fov = RAD(p_vp->fov);
+    if (f_fov > (float) M_PI -0.001f || f_fov < 0.001f)
+        return VLC_EBADVAR;
+    if (p_vp->zoom > 1.f || p_vp->zoom < -1.f)
+        return VLC_EBADVAR;
+    vgl->f_teta = RAD(p_vp->yaw) - (float) M_PI_2;
+    vgl->f_phi  = RAD(p_vp->pitch);
+    vgl->f_roll = RAD(p_vp->roll);
+
+    if (fabsf(f_fov - vgl->f_fov) >= 0.001f)
+    {
+        /* The fov changed, do trigonometry to calculate the minimal zoom value
+         * that will allow us to zoom out without seeing the outside of the
+         * sphere (black borders). */
+        float sar = (float) vgl->fmt.i_visible_width / vgl->fmt.i_visible_height;
+        float fovx = 2 * atanf(tanf(f_fov / 2) * sar);
+        float tan_fovx_2 = tanf(fovx / 2);
+        float tan_fovy_2 = tanf(f_fov / 2 );
+        vgl->f_zoom_min = SPHERE_RADIUS / sinf(atanf(sqrtf(
+                          tan_fovx_2 * tan_fovx_2 + tan_fovy_2 * tan_fovy_2)));
+    }
+
+    vgl->f_fov  = f_fov;
+    vgl->f_zoom = p_vp->zoom * (p_vp->zoom >= 0 ? 0.5 * SPHERE_RADIUS : vgl->f_zoom_min);
+
+    return VLC_SUCCESS;
+#undef RAD
 }
 
 picture_pool_t *vout_display_opengl_GetPool(vout_display_opengl_t *vgl, unsigned requested_count)
@@ -1026,37 +1071,55 @@ static const GLfloat identity[] = {
     0.0f, 0.0f, 0.0f, 1.0f
 };
 
-static void getViewMatrix(GLfloat matrix[static 16]) {
-    // 90° rotation on the Y axis
-    const GLfloat m[] = {
-        0.0f,  0.0f, 1.0f, 0.0f,
-        0.0f,  1.0f, 0.0f, 0.0f,
-        -1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f,  0.0f, 0.0f, 1.0f
-    };
+/* rotation around the Z axis */
+static void getZRotMatrix(float theta, GLfloat matrix[static 16])
+{
+    float st, ct;
 
-     memcpy(matrix, m, sizeof(m));
-}
-
-static void getYRotMatrix(float teta, GLfloat matrix[static 16]) {
+    sincosf(theta, &st, &ct);
 
     const GLfloat m[] = {
-        cos(teta), 0.0f, -sin(teta), 0.0f,
-        0.0f,      1.0f, 0.0f,       0.0f,
-        sin(teta), 0.0f, cos(teta),  0.0f,
-        0.0f,      0.0f, 0.0f,       1.0f
+    /*  x    y    z    w */
+        ct,  -st, 0.f, 0.f,
+        st,  ct,  0.f, 0.f,
+        0.f, 0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f, 1.f
     };
 
     memcpy(matrix, m, sizeof(m));
 }
 
-static void getXRotMatrix(float phi, GLfloat matrix[static 16]) {
+/* rotation around the Y axis */
+static void getYRotMatrix(float theta, GLfloat matrix[static 16])
+{
+    float st, ct;
+
+    sincosf(theta, &st, &ct);
 
     const GLfloat m[] = {
-        1.0f, 0.0f,      0.0f,     0.0f,
-        0.0f, cos(phi),  sin(phi), 0.0f,
-        0.0f, -sin(phi), cos(phi), 0.0f,
-        0.0f, 0.0f,      0.0f,     1.0f
+    /*  x    y    z    w */
+        ct,  0.f, -st, 0.f,
+        0.f, 1.f, 0.f, 0.f,
+        st,  0.f, ct,  0.f,
+        0.f, 0.f, 0.f, 1.f
+    };
+
+    memcpy(matrix, m, sizeof(m));
+}
+
+/* rotation around the X axis */
+static void getXRotMatrix(float phi, GLfloat matrix[static 16])
+{
+    float sp, cp;
+
+    sincosf(phi, &sp, &cp);
+
+    const GLfloat m[] = {
+    /*  x    y    z    w */
+        1.f, 0.f, 0.f, 0.f,
+        0.f, cp,  sp,  0.f,
+        0.f, -sp, cp,  0.f,
+        0.f, 0.f, 0.f, 1.f
     };
 
     memcpy(matrix, m, sizeof(m));
@@ -1065,6 +1128,7 @@ static void getXRotMatrix(float phi, GLfloat matrix[static 16]) {
 static void getZoomMatrix(float zoom, GLfloat matrix[static 16]) {
 
     const GLfloat m[] = {
+        /* x   y     z     w */
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
@@ -1074,19 +1138,19 @@ static void getZoomMatrix(float zoom, GLfloat matrix[static 16]) {
     memcpy(matrix, m, sizeof(m));
 }
 
-static void getProjectionMatrix(float sar, GLfloat matrix[static 16]) {
+/* perspective matrix see https://www.opengl.org/sdk/docs/man2/xhtml/gluPerspective.xml */
+static void getProjectionMatrix(float sar, float fovy, GLfloat matrix[static 16]) {
 
-    float f = 3;
-    float n = 0.1;
+    float zFar  = 1000;
+    float zNear = 0.01;
 
-    float fovy = M_PI / 3;
-    float d = 1 / tan(fovy / 2);
+    float f = 1.f / tanf(fovy / 2.f);
 
     const GLfloat m[] = {
-        d / sar, 0.0, 0.0,                   0.0,
-        0.0,     d,   0.0,                   0.0,
-        0.0,     0.0, (n + f) / (n - f),     -1.0,
-        0.0,     0.0, (2 * n * f) / (n - f), 0.0};
+        f / sar, 0.f,                   0.f,                0.f,
+        0.f,     f,                     0.f,                0.f,
+        0.f,     0.f,     (zNear + zFar) / (zNear - zFar), -1.f,
+        0.f,     0.f, (2 * zNear * zFar) / (zNear - zFar),  0.f};
 
      memcpy(matrix, m, sizeof(m));
 }
@@ -1207,9 +1271,9 @@ static void DrawWithoutShaders(vout_display_opengl_t *vgl,
 static int BuildSphere(unsigned nbPlanes,
                         GLfloat **vertexCoord, GLfloat **textureCoord, unsigned *nbVertices,
                         GLushort **indices, unsigned *nbIndices,
-                        float *left, float *top, float *right, float *bottom)
+                        const float *left, const float *top,
+                        const float *right, const float *bottom)
 {
-    float radius = 1;
     unsigned nbLatBands = 128;
     unsigned nbLonBands = 128;
 
@@ -1234,23 +1298,25 @@ static int BuildSphere(unsigned nbPlanes,
     }
 
     for (unsigned lat = 0; lat <= nbLatBands; lat++) {
-        float theta = lat * M_PI / nbLatBands;
-        float sinTheta = sin(theta);
-        float cosTheta = cos(theta);
+        float theta = lat * (float) M_PI / nbLatBands;
+        float sinTheta, cosTheta;
+
+        sincosf(theta, &sinTheta, &cosTheta);
 
         for (unsigned lon = 0; lon <= nbLonBands; lon++) {
-            float phi = lon * 2 * M_PI / nbLonBands;
-            float sinPhi = sin(phi);
-            float cosPhi = cos(phi);
+            float phi = lon * 2 * (float) M_PI / nbLonBands;
+            float sinPhi, cosPhi;
+
+            sincosf(phi, &sinPhi, &cosPhi);
 
             float x = cosPhi * sinTheta;
             float y = cosTheta;
             float z = sinPhi * sinTheta;
 
             unsigned off1 = (lat * (nbLonBands + 1) + lon) * 3;
-            (*vertexCoord)[off1] = radius * x;
-            (*vertexCoord)[off1 + 1] = radius * y;
-            (*vertexCoord)[off1 + 2] = radius * z;
+            (*vertexCoord)[off1] = SPHERE_RADIUS * x;
+            (*vertexCoord)[off1 + 1] = SPHERE_RADIUS * y;
+            (*vertexCoord)[off1 + 2] = SPHERE_RADIUS * z;
 
             for (unsigned p = 0; p < nbPlanes; ++p)
             {
@@ -1291,7 +1357,8 @@ static int BuildCube(unsigned nbPlanes,
                      float padW, float padH,
                      GLfloat **vertexCoord, GLfloat **textureCoord, unsigned *nbVertices,
                      GLushort **indices, unsigned *nbIndices,
-                     float *left, float *top, float *right, float *bottom)
+                     const float *left, const float *top,
+                     const float *right, const float *bottom)
 {
     *nbVertices = 4 * 6;
     *nbIndices = 6 * 6;
@@ -1414,7 +1481,8 @@ static int BuildCube(unsigned nbPlanes,
 static int BuildRectangle(unsigned nbPlanes,
                           GLfloat **vertexCoord, GLfloat **textureCoord, unsigned *nbVertices,
                           GLushort **indices, unsigned *nbIndices,
-                          float *left, float *top, float *right, float *bottom)
+                          const float *left, const float *top,
+                          const float *right, const float *bottom)
 {
     *nbVertices = 4;
     *nbIndices = 6;
@@ -1469,7 +1537,8 @@ static int BuildRectangle(unsigned nbPlanes,
 }
 
 static void DrawWithShaders(vout_display_opengl_t *vgl,
-                            float *left, float *top, float *right, float *bottom,
+                            const float *left, const float *top,
+                            const float *right, const float *bottom,
                             int program)
 {
     vgl->UseProgram(vgl->program[program]);
@@ -1523,8 +1592,8 @@ static void DrawWithShaders(vout_display_opengl_t *vgl,
     if (i_ret != VLC_SUCCESS)
         return;
 
-    GLfloat projectionMatrix[16], viewMatrix[16],
-            yRotMatrix[16], xRotMatrix[16],
+    GLfloat projectionMatrix[16],
+            zRotMatrix[16], yRotMatrix[16], xRotMatrix[16],
             zoomMatrix[16], orientationMatrix[16];
 
     orientationTransformMatrix(orientationMatrix, vgl->fmt.orientation);
@@ -1532,17 +1601,17 @@ static void DrawWithShaders(vout_display_opengl_t *vgl,
     if (vgl->fmt.projection_mode == PROJECTION_MODE_EQUIRECTANGULAR
         || vgl->fmt.projection_mode == PROJECTION_MODE_CUBEMAP_LAYOUT_STANDARD)
     {
-        float sar = vgl->fmt.i_visible_width / vgl->fmt.i_visible_height;
-        getProjectionMatrix(sar, projectionMatrix);
-        getViewMatrix(viewMatrix);
+        float sar = (float) vgl->fmt.i_visible_width / vgl->fmt.i_visible_height;
+        getProjectionMatrix(sar, vgl->f_fov, projectionMatrix);
         getYRotMatrix(vgl->f_teta, yRotMatrix);
         getXRotMatrix(vgl->f_phi, xRotMatrix);
+        getZRotMatrix(vgl->f_roll, zRotMatrix);
         getZoomMatrix(vgl->f_zoom, zoomMatrix);
     }
     else
     {
         memcpy(projectionMatrix, identity, sizeof(identity));
-        memcpy(viewMatrix, identity, sizeof(identity));
+        memcpy(zRotMatrix, identity, sizeof(identity));
         memcpy(yRotMatrix, identity, sizeof(identity));
         memcpy(xRotMatrix, identity, sizeof(identity));
         memcpy(zoomMatrix, identity, sizeof(identity));
@@ -1577,7 +1646,7 @@ static void DrawWithShaders(vout_display_opengl_t *vgl,
 
     vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "OrientationMatrix"), 1, GL_FALSE, orientationMatrix);
     vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "ProjectionMatrix"), 1, GL_FALSE, projectionMatrix);
-    vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "ViewMatrix"), 1, GL_FALSE, viewMatrix);
+    vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "ZRotMatrix"), 1, GL_FALSE, zRotMatrix);
     vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "YRotMatrix"), 1, GL_FALSE, yRotMatrix);
     vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "XRotMatrix"), 1, GL_FALSE, xRotMatrix);
     vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[program], "ZoomMatrix"), 1, GL_FALSE, zoomMatrix);
@@ -1634,7 +1703,7 @@ int vout_display_opengl_Display(vout_display_opengl_t *vgl,
     }
 
 #ifdef SUPPORTS_SHADERS
-    if (vgl->program[0] && (vgl->chroma->plane_count == 3 || vgl->chroma->plane_count == 1))
+    if (vgl->program[0] && (vgl->chroma->plane_count == 3 || vgl->chroma->plane_count == 2))
         DrawWithShaders(vgl, left, top, right, bottom, 0);
     else if (vgl->program[1] && vgl->chroma->plane_count == 1)
         DrawWithShaders(vgl, left, top, right, bottom, 1);
@@ -1715,7 +1784,7 @@ int vout_display_opengl_Display(vout_display_opengl_t *vgl,
             // Subpictures have the correct orientation:
             vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "OrientationMatrix"), 1, GL_FALSE, identity);
             vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "ProjectionMatrix"), 1, GL_FALSE, identity);
-            vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "ViewMatrix"), 1, GL_FALSE, identity);
+            vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "ZRotMatrix"), 1, GL_FALSE, identity);
             vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "YRotMatrix"), 1, GL_FALSE, identity);
             vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "XRotMatrix"), 1, GL_FALSE, identity);
             vgl->UniformMatrix4fv(vgl->GetUniformLocation(vgl->program[1], "ZoomMatrix"), 1, GL_FALSE, identity);

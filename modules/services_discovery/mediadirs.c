@@ -120,6 +120,7 @@ static int Open( vlc_object_t *p_this, enum type_e i_type )
 {
     services_discovery_t *p_sd = ( services_discovery_t* )p_this;
     services_discovery_sys_t *p_sys;
+    const char *desc;
 
     p_sd->p_sys = p_sys = calloc( 1, sizeof( *p_sys) );
     if( !p_sys )
@@ -129,6 +130,7 @@ static int Open( vlc_object_t *p_this, enum type_e i_type )
 
     if( p_sys->i_type == Video )
     {
+        desc = N_("My Videos");
         p_sys->psz_dir[0] = config_GetUserDir( VLC_VIDEOS_DIR );
         p_sys->psz_dir[1] = var_CreateGetString( p_sd, "input-record-path" );
 
@@ -136,6 +138,7 @@ static int Open( vlc_object_t *p_this, enum type_e i_type )
     }
     else if( p_sys->i_type == Audio )
     {
+        desc = N_("My Music");
         p_sys->psz_dir[0] = config_GetUserDir( VLC_MUSIC_DIR );
         p_sys->psz_dir[1] = var_CreateGetString( p_sd, "input-record-path" );
 
@@ -143,6 +146,7 @@ static int Open( vlc_object_t *p_this, enum type_e i_type )
     }
     else if( p_sys->i_type == Picture )
     {
+        desc = N_("My Pictures");
         p_sys->psz_dir[0] = config_GetUserDir( VLC_PICTURES_DIR );
         p_sys->psz_dir[1] = var_CreateGetString( p_sd, "snapshot-path" );
 
@@ -153,6 +157,8 @@ static int Open( vlc_object_t *p_this, enum type_e i_type )
         free( p_sys );
         return VLC_EGENERIC;
     }
+
+    p_sd->description = vlc_gettext(desc);
 
     var_AddCallback( p_sd->obj.libvlc, p_sys->psz_var, onNewFileAdded, p_sd );
 
@@ -175,8 +181,6 @@ static void *Run( void *data )
 {
     services_discovery_t *p_sd = data;
     services_discovery_sys_t *p_sys = p_sd->p_sys;
-
-    int canc = vlc_savecancel();
 
     int num_dir = sizeof( p_sys->psz_dir ) / sizeof( p_sys->psz_dir[0] );
     for( int i = 0; i < num_dir; i++ )
@@ -214,7 +218,6 @@ static void *Run( void *data )
         free( psz_uri );
     }
 
-    vlc_restorecancel(canc);
     return NULL;
 }
 
@@ -226,7 +229,6 @@ static void Close( vlc_object_t *p_this )
     services_discovery_t *p_sd = (services_discovery_t *)p_this;
     services_discovery_sys_t *p_sys = p_sd->p_sys;
 
-    vlc_cancel( p_sys->thread );
     vlc_join( p_sys->thread, NULL );
 
     var_DelCallback( p_sd->obj.libvlc, p_sys->psz_var, onNewFileAdded, p_sd );
@@ -349,11 +351,9 @@ static int vlc_sd_probe_Open( vlc_object_t *obj )
 {
     vlc_probe_t *probe = (vlc_probe_t *)obj;
 
-    vlc_sd_probe_Add( probe, "video_dir{longname=\"My Videos\"}",
-                      N_("My Videos"), SD_CAT_MYCOMPUTER );
-    vlc_sd_probe_Add( probe, "audio_dir{longname=\"My Music\"}",
-                      N_("My Music"), SD_CAT_MYCOMPUTER );
-    vlc_sd_probe_Add( probe, "picture_dir{longname=\"My Pictures\"}",
-                      N_("My Pictures"), SD_CAT_MYCOMPUTER );
+    vlc_sd_probe_Add( probe, "video_dir", N_("My Videos"), SD_CAT_MYCOMPUTER );
+    vlc_sd_probe_Add( probe, "audio_dir", N_("My Music"), SD_CAT_MYCOMPUTER );
+    vlc_sd_probe_Add( probe, "picture_dir", N_("My Pictures"),
+                      SD_CAT_MYCOMPUTER );
     return VLC_PROBE_CONTINUE;
 }

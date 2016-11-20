@@ -160,95 +160,42 @@ void h264_AVC_to_AnnexB( uint8_t *p_buf, uint32_t i_len,
     }
 }
 
-int h264_AnnexB_get_spspps( const uint8_t *p_buf, size_t i_buf,
-                            const uint8_t **pp_sps, size_t *p_sps_size,
-                            const uint8_t **pp_pps, size_t *p_pps_size,
-                            const uint8_t **pp_ext, size_t *p_ext_size )
+bool h264_AnnexB_get_spspps( const uint8_t *p_buf, size_t i_buf,
+                             const uint8_t **pp_sps, size_t *p_sps_size,
+                             const uint8_t **pp_pps, size_t *p_pps_size,
+                             const uint8_t **pp_ext, size_t *p_ext_size )
 {
-    uint8_t *p_sps = NULL, *p_pps = NULL, *p_ext = NULL;
-    size_t i_sps_size = 0, i_pps_size = 0, i_ext_size = 0;
-    int i_nal_type = H264_NAL_UNKNOWN;
-    bool b_first_nal = true;
-    bool b_has_zero_byte = false;
+    if( pp_sps ) { *p_sps_size = 0; *pp_sps = NULL; }
+    if( pp_pps ) { *p_pps_size = 0; *pp_pps = NULL; }
+    if( pp_ext ) { *p_ext_size = 0; *pp_ext = NULL; }
 
-    while( i_buf > 0 )
+    hxxx_iterator_ctx_t it;
+    hxxx_iterator_init( &it, p_buf, i_buf, 0 );
+
+    const uint8_t *p_nal; size_t i_nal;
+    while( hxxx_annexb_iterate_next( &it, &p_nal, &i_nal ) )
     {
-        unsigned int i_move = 1;
+        if( i_nal < 2 )
+            continue;
 
-        /* cf B.1.1: a NAL unit starts and ends with 0x000001 or 0x00000001 */
-        if( i_buf > 3 && !memcmp( p_buf, annexb_startcode3, 3 ) )
-        {
-            if( i_nal_type != H264_NAL_UNKNOWN )
-            {
-                /* update SPS/PPS size */
-                if( i_nal_type == H264_NAL_SPS )
-                    i_sps_size = p_buf - p_sps - (b_has_zero_byte ? 1 : 0);
-                if( i_nal_type == H264_NAL_PPS )
-                    i_pps_size = p_buf - p_pps - (b_has_zero_byte ? 1 : 0);
-                if( i_nal_type == H264_NAL_SPS_EXT )
-                    i_ext_size = p_buf - p_pps - (b_has_zero_byte ? 1 : 0);
+        const enum h264_nal_unit_type_e i_nal_type = p_nal[0] & 0x1F;
 
-                if( i_sps_size && i_pps_size && i_ext_size ) /* early end */
-                    break;
-            }
+        if ( i_nal_type <= H264_NAL_SLICE_IDR && i_nal_type != H264_NAL_UNKNOWN )
+            break;
 
-            i_nal_type = p_buf[3] & 0x1F;
+#define IFSET_NAL(type, var) \
+    if( i_nal_type == type && pp_##var && *pp_##var == NULL )\
+        { *pp_##var = p_nal; *p_##var##_size = i_nal; }
 
-            /* The start prefix is always 0x00000001 (annexb_startcode + a
-             * leading zero byte) for SPS, PPS or the first NAL */
-            if( !b_has_zero_byte && ( b_first_nal || i_nal_type == H264_NAL_SPS
-             || i_nal_type == H264_NAL_PPS ) )
-                return -1;
-            b_first_nal = false;
-
-            /* Pointer to the beginning of the SPS/PPS starting with the
-             * leading zero byte */
-            if( i_nal_type == H264_NAL_SPS && !p_sps )
-                p_sps = p_buf - 1;
-            if( i_nal_type == H264_NAL_PPS && !p_pps )
-                p_pps = p_buf - 1;
-            if( i_nal_type == H264_NAL_SPS_EXT && !p_ext )
-                p_ext = p_buf - 1;
-
-            /* cf. 7.4.1.2.3 */
-            if( i_nal_type > 18 || ( i_nal_type >= 10 && i_nal_type <= 12 ) )
-                return -1;
-
-            /* SPS/PPS are before the slices */
-            if ( i_nal_type >= H264_NAL_SLICE && i_nal_type <= H264_NAL_SLICE_IDR )
-                break;
-            i_move = 4;
-        }
-        else if( b_first_nal && p_buf[0] != 0 )
-        {
-            /* leading_zero_8bits only before the first NAL */
-            return -1;
-        }
-        b_has_zero_byte = *p_buf == 0;
-        i_buf -= i_move;
-        p_buf += i_move;
+        IFSET_NAL(H264_NAL_SPS, sps)
+        else
+        IFSET_NAL(H264_NAL_PPS, pps)
+        else
+        IFSET_NAL(H264_NAL_SPS_EXT, ext);
+#undef IFSET_NAL
     }
 
-    if( i_buf == 0 )
-    {
-        /* update SPS/PPS size if we reach the end of the bytestream */
-        if( !i_sps_size && i_nal_type == H264_NAL_SPS )
-            i_sps_size = p_buf - p_sps;
-        if( !i_pps_size && i_nal_type == H264_NAL_PPS )
-            i_pps_size = p_buf - p_pps;
-        if( !i_ext_size && i_nal_type == H264_NAL_SPS_EXT )
-            i_ext_size = p_buf - p_ext;
-    }
-    if( ( !p_sps || !i_sps_size ) && ( !p_pps || !i_pps_size ) )
-        return -1;
-    *pp_sps = p_sps;
-    *p_sps_size = i_sps_size;
-    *pp_pps = p_pps;
-    *p_pps_size = i_pps_size;
-    *pp_ext = p_ext;
-    *p_ext_size = i_ext_size;
-
-    return 0;
+    return (pp_sps && *p_sps_size) || (pp_pps && *p_pps_size);
 }
 
 void h264_release_sps( h264_sequence_parameter_set_t *p_sps )
@@ -268,9 +215,10 @@ static bool h264_parse_sequence_parameter_set_rbsp( bs_t *p_bs,
     p_sps->i_constraint_set_flags = bs_read( p_bs, 8 );
     p_sps->i_level = bs_read( p_bs, 8 );
     /* sps id */
-    p_sps->i_id = bs_read_ue( p_bs );
-    if( p_sps->i_id >= H264_SPS_MAX )
+    uint32_t i_sps_id = bs_read_ue( p_bs );
+    if( i_sps_id > H264_SPS_ID_MAX )
         return false;
+    p_sps->i_id = i_sps_id;
 
     if( i_profile_idc == PROFILE_H264_HIGH ||
         i_profile_idc == PROFILE_H264_HIGH_10 ||
@@ -485,10 +433,14 @@ static bool h264_parse_sequence_parameter_set_rbsp( bs_t *p_bs,
             {
                 p_sps->vui.b_hrd_parameters_present_flag = true;
                 uint32_t count = bs_read_ue( p_bs ) + 1;
+                if( count > 31 )
+                    return false;
                 bs_read( p_bs, 4 );
                 bs_read( p_bs, 4 );
                 for( uint32_t i=0; i<count; i++ )
                 {
+                    if( bs_remain( p_bs ) < 23 )
+                        return false;
                     bs_read_ue( p_bs );
                     bs_read_ue( p_bs );
                     bs_read( p_bs, 1 );
@@ -520,10 +472,12 @@ void h264_release_pps( h264_picture_parameter_set_t *p_pps )
 static bool h264_parse_picture_parameter_set_rbsp( bs_t *p_bs,
                                                    h264_picture_parameter_set_t *p_pps )
 {
-    p_pps->i_id = bs_read_ue( p_bs ); // pps id
-    p_pps->i_sps_id = bs_read_ue( p_bs ); // sps id
-    if( p_pps->i_id >= H264_PPS_MAX || p_pps->i_sps_id >= H264_SPS_MAX )
+    uint32_t i_pps_id = bs_read_ue( p_bs ); // pps id
+    uint32_t i_sps_id = bs_read_ue( p_bs ); // sps id
+    if( i_pps_id > H264_PPS_ID_MAX || i_sps_id > H264_SPS_ID_MAX )
         return false;
+    p_pps->i_id = i_pps_id;
+    p_pps->i_sps_id = i_sps_id;
 
     bs_skip( p_bs, 1 ); // entropy coding mode flag
     p_pps->i_pic_order_present_flag = bs_read( p_bs, 1 );
@@ -563,17 +517,13 @@ IMPL_h264_generic_decode( h264_decode_sps, h264_sequence_parameter_set_t,
 IMPL_h264_generic_decode( h264_decode_pps, h264_picture_parameter_set_t,
                           h264_parse_picture_parameter_set_rbsp, h264_release_pps )
 
-block_t *h264_AnnexB_NAL_to_avcC( uint8_t i_nal_length_size,
-                                           const uint8_t *p_sps_buf,
-                                           size_t i_sps_size,
-                                           const uint8_t *p_pps_buf,
-                                           size_t i_pps_size )
+block_t *h264_NAL_to_avcC( uint8_t i_nal_length_size,
+                           const uint8_t *p_sps_buf,
+                           size_t i_sps_size,
+                           const uint8_t *p_pps_buf,
+                           size_t i_pps_size )
 {
     if( i_pps_size > UINT16_MAX || i_sps_size > UINT16_MAX )
-        return NULL;
-
-    if( !hxxx_strip_AnnexB_startcode( &p_sps_buf, &i_sps_size ) ||
-        !hxxx_strip_AnnexB_startcode( &p_pps_buf, &i_pps_size ) )
         return NULL;
 
     /* The length of the NAL size is encoded using 1, 2 or 4 bytes */
@@ -605,6 +555,20 @@ block_t *h264_AnnexB_NAL_to_avcC( uint8_t i_nal_length_size,
     }
 
     return bo.b;
+}
+
+block_t *h264_AnnexB_NAL_to_avcC( uint8_t i_nal_length_size,
+                                  const uint8_t *p_sps_buf,
+                                  size_t i_sps_size,
+                                  const uint8_t *p_pps_buf,
+                                  size_t i_pps_size )
+{
+    if( !hxxx_strip_AnnexB_startcode( &p_sps_buf, &i_sps_size ) ||
+        !hxxx_strip_AnnexB_startcode( &p_pps_buf, &i_pps_size ) )
+        return NULL;
+    return h264_NAL_to_avcC( i_nal_length_size,
+                             p_sps_buf, i_sps_size,
+                             p_pps_buf, i_pps_size );
 }
 
 bool h264_get_picture_size( const h264_sequence_parameter_set_t *p_sps, unsigned *p_w, unsigned *p_h,

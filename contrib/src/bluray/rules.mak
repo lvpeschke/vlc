@@ -37,6 +37,10 @@ else
 BLURAY_CONF += --without-fontconfig
 endif
 
+ifndef WITH_OPTIMIZATION
+BLURAY_CONF += --disable-optimizations
+endif
+
 $(TARBALLS)/libbluray-$(BLURAY_VERSION).tar.bz2:
 	$(call download,$(BLURAY_URL))
 
@@ -44,6 +48,7 @@ $(TARBALLS)/libbluray-$(BLURAY_VERSION).tar.bz2:
 
 bluray: libbluray-$(BLURAY_VERSION).tar.bz2 .sum-bluray
 	$(UNPACK)
+	$(call pkg_static,"src/libbluray.pc.in")
 	$(MOVE)
 
 .bluray: bluray

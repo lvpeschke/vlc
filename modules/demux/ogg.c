@@ -249,6 +249,8 @@ static int Open( vlc_object_t * p_this )
 
     while ( !p_sys->b_preparsing_done && p_demux->pf_demux( p_demux ) > 0 )
     {}
+    if ( p_sys->b_preparsing_done && p_demux->b_preparsing )
+        Ogg_CreateES( p_demux );
 
     return VLC_SUCCESS;
 }
@@ -328,10 +330,7 @@ static int Demux( demux_t * p_demux )
     }
 
     if ( p_sys->b_preparsing_done && !p_sys->b_es_created )
-    {
         Ogg_CreateES( p_demux );
-        p_sys->b_es_created = true;
-    }
 
     /*
      * The first data page of a physical stream is stored in the relevant logical stream
@@ -2133,6 +2132,7 @@ static void Ogg_CreateES( demux_t *p_demux )
         Ogg_LogicalStreamDelete( p_demux, p_ogg->p_old_stream );
         p_ogg->p_old_stream = NULL;
     }
+    p_ogg->b_es_created = true;
 }
 
 /****************************************************************************

@@ -213,11 +213,6 @@ static inline input_attachment_t *vlc_input_attachment_Duplicate( const input_at
  *****************************************************************************/
 
 /**
- * This defines private core storage for an input.
- */
-typedef struct input_thread_private_t input_thread_private_t;
-
-/**
  * This defines an opaque input resource handler.
  */
 typedef struct input_resource_t input_resource_t;
@@ -229,13 +224,6 @@ typedef struct input_resource_t input_resource_t;
 struct input_thread_t
 {
     VLC_COMMON_MEMBERS
-
-    bool b_preparsing;
-    bool b_dead VLC_DEPRECATED;
-
-    /* All other data is input_thread is PRIVATE. You can't access it
-     * outside of src/input */
-    input_thread_private_t *p;
 };
 
 /**
@@ -485,6 +473,9 @@ enum input_query_e
     /* ES */
     INPUT_RESTART_ES,       /* arg1=int (-AUDIO/VIDEO/SPU_ES for the whole category) */
 
+    /* Viewpoint */
+    INPUT_UPDATE_VIEWPOINT, /* arg1=(const vlc_viewpoint_t*), arg2=bool b_absolute */
+
     /* Input ressources
      * XXX You must call vlc_object_release as soon as possible */
     INPUT_GET_AOUT,         /* arg1=audio_output_t **              res=can fail */
@@ -609,6 +600,23 @@ static inline int input_AddSlave( input_thread_t *p_input, enum slave_type type,
     return input_Control( p_input, INPUT_ADD_SLAVE, type, psz_uri, b_forced );
 }
 
+/**
+ * Update the viewpoint of the input thread. The viewpoint will be applied to
+ * all vouts and aouts.
+ *
+ * @param p_input an input thread 
+ * @param p_viewpoint the viewpoint value
+ * @param b_absolute if true replace the old viewpoint with the new one. If
+ * false, increase/decrease it.
+ * @return VLC_SUCCESS or a VLC error code
+ */
+static inline int input_UpdateViewpoint( input_thread_t *p_input,
+                                         const vlc_viewpoint_t *p_viewpoint,
+                                         bool b_absolute )
+{
+    return input_Control( p_input, INPUT_UPDATE_VIEWPOINT, p_viewpoint,
+                          b_absolute );
+}
 
 /**
  * Return the audio output (if any) associated with an input.

@@ -45,6 +45,12 @@
 
 #define OSX_EL_CAPITAN (NSAppKitVersionNumber >= 1404)
 
+#ifndef MAC_OS_X_VERSION_10_11
+const CFStringRef kCGColorSpaceDCIP3 = CFSTR("kCGColorSpaceDCIP3");
+const CFStringRef kCGColorSpaceITUR_709 = CFSTR("kCGColorSpaceITUR_709");
+const CFStringRef kCGColorSpaceITUR_2020 = CFSTR("kCGColorSpaceITUR_2020");
+#endif
+
 /*****************************************************************************
  * Vout interface
  *****************************************************************************/
@@ -173,7 +179,8 @@ static int Open (vlc_object_t *p_this)
 
         const vlc_fourcc_t *subpicture_chromas;
         video_format_t fmt = vd->fmt;
-        sys->vgl = vout_display_opengl_New(&vd->fmt, &subpicture_chromas, &sys->gl);
+        sys->vgl = vout_display_opengl_New(&vd->fmt, &subpicture_chromas, &sys->gl,
+                                           &vd->cfg->viewpoint);
         if (!sys->vgl) {
             msg_Err(vd, "Error while initializing opengl display.");
             sys->gl.sys = NULL;
@@ -214,7 +221,7 @@ static int Open (vlc_object_t *p_this)
                     case COLOR_PRIMARIES_BT2020:
                     {
                         msg_Dbg(vd, "Using BT.2020 color space");
-                        sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
+                        sys->cgColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
                         break;
                     }
                     case COLOR_PRIMARIES_DCI_P3:
@@ -397,6 +404,10 @@ static int Control (vout_display_t *vd, int query, va_list ap)
         {
             return VLC_SUCCESS;
         }
+
+        case VOUT_DISPLAY_CHANGE_VIEWPOINT:
+            return vout_display_opengl_SetViewpoint(sys->vgl,
+                &va_arg (ap, const vout_display_cfg_t* )->viewpoint);
 
         case VOUT_DISPLAY_RESET_PICTURES:
             vlc_assert_unreachable ();

@@ -135,7 +135,7 @@ void input_ControlVarInit ( input_thread_t *p_input )
 
     /* State */
     var_Create( p_input, "state", VLC_VAR_INTEGER );
-    val.i_int = p_input->p->i_state;
+    val.i_int = input_priv(p_input)->i_state;
     var_Change( p_input, "state", VLC_VAR_SETVALUE, &val, NULL );
 
     /* Rate */
@@ -151,14 +151,12 @@ void input_ControlVarInit ( input_thread_t *p_input )
     var_Create( p_input, "time-offset", VLC_VAR_INTEGER );    /* relative */
 
     /* Bookmark */
-    var_Create( p_input, "bookmark", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE |
-                VLC_VAR_ISCOMMAND );
+    var_Create( p_input, "bookmark", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
     val.psz_string = _("Bookmark");
     var_Change( p_input, "bookmark", VLC_VAR_SETTEXT, &val, NULL );
 
     /* Program */
-    var_Create( p_input, "program", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE |
-                VLC_VAR_DOINHERIT );
+    var_Create( p_input, "program", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
     var_Get( p_input, "program", &val );
     if( val.i_int <= 0 )
         var_Change( p_input, "program", VLC_VAR_DELCHOICE, &val, NULL );
@@ -171,12 +169,12 @@ void input_ControlVarInit ( input_thread_t *p_input )
     var_Change( p_input, "programs", VLC_VAR_SETTEXT, &text, NULL );
 
     /* Title */
-    var_Create( p_input, "title", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE );
+    var_Create( p_input, "title", VLC_VAR_INTEGER );
     text.psz_string = _("Title");
     var_Change( p_input, "title", VLC_VAR_SETTEXT, &text, NULL );
 
     /* Chapter */
-    var_Create( p_input, "chapter", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE );
+    var_Create( p_input, "chapter", VLC_VAR_INTEGER );
     text.psz_string = _("Chapter");
     var_Change( p_input, "chapter", VLC_VAR_SETTEXT, &text, NULL );
 
@@ -187,17 +185,17 @@ void input_ControlVarInit ( input_thread_t *p_input )
     var_Create( p_input, "spu-delay", VLC_VAR_INTEGER );
 
     /* Video ES */
-    var_Create( p_input, "video-es", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE );
+    var_Create( p_input, "video-es", VLC_VAR_INTEGER );
     text.psz_string = _("Video Track");
     var_Change( p_input, "video-es", VLC_VAR_SETTEXT, &text, NULL );
 
     /* Audio ES */
-    var_Create( p_input, "audio-es", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE );
+    var_Create( p_input, "audio-es", VLC_VAR_INTEGER );
     text.psz_string = _("Audio Track");
     var_Change( p_input, "audio-es", VLC_VAR_SETTEXT, &text, NULL );
 
     /* Spu ES */
-    var_Create( p_input, "spu-es", VLC_VAR_INTEGER | VLC_VAR_HASCHOICE );
+    var_Create( p_input, "spu-es", VLC_VAR_INTEGER );
     text.psz_string = _("Subtitle Track");
     var_Change( p_input, "spu-es", VLC_VAR_SETTEXT, &text, NULL );
 
@@ -218,7 +216,7 @@ void input_ControlVarInit ( input_thread_t *p_input )
     /* Add all callbacks
      * XXX we put callback only in non preparsing mode. We need to create the variable
      * unless someone want to check all var_Get/var_Change return value ... */
-    if( !p_input->b_preparsing )
+    if( !input_priv(p_input)->b_preparsing )
         InputAddCallbacks( p_input, p_input_callbacks );
 }
 
@@ -227,16 +225,16 @@ void input_ControlVarInit ( input_thread_t *p_input )
  *****************************************************************************/
 void input_ControlVarStop( input_thread_t *p_input )
 {
-    demux_t* p_demux  = p_input->p->master->p_demux;
+    demux_t* p_demux  = input_priv(p_input)->master->p_demux;
     int i_cur_title;
 
-    if( !p_input->b_preparsing )
+    if( !input_priv(p_input)->b_preparsing )
         InputDelCallbacks( p_input, p_input_callbacks );
 
-    if( p_input->p->i_title > 1 )
+    if( input_priv(p_input)->i_title > 1 )
         InputDelCallbacks( p_input, p_input_title_navigation_callbacks );
 
-    for( int i = 0; i < p_input->p->i_title; i++ )
+    for( int i = 0; i < input_priv(p_input)->i_title; i++ )
     {
         char name[sizeof("title ") + 3 * sizeof (int)];
 
@@ -246,7 +244,7 @@ void input_ControlVarStop( input_thread_t *p_input )
 
     if( !demux_Control( p_demux, DEMUX_GET_TITLE, &i_cur_title ) )
     {
-        input_title_t* t = p_input->p->title[ i_cur_title ];
+        input_title_t* t = input_priv(p_input)->title[ i_cur_title ];
 
         if( t->i_seekpoint > 1 )
             InputDelCallbacks( p_input, p_input_seekpoint_navigation_callbacks );
@@ -262,7 +260,7 @@ void input_ControlVarNavigation( input_thread_t *p_input )
     vlc_value_t text;
 
     /* Create more command variables */
-    if( p_input->p->i_title > 1 )
+    if( input_priv(p_input)->i_title > 1 )
     {
         if( var_Type( p_input, "next-title" ) == 0 ) {
             var_Create( p_input, "next-title", VLC_VAR_VOID );
@@ -296,7 +294,7 @@ void input_ControlVarNavigation( input_thread_t *p_input )
     /* Create titles and chapters */
     var_Change( p_input, "title", VLC_VAR_CLEARCHOICES, NULL, NULL );
 
-    for( int i = 0; i < p_input->p->i_title; i++ )
+    for( int i = 0; i < input_priv(p_input)->i_title; i++ )
     {
         vlc_value_t val2, text2;
         char title[sizeof("title ") + 3 * sizeof (int)];
@@ -304,32 +302,31 @@ void input_ControlVarNavigation( input_thread_t *p_input )
         /* Add Navigation entries */
         sprintf( title, "title %2u", i );
         var_Destroy( p_input, title );
-        var_Create( p_input, title,
-                    VLC_VAR_INTEGER|VLC_VAR_HASCHOICE|VLC_VAR_ISCOMMAND );
+        var_Create( p_input, title, VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
         var_AddCallback( p_input, title,
                          NavigationCallback, (void *)(intptr_t)i );
 
         char psz_length[MSTRTIME_MAX_SIZE + sizeof(" []")];
-        if( p_input->p->title[i]->i_length > 0 )
+        if( input_priv(p_input)->title[i]->i_length > 0 )
         {
             strcpy( psz_length, " [" );
-            secstotimestr( &psz_length[2], p_input->p->title[i]->i_length / CLOCK_FREQ );
+            secstotimestr( &psz_length[2], input_priv(p_input)->title[i]->i_length / CLOCK_FREQ );
             strcat( psz_length, "]" );
         }
         else
             psz_length[0] = '\0';
 
-        if( p_input->p->title[i]->psz_name == NULL ||
-            *p_input->p->title[i]->psz_name == '\0' )
+        if( input_priv(p_input)->title[i]->psz_name == NULL ||
+            *input_priv(p_input)->title[i]->psz_name == '\0' )
         {
             if( asprintf( &text.psz_string, _("Title %i%s"),
-                          i + p_input->p->i_title_offset, psz_length ) == -1 )
+                          i + input_priv(p_input)->i_title_offset, psz_length ) == -1 )
                 continue;
         }
         else
         {
             if( asprintf( &text.psz_string, "%s%s",
-                          p_input->p->title[i]->psz_name, psz_length ) == -1 )
+                          input_priv(p_input)->title[i]->psz_name, psz_length ) == -1 )
                 continue;
         }
 
@@ -339,22 +336,22 @@ void input_ControlVarNavigation( input_thread_t *p_input )
 
         free( text.psz_string );
 
-        for( int j = 0; j < p_input->p->title[i]->i_seekpoint; j++ )
+        for( int j = 0; j < input_priv(p_input)->title[i]->i_seekpoint; j++ )
         {
             val2.i_int = j;
 
-            if( p_input->p->title[i]->seekpoint[j]->psz_name == NULL ||
-                *p_input->p->title[i]->seekpoint[j]->psz_name == '\0' )
+            if( input_priv(p_input)->title[i]->seekpoint[j]->psz_name == NULL ||
+                *input_priv(p_input)->title[i]->seekpoint[j]->psz_name == '\0' )
             {
                 /* Default value */
                 if( asprintf( &text2.psz_string, _("Chapter %i"),
-                          j + p_input->p->i_seekpoint_offset ) == -1 )
+                          j + input_priv(p_input)->i_seekpoint_offset ) == -1 )
                     continue;
             }
             else
             {
                 text2.psz_string =
-                    strdup( p_input->p->title[i]->seekpoint[j]->psz_name );
+                    strdup( input_priv(p_input)->title[i]->seekpoint[j]->psz_name );
             }
 
             var_Change( p_input, title, VLC_VAR_ADDCHOICE, &val2, &text2 );
@@ -370,7 +367,7 @@ void input_ControlVarNavigation( input_thread_t *p_input )
  *****************************************************************************/
 void input_ControlVarTitle( input_thread_t *p_input, int i_title )
 {
-    input_title_t *t = p_input->p->title[i_title];
+    input_title_t *t = input_priv(p_input)->title[i_title];
     vlc_value_t text;
     int  i;
 
@@ -405,7 +402,7 @@ void input_ControlVarTitle( input_thread_t *p_input, int i_title )
         {
             /* Default value */
             if( asprintf( &text.psz_string, _("Chapter %i"),
-                      i + p_input->p->i_seekpoint_offset ) == -1 )
+                      i + input_priv(p_input)->i_seekpoint_offset ) == -1 )
                 continue;
         }
         else
@@ -426,7 +423,7 @@ void input_ConfigVarInit ( input_thread_t *p_input )
 {
     /* Create Object Variables for private use only */
 
-    if( !p_input->b_preparsing )
+    if( !input_priv(p_input)->b_preparsing )
     {
         var_Create( p_input, "video", VLC_VAR_BOOL | VLC_VAR_DOINHERIT );
         var_Create( p_input, "audio", VLC_VAR_BOOL | VLC_VAR_DOINHERIT );

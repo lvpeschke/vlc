@@ -145,11 +145,11 @@ int VLCModel::metaToColumn( int _meta )
     return column;
 }
 
-int VLCModel::itemId( const QModelIndex &index, int type ) const
+int VLCModel::itemId( const QModelIndex &index ) const
 {
     AbstractPLItem *item = getItem( index );
     if ( !item ) return -1;
-    return item->id( type );
+    return item->id();
 }
 
 AbstractPLItem *VLCModel::getItem( const QModelIndex &index ) const
@@ -196,9 +196,8 @@ void VLCModel::ensureArtRequested( const QModelIndex &index )
 {
     if ( index.isValid() && hasChildren( index ) )
     {
-        int i_art_policy = var_GetInteger( THEPL, "album-art" );
         bool b_access = var_InheritBool( THEPL, "metadata-network-access" );
-        if ( i_art_policy != ALBUM_ART_ALL && ! b_access ) return;
+        if ( !b_access ) return;
         int nbnodes = rowCount( index );
         QModelIndex child;
         for( int row = 0 ; row < nbnodes ; row++ )

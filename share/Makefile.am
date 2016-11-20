@@ -88,11 +88,13 @@ skins2_default_vlt_FILES = \
 	skins2/default/subX/vol_slider.png
 
 skins2/default.vlt: $(skins2_default_vlt_FILES)
-	mkdir -p skins2
-	(cd "$(srcdir)/skins2"; find default -print0 | \
-		LC_ALL=C sort -z | \
-		tar cvv --exclude .svn --no-recursion --null -T -) | \
-	gzip -n > skins2/default.vlt
+	$(AM_V_at)mkdir -p skins2
+	$(AM_V_at)rm -f -- skins2/default.vlt.tmp
+	$(AM_V_GEN)GZIP=--no-name \
+	tar cvvzf skins2/default.vlt.tmp \
+		--owner=root --group=root --directory="$(srcdir)/skins2" \
+		default/
+	$(AM_V_at)mv -f -- skins2/default.vlt.tmp skins2/default.vlt
 
 #
 # LUA
@@ -136,29 +138,17 @@ nobase_vlclib_DATA = \
 	lua/playlist/anevia_xml.luac \
 	lua/playlist/appletrailers.luac \
 	lua/playlist/bbc_co_uk.luac \
-	lua/playlist/break.luac \
-	lua/playlist/canalplus.luac \
 	lua/playlist/cue.luac \
 	lua/playlist/dailymotion.luac \
-	lua/playlist/extreme.luac \
-	lua/playlist/france2.luac \
-	lua/playlist/googlevideo.luac \
 	lua/playlist/jamendo.luac \
-	lua/playlist/joox.luac \
-	lua/playlist/katsomo.luac \
 	lua/playlist/koreus.luac \
-	lua/playlist/lelombrik.luac \
 	lua/playlist/liveleak.luac \
-	lua/playlist/metacafe.luac \
-	lua/playlist/mpora.luac \
-	lua/playlist/pinkbike.luac \
-	lua/playlist/pluzz.luac \
+	lua/playlist/newgrounds.luac \
 	lua/playlist/rockbox_fm_presets.luac \
 	lua/playlist/soundcloud.luac \
 	lua/playlist/vimeo.luac \
+	lua/playlist/vocaroo.luac \
 	lua/playlist/youtube.luac \
-	lua/playlist/youtube_homepage.luac \
-	lua/playlist/zapiks.luac \
 	lua/sd/fmc.luac \
 	lua/sd/icecast.luac \
 	lua/sd/icast.luac \
@@ -234,22 +224,21 @@ EXTRA_DIST += \
 	lua/playlist/dailymotion.lua \
 	lua/playlist/extreme.lua \
 	lua/playlist/france2.lua \
-	lua/playlist/googlevideo.lua \
 	lua/playlist/jamendo.lua \
-	lua/playlist/joox.lua \
 	lua/playlist/katsomo.lua \
 	lua/playlist/koreus.lua \
 	lua/playlist/lelombrik.lua \
 	lua/playlist/liveleak.lua \
 	lua/playlist/metacafe.lua \
 	lua/playlist/mpora.lua \
+	lua/playlist/newgrounds.lua \
 	lua/playlist/pinkbike.lua \
 	lua/playlist/pluzz.lua \
 	lua/playlist/rockbox_fm_presets.lua \
 	lua/playlist/soundcloud.lua \
 	lua/playlist/vimeo.lua \
+	lua/playlist/vocaroo.lua \
 	lua/playlist/youtube.lua \
-	lua/playlist/youtube_homepage.lua \
 	lua/playlist/zapiks.lua \
 	lua/sd/README.txt \
 	lua/sd/fmc.lua \

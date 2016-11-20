@@ -1,5 +1,6 @@
 List of vlc plugins (475)
 $Id$
+ * a52: A/52 audio decoder plugin, using liba52
  * aa: Ascii art video output
  * access_alsa: Alsa access module
  * access_archive: libarchive based access and stream filter
@@ -23,6 +24,7 @@ $Id$
  * adaptive: Unified adaptive streaming module (DASH/HLS)
  * addonsfsstorage: Local storage extensions repository
  * addonsvorepository: Videolan extensions repository
+ * adf: ADF stream_filter module
  * adjust: Contrast/Hue/saturation/Brightness adjust module
  * adpcm: ADPCM audio decoder
  * adummy: dummy audio output
@@ -207,7 +209,6 @@ $Id$
  * keychain: Keystore for iOS, Mac OS X and tvOS
  * kva: OS/2 video output
  * kwallet: store secrets via KDE Kwallet
- * liba52: A/52 audio decoder plugin, using liba52
  * libass: Subtitle renderers using libass
  * libbluray: Library to access Blu-Ray drives
  * libmpeg2: Mpeg2 video decoder using libmpeg2
@@ -244,7 +245,6 @@ $Id$
  * motiondetect: Motion detection filter
  * mp4: MP4 file input module
  * mpc: Musepack decoder
- * mpeg_audio: MPEG audio parser/packetizer
  * mpg123: MPEG-1 & 2 audio layer I, II, III + MPEG 2.5 decoder using mpg123
  * mpgv: MPEG-I/II Video demuxer
  * mtp: MTP interface module
@@ -291,6 +291,7 @@ $Id$
  * packetizer_mlp: MLP/TrueHD audio packetizer
  * packetizer_mpeg4audio: MPEG4 audio packetizer
  * packetizer_mpeg4video: MPEG4 video packetizer
+ * packetizer_mpegaudio: MPEG audio packetizer
  * packetizer_mpegvideo: MPEG video packetizer
  * packetizer_vc1: VC-1 video packetizer
  * panoramix: image wall panoramic video with edge blending filter

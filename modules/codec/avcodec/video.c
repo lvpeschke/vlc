@@ -289,7 +289,8 @@ static int lavc_UpdateVideoFormat(decoder_t *dec, AVCodecContext *ctx,
     es_format_Clean(&dec->fmt_out);
     es_format_Init(&dec->fmt_out, VIDEO_ES, fmt_out.i_chroma);
     dec->fmt_out.video = fmt_out;
-    dec->fmt_out.video.orientation = dec->fmt_in.video.orientation;;
+    dec->fmt_out.video.orientation = dec->fmt_in.video.orientation;
+    dec->fmt_out.video.projection_mode = dec->fmt_in.video.projection_mode;
     return decoder_UpdateVideoFormat(dec);
 }
 
@@ -894,7 +895,11 @@ static picture_t *DecodeVideo( decoder_t *p_dec, block_t **pp_block )
         }
 
         /* Compute the PTS */
+#ifdef FF_API_PKT_PTS
+        mtime_t i_pts = frame->pts;
+#else
         mtime_t i_pts = frame->pkt_pts;
+#endif
         if (i_pts == AV_NOPTS_VALUE )
             i_pts = frame->pkt_dts;
 
@@ -1101,12 +1106,11 @@ static void ffmpeg_InitCodec( decoder_t *p_dec )
     }
 }
 
-static void lavc_ReleaseFrame(void *opaque, uint8_t *data)
+static void lavc_ReleaseFrame(void *opaque)
 {
     picture_t *picture = opaque;
 
     picture_Release(picture);
-    (void) data;
 }
 
 static int lavc_va_GetFrame(struct AVCodecContext *ctx, AVFrame *frame,
@@ -1125,14 +1129,14 @@ static int lavc_va_GetFrame(struct AVCodecContext *ctx, AVFrame *frame,
      * data[3] actually contains the format-specific surface handle. */
     frame->data[3] = frame->data[0];
 
-    void (*release)(void *, uint8_t *) = va->release;
+    void (*release)(void *) = va->release;
     if (va->release == NULL)
         release = lavc_ReleaseFrame;
 
     frame->buf[0] = av_buffer_create(frame->data[0], 0, release, pic, 0);
     if (unlikely(frame->buf[0] == NULL))
     {
-        release(pic, frame->data[0]);
+        release(pic);
         return -1;
     }
 

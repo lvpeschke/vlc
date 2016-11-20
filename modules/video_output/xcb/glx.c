@@ -109,7 +109,8 @@ static int Open (vlc_object_t *obj)
     if (vlc_gl_MakeCurrent (sys->gl))
         goto error;
 
-    sys->vgl = vout_display_opengl_New (&vd->fmt, &spu_chromas, sys->gl);
+    sys->vgl = vout_display_opengl_New (&vd->fmt, &spu_chromas, sys->gl,
+                                        &vd->cfg->viewpoint);
     vlc_gl_ReleaseCurrent (sys->gl);
     if (sys->vgl == NULL)
         goto error;
@@ -246,6 +247,10 @@ static int Control (vout_display_t *vd, int query, va_list ap)
                                     XCB_CW_CURSOR, &(uint32_t){ sys->cursor });
         xcb_flush (sys->conn);
         return VLC_SUCCESS;
+
+    case VOUT_DISPLAY_CHANGE_VIEWPOINT:
+        return vout_display_opengl_SetViewpoint (sys->vgl,
+            &va_arg (ap, const vout_display_cfg_t* )->viewpoint);
 
     case VOUT_DISPLAY_RESET_PICTURES:
         vlc_assert_unreachable ();

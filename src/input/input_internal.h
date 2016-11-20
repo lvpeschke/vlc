@@ -24,9 +24,12 @@
 #ifndef LIBVLC_INPUT_INTERNAL_H
 #define LIBVLC_INPUT_INTERNAL_H 1
 
+#include <stddef.h>
+
 #include <vlc_access.h>
 #include <vlc_demux.h>
 #include <vlc_input.h>
+#include <vlc_vout.h>
 #include <libvlc.h>
 #include "input_interface.h"
 #include "misc/interrupt.h"
@@ -79,9 +82,12 @@ typedef struct
 } input_control_t;
 
 /** Private input fields */
-struct input_thread_private_t
+typedef struct input_thread_private_t
 {
+    struct input_thread_t input;
+
     /* Global properties */
+    bool        b_preparsing;
     bool        b_can_pause;
     bool        b_can_rate_control;
     bool        b_can_pace_control;
@@ -104,6 +110,7 @@ struct input_thread_private_t
     sout_instance_t *p_sout;            /* Idem ? */
     es_out_t        *p_es_out;
     es_out_t        *p_es_out_display;
+    vlc_viewpoint_t viewpoint;
 
     /* Title infos FIXME multi-input (not easy) ? */
     int          i_title;
@@ -167,7 +174,12 @@ struct input_thread_private_t
 
     vlc_thread_t thread;
     vlc_interrupt_t interrupt;
-};
+} input_thread_private_t;
+
+static inline input_thread_private_t *input_priv(input_thread_t *input)
+{
+    return (void *)(((char *)input) - offsetof(input_thread_private_t, input));
+}
 
 /***************************************************************************
  * Internal control helpers
@@ -204,6 +216,9 @@ enum input_control_e
 
     INPUT_CONTROL_SET_ES,
     INPUT_CONTROL_RESTART_ES,
+
+    INPUT_CONTROL_SET_VIEWPOINT,    // new absolute viewpoint
+    INPUT_CONTROL_UPDATE_VIEWPOINT, // update viewpoint relative to current
 
     INPUT_CONTROL_SET_AUDIO_DELAY,
     INPUT_CONTROL_SET_SPU_DELAY,

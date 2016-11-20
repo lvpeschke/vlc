@@ -49,7 +49,7 @@
 static int  Open ( vlc_object_t * );
 static void Close( vlc_object_t * );
 
-VLC_SD_PROBE_HELPER("avahi", "Zeroconf network services", SD_CAT_LAN)
+VLC_SD_PROBE_HELPER("avahi", N_("Zeroconf network services"), SD_CAT_LAN)
 
 vlc_module_begin ()
     set_shortname( "Avahi" )
@@ -273,6 +273,8 @@ static int Open( vlc_object_t *p_this )
     p_sd->p_sys = p_sys = calloc( 1, sizeof( services_discovery_sys_t ) );
     if( !p_sys )
         return VLC_ENOMEM;
+
+    p_sd->description = _("Zeroconf network services");
 
     vlc_dictionary_init( &p_sys->services_name_to_input_item, 1 );
 

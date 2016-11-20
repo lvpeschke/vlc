@@ -123,13 +123,7 @@ EXTRA_CFLAGS += -m32
 EXTRA_LDFLAGS += -m32
 endif
 
-XCODE_FLAGS = -sdk macosx$(OSX_VERSION)
-ifeq ($(shell xcodebuild -version 2>/dev/null | tee /dev/null|head -1|cut -d\  -f2|cut -d. -f1),3)
-XCODE_FLAGS += ARCHS=$(ARCH)
-# XCode 3 doesn't support -arch
-else
-XCODE_FLAGS += -arch $(ARCH)
-endif
+XCODE_FLAGS = MACOSX_DEPLOYMENT_TARGET=$(MIN_OSX_VERSION) -sdk macosx$(OSX_VERSION) -arch $(ARCH)
 
 endif
 
@@ -216,7 +210,7 @@ PKG_CONFIG_PATH := /usr/share/pkgconfig
 PKG_CONFIG_LIBDIR := /usr/$(HOST)/lib/pkgconfig
 export PKG_CONFIG_LIBDIR
 endif
-PKG_CONFIG_PATH := $(PKG_CONFIG_PATH):$(PREFIX)/lib/pkgconfig
+PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 export PKG_CONFIG_PATH
 
 ifndef GIT
@@ -363,7 +357,7 @@ endif
 RECONF = mkdir -p -- $(PREFIX)/share/aclocal && \
 	cd $< && $(AUTORECONF) -fiv $(ACLOCAL_AMFLAGS)
 CMAKE = cmake . -DCMAKE_TOOLCHAIN_FILE=$(abspath toolchain.cmake) \
-		-DCMAKE_INSTALL_PREFIX=$(PREFIX)
+		-DCMAKE_INSTALL_PREFIX=$(PREFIX) $(CMAKE_GENERATOR)
 
 #
 # Per-package build rules

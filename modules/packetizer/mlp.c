@@ -83,6 +83,7 @@ struct decoder_sys_t
      * Common properties
      */
     date_t  end_date;
+    bool    b_discontinuity;
 
     mtime_t i_pts;
     int i_frame_size;
@@ -258,6 +259,7 @@ static void Flush( decoder_t *p_dec )
 
     p_sys->b_mlp = false;
     p_sys->i_state = STATE_NOSYNC;
+    p_sys->b_discontinuity = true;
     block_BytestreamEmpty( &p_sys->bytestream );
     date_Set( &p_sys->end_date, 0 );
 }
@@ -268,29 +270,36 @@ static block_t *Packetize( decoder_t *p_dec, block_t **pp_block )
     uint8_t p_header[MLP_HEADER_SIZE];
     block_t *p_out_buffer;
 
-    /* */
-    if( !pp_block || !*pp_block )
-        return NULL;
+    block_t *p_block = pp_block ? *pp_block : NULL;
 
-    /* */
-    if( (*pp_block)->i_flags&(BLOCK_FLAG_DISCONTINUITY|BLOCK_FLAG_CORRUPTED) )
+    if ( p_block )
     {
-        Flush( p_dec );
-        if( (*pp_block)->i_flags&(BLOCK_FLAG_CORRUPTED) )
+        if( p_block->i_flags & (BLOCK_FLAG_DISCONTINUITY|BLOCK_FLAG_CORRUPTED) )
         {
-            block_Release( *pp_block );
+            /* First always drain complete blocks before discontinuity */
+            block_t *p_drain = Packetize( p_dec, NULL );
+            if( p_drain )
+                return p_drain;
+
+            Flush( p_dec );
+
+            if( p_block->i_flags & BLOCK_FLAG_CORRUPTED )
+            {
+                block_Release( p_block );
+                return NULL;
+            }
+        }
+
+        if( !date_Get( &p_sys->end_date ) && p_block->i_pts <= VLC_TS_INVALID )
+        {
+            /* We've just started the stream, wait for the first PTS. */
+            msg_Dbg( p_dec, "waiting for PTS" );
+            block_Release( p_block );
             return NULL;
         }
-    }
 
-    if( !date_Get( &p_sys->end_date ) && !(*pp_block)->i_pts )
-    {
-        /* We've just started the stream, wait for the first PTS. */
-        block_Release( *pp_block );
-        return NULL;
+        block_BytestreamPush( &p_sys->bytestream, p_block );
     }
-
-    block_BytestreamPush( &p_sys->bytestream, *pp_block );
 
     for( ;; )
     {
@@ -352,13 +361,15 @@ static block_t *Packetize( decoder_t *p_dec, block_t **pp_block )
             p_sys->i_state = STATE_NEXT_SYNC;
 
         case STATE_NEXT_SYNC:
-            /* TODO: If pp_block == NULL, flush the buffer without checking the
-             * next sync word */
-
             /* Check if next expected frame contains the sync word */
             if( block_PeekOffsetBytes( &p_sys->bytestream,
                                        p_sys->i_frame_size, p_header, MLP_HEADER_SIZE ) )
             {
+                if( p_block == NULL ) /* drain */
+                {
+                    p_sys->i_state = STATE_SEND_DATA;
+                    break;
+                }
                 /* Need more data */
                 return NULL;
             }
@@ -424,8 +435,11 @@ static block_t *Packetize( decoder_t *p_dec, block_t **pp_block )
             p_dec->fmt_out.audio.i_channels = p_sys->mlp.i_channels;
             p_dec->fmt_out.audio.i_original_channels = p_sys->mlp.i_channels_conf;
             p_dec->fmt_out.audio.i_physical_channels = p_sys->mlp.i_channels_conf;
+            p_dec->fmt_out.audio.i_bytes_per_frame = p_sys->i_frame_size;
+            p_dec->fmt_out.audio.i_frame_length = p_sys->mlp.i_samples;
 
             p_out_buffer->i_pts = p_out_buffer->i_dts = date_Get( &p_sys->end_date );
+            p_out_buffer->i_nb_samples = p_sys->mlp.i_samples;
 
             p_out_buffer->i_length =
                 date_Increment( &p_sys->end_date, p_sys->mlp.i_samples ) - p_out_buffer->i_pts;
@@ -434,8 +448,15 @@ static block_t *Packetize( decoder_t *p_dec, block_t **pp_block )
             if( p_sys->i_pts == p_sys->bytestream.p_block->i_pts )
                 p_sys->i_pts = p_sys->bytestream.p_block->i_pts = VLC_TS_INVALID;
 
+            if( p_sys->b_discontinuity )
+            {
+                p_out_buffer->i_flags |= BLOCK_FLAG_DISCONTINUITY;
+                p_sys->b_discontinuity = false;
+            }
+
             /* So p_block doesn't get re-added several times */
-            *pp_block = block_BytestreamPop( &p_sys->bytestream );
+            if( pp_block )
+                *pp_block = block_BytestreamPop( &p_sys->bytestream );
 
             p_sys->i_state = STATE_NOSYNC;
 
@@ -466,6 +487,7 @@ static int Open( vlc_object_t *p_this )
 
     block_BytestreamInit( &p_sys->bytestream );
     p_sys->b_mlp = false;
+    p_sys->b_discontinuity = false;
 
     /* Set output properties */
     p_dec->fmt_out.i_cat = AUDIO_ES;

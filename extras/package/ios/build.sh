@@ -178,6 +178,8 @@ export SDK_VERSION=$SDK_VERSION
 export VLCSDKROOT=$SDKROOT
 
 CFLAGS="-isysroot ${SDKROOT} -arch ${ACTUAL_ARCH} ${OPTIM}"
+OBJCFLAGS="${OPTIM}"
+info "OBJCFLAGS = ${OBJCFLAGS}"
 
 if [ "$PLATFORM" = "OS" ]; then
 if [ "$ARCH" != "aarch64" ]; then
@@ -196,7 +198,7 @@ fi
 export CFLAGS="${CFLAGS}"
 export CXXFLAGS="${CFLAGS}"
 export CPPFLAGS="${CFLAGS}"
-
+export OBJCFLAGS="${OBJCFLAGS}"
 export CPP="xcrun cc -E"
 export CXXCPP="xcrun c++ -E"
 
@@ -339,6 +341,10 @@ if [ "$TVOS" = "yes" ]; then
 else
 	TVOSOPTIONS="--enable-neon"
 fi
+
+# Available but not authorized
+export ac_cv_func_daemon=no
+export ac_cv_func_fork=no
 
 # Run configure only upon changes.
 if [ "${VLCROOT}/configure" -nt config.log -o \
@@ -510,7 +516,7 @@ libmod
 libdash
 libmpgv
 dolby_surround
-mpeg_audio"
+mpegaudio"
 fi
 
 echo ${blacklist}

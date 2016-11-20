@@ -85,6 +85,12 @@ struct ts_pes_es_t
     ts_pes_es_t *p_next; /* Next es on same pid from different pmt (shared pid) */
     /* J2K stuff */
     uint8_t  b_interlaced;
+    /* Metadata */
+    struct
+    {
+        uint8_t i_service_id;
+        uint32_t i_format;
+    } metadata;
 };
 
 typedef enum
@@ -101,11 +107,19 @@ struct ts_pes_t
     uint8_t i_stream_type;
 
     ts_transport_type_t transport;
-    int         i_data_size;
-    int         i_data_gathered;
-    block_t     *p_data;
-    block_t     **pp_last;
+
+    struct
+    {
+        size_t      i_data_size;
+        size_t      i_gathered;
+        block_t     *p_data;
+        block_t     **pp_last;
+        uint8_t     saved[5];
+        size_t      i_saved;
+    } gather;
+
     bool        b_always_receive;
+    bool        b_broken_PUSI_conformance;
     ts_sections_processor_t *p_sections_proc;
 
     block_t *   p_prepcr_outqueue;

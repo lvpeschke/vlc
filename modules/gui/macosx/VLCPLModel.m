@@ -1,4 +1,5 @@
 /*****************************************************************************
+>>>>>>> Stashed changes
  * VLCPLItem.m: MacOS X interface module
  *****************************************************************************
  * Copyright (C) 2014 VLC authors and VideoLAN
@@ -56,8 +57,9 @@ static int VLCPLItemAppended(vlc_object_t *p_this, const char *psz_var,
                           vlc_value_t oldval, vlc_value_t new_val, void *param)
 {
     @autoreleasepool {
-        playlist_add_t *p_add = new_val.p_address;
-        NSArray *o_val = [NSArray arrayWithObjects:[NSNumber numberWithInt:p_add->i_node], [NSNumber numberWithInt:p_add->i_item], nil];
+        playlist_item_t *p_item = new_val.p_address;
+        int i_node = p_item->p_parent ? p_item->p_parent->i_id : -1;
+        NSArray *o_val = [NSArray arrayWithObjects:[NSNumber numberWithInt:i_node], [NSNumber numberWithInt:p_item->i_id], nil];
         VLCPLModel *model = (__bridge VLCPLModel*)param;
         [model performSelectorOnMainThread:@selector(VLCPLItemAppended:) withObject:o_val waitUntilDone:NO];
 
@@ -69,7 +71,8 @@ static int VLCPLItemRemoved(vlc_object_t *p_this, const char *psz_var,
                          vlc_value_t oldval, vlc_value_t new_val, void *param)
 {
     @autoreleasepool {
-        NSNumber *o_val = [NSNumber numberWithInt:new_val.i_int];
+        playlist_item_t *p_item = new_val.p_address;
+        NSNumber *o_val = [NSNumber numberWithInt:p_item->i_id];
         VLCPLModel *model = (__bridge VLCPLModel*)param;
         [model performSelectorOnMainThread:@selector(VLCPLItemRemoved:) withObject:o_val waitUntilDone:NO];
 
@@ -204,7 +207,11 @@ static int VolumeUpdated(vlc_object_t *p_this, const char *psz_var,
             return;
 
         // model deletion is done via callback
-        playlist_DeleteFromInput(p_playlist, [item input], pl_Unlocked);
+        PL_LOCK;
+        playlist_item_t *p_root = playlist_ItemGetById(p_playlist, [item plItemId]);
+        if( p_root != NULL )
+            playlist_NodeDelete(p_playlist, p_root, false);
+        PL_UNLOCK;
     }];
 }
 

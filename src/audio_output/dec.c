@@ -46,7 +46,8 @@ int aout_DecNew( audio_output_t *p_aout,
                  const aout_request_vout_t *p_request_vout )
 {
     /* Sanitize audio format */
-    if( p_format->i_channels != aout_FormatNbChannels( p_format ) )
+    unsigned i_channels = aout_FormatNbChannels( p_format );
+    if( i_channels != p_format->i_channels && AOUT_FMT_LINEAR( p_format ) )
     {
         msg_Err( p_aout, "incompatible audio channels count with layout mask" );
         return -1;
@@ -65,8 +66,7 @@ int aout_DecNew( audio_output_t *p_aout,
         return -1;
     }
 
-    var_Create (p_aout, "stereo-mode",
-                VLC_VAR_INTEGER | VLC_VAR_HASCHOICE | VLC_VAR_DOINHERIT);
+    var_Create (p_aout, "stereo-mode", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT);
     vlc_value_t txt;
     txt.psz_string = _("Stereo audio mode");
     var_Change (p_aout, "stereo-mode", VLC_VAR_SETTEXT, &txt, NULL);
@@ -205,12 +205,9 @@ static void aout_DecSilence (audio_output_t *aout, mtime_t length, mtime_t pts)
     aout_owner_t *owner = aout_owner (aout);
     const audio_sample_format_t *fmt = &owner->mixer_format;
     size_t frames = (fmt->i_rate * length) / CLOCK_FREQ;
-    block_t *block;
 
-    if (AOUT_FMT_SPDIF(fmt) || AOUT_FMT_HDMI(fmt))
-        block = block_Alloc (4 * frames);
-    else
-        block = block_Alloc (frames * fmt->i_bytes_per_frame);
+    block_t *block = block_Alloc (frames * fmt->i_bytes_per_frame
+                                  / fmt->i_frame_length);
     if (unlikely(block == NULL))
         return; /* uho! */
 

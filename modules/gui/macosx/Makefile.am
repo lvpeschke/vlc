@@ -29,12 +29,12 @@ libmacosx_plugin_la_SOURCES = \
 	BWQuincyUI.h BWQuincyUI.m \
 	CompatibilityFixes.h \
 	VLCControlsBarCommon.m VLCControlsBarCommon.h \
+	VLCDocumentController.m VLCDocumentController.h \
 	VLCMainWindowControlsBar.m VLCMainWindowControlsBar.h \
 	VLCConvertAndSaveWindowController.h VLCConvertAndSaveWindowController.m \
 	VLCCoreInteraction.h VLCCoreInteraction.m \
 	VLCExtensionsDialogProvider.h VLCExtensionsDialogProvider.m \
 	VLCExtensionsManager.h VLCExtensionsManager.m \
-	VLCFSPanel.h VLCFSPanel.m \
 	VLCHelpWindowController.h VLCHelpWindowController.m \
 	VLCMain+OldPrefs.h VLCMain+OldPrefs.m \
 	VLCMain.h VLCMain.m \
@@ -88,4 +88,5 @@ libmacosx_plugin_la_SOURCES = \
 	VLCRendererDialog.h VLCRendererDialog.m \
 	VLCResumeDialogController.h VLCResumeDialogController.m \
 	VLCTrackSynchronizationWindowController.h VLCTrackSynchronizationWindowController.m \
-	VLCVideoEffectsWindowController.h VLCVideoEffectsWindowController.m
+	VLCVideoEffectsWindowController.h VLCVideoEffectsWindowController.m \
+	VLCFSPanelController.h VLCFSPanelController.m

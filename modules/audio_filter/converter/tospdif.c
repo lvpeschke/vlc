@@ -38,6 +38,7 @@
 #include <vlc_filter.h>
 
 #include "../packetizer/a52.h"
+#include "../packetizer/dts_header.h"
 
 static int  Open( vlc_object_t * );
 static void Close( vlc_object_t * );
@@ -52,8 +53,8 @@ vlc_module_end ()
 
 struct filter_sys_t
 {
-    block_t *p_chain_first;
-    block_t **pp_chain_last;
+    block_t *p_out_buf;
+    size_t i_out_offset;
 
     union
     {
@@ -61,11 +62,18 @@ struct filter_sys_t
         {
             unsigned int i_nb_blocks_substream0;
         } eac3;
+        struct
+        {
+            unsigned int i_frame_count;
+        } truehd;
     } spec;
 };
 
+#define SPDIF_HEADER_SIZE 8
+
 #define IEC61937_AC3 0x01
 #define IEC61937_EAC3 0x15
+#define IEC61937_TRUEHD 0x16
 #define IEC61937_DTS1 0x0B
 #define IEC61937_DTS2 0x0C
 #define IEC61937_DTS3 0x0D
@@ -73,39 +81,173 @@ struct filter_sys_t
 #define SPDIF_MORE_DATA 1
 #define SPDIF_SUCCESS VLC_SUCCESS
 #define SPDIF_ERROR VLC_EGENERIC
-struct hdr_res
-{
-    uint16_t    i_data_type;
-    size_t      i_out_size_padded;
-    size_t      i_length_mul;
-};
 
-static int parse_header_ac3( filter_t *p_filter, block_t *p_in,
-                             struct hdr_res *p_res )
+static bool is_big_endian( filter_t *p_filter, block_t *p_in_buf )
 {
-    (void) p_filter;
+    switch( p_filter->fmt_in.audio.i_format )
+    {
+        case VLC_CODEC_A52:
+        case VLC_CODEC_EAC3:
+        case VLC_CODEC_MLP:
+        case VLC_CODEC_TRUEHD:
+            return true;
+        case VLC_CODEC_DTS:
+            return p_in_buf->p_buffer[0] == 0x1F
+                || p_in_buf->p_buffer[0] == 0x7F;
+        default:
+            vlc_assert_unreachable();
+    }
+}
 
-    if( unlikely( p_in->i_buffer < 6 || p_in->i_nb_samples != A52_FRAME_NB ) )
+static inline void write_16( filter_t *p_filter, void *p_buf, uint16_t i_val )
+{
+    if( p_filter->fmt_out.audio.i_format == VLC_CODEC_SPDIFB )
+        SetWBE( p_buf, i_val );
+    else
+        SetWLE( p_buf, i_val );
+}
+
+static void write_padding( filter_t *p_filter, size_t i_size )
+{
+    filter_sys_t *p_sys = p_filter->p_sys;
+    assert( p_sys->p_out_buf != NULL );
+
+    assert( p_sys->p_out_buf->i_buffer - p_sys->i_out_offset >= i_size );
+
+    uint8_t *p_out = &p_sys->p_out_buf->p_buffer[p_sys->i_out_offset];
+    memset( p_out, 0, i_size );
+    p_sys->i_out_offset += i_size;
+}
+
+static void write_data( filter_t *p_filter, const void *p_buf, size_t i_size,
+                        bool b_input_big_endian )
+{
+    filter_sys_t *p_sys = p_filter->p_sys;
+    assert( p_sys->p_out_buf != NULL );
+
+    bool b_output_big_endian =
+        p_filter->fmt_out.audio.i_format == VLC_CODEC_SPDIFB;
+    uint8_t *p_out = &p_sys->p_out_buf->p_buffer[p_sys->i_out_offset];
+    const uint8_t *p_in = p_buf;
+
+    assert( p_sys->p_out_buf->i_buffer - p_sys->i_out_offset >= i_size );
+
+    if( b_input_big_endian != b_output_big_endian )
+        swab( p_in, p_out, i_size & ~1 );
+    else
+        memcpy( p_out, p_in, i_size & ~1 );
+    p_sys->i_out_offset += ( i_size & ~1 );
+
+    if( i_size & 1 )
+    {
+        assert( p_sys->p_out_buf->i_buffer - p_sys->i_out_offset >= 2 );
+        p_out += ( i_size & ~1 );
+        write_16( p_filter, p_out, p_in[i_size - 1] << 8 );
+        p_sys->i_out_offset += 2;
+    }
+}
+
+static void write_buffer( filter_t *p_filter, block_t *p_in_buf )
+{
+    write_data( p_filter, p_in_buf->p_buffer, p_in_buf->i_buffer,
+                is_big_endian( p_filter, p_in_buf ) );
+    p_filter->p_sys->p_out_buf->i_length += p_in_buf->i_length;
+}
+
+static int write_init( filter_t *p_filter, block_t *p_in_buf,
+                       size_t i_out_size, unsigned i_nb_samples )
+{
+    filter_sys_t *p_sys = p_filter->p_sys;
+
+    assert( p_sys->p_out_buf == NULL );
+    assert( i_out_size > SPDIF_HEADER_SIZE && ( i_out_size & 3 ) == 0 );
+
+    p_sys->p_out_buf = block_Alloc( i_out_size );
+    if( !p_sys->p_out_buf )
+        return VLC_ENOMEM;
+    p_sys->p_out_buf->i_dts = p_in_buf->i_dts;
+    p_sys->p_out_buf->i_pts = p_in_buf->i_pts;
+    p_sys->p_out_buf->i_nb_samples = i_nb_samples;
+
+    p_sys->i_out_offset = SPDIF_HEADER_SIZE; /* Place for the S/PDIF header */
+    return VLC_SUCCESS;
+}
+
+static void write_finalize( filter_t *p_filter, uint16_t i_data_type,
+                            uint8_t i_length_mul )
+{
+    filter_sys_t *p_sys = p_filter->p_sys;
+    assert( p_sys->p_out_buf != NULL );
+    uint8_t *p_out = p_sys->p_out_buf->p_buffer;
+
+    /* S/PDIF header */
+    if( i_data_type != 0 )
+    {
+        assert( p_sys->i_out_offset > SPDIF_HEADER_SIZE );
+        assert( i_length_mul == 1 || i_length_mul == 8 );
+
+        write_16( p_filter, &p_out[0], 0xf872 ); /* syncword 1 */
+        write_16( p_filter, &p_out[2], 0x4e1f ); /* syncword 2 */
+        write_16( p_filter, &p_out[4], i_data_type ); /* data type */
+        /* length in bits or bytes */
+        write_16( p_filter, &p_out[6],
+                  ( p_sys->i_out_offset - SPDIF_HEADER_SIZE ) * i_length_mul );
+    }
+
+    /* 0 padding */
+    if( p_sys->i_out_offset < p_sys->p_out_buf->i_buffer )
+        write_padding( p_filter,
+                       p_sys->p_out_buf->i_buffer - p_sys->i_out_offset );
+}
+
+static int write_buffer_ac3( filter_t *p_filter, block_t *p_in_buf )
+{
+    static const size_t a52_size = A52_FRAME_NB * 4;
+
+    if( unlikely( p_in_buf->i_buffer < 6
+     || p_in_buf->i_buffer > a52_size
+     || p_in_buf->i_nb_samples != A52_FRAME_NB ) )
+    {
+        /* Input is not correctly packetizer. Try to parse the buffer in order
+         * to get the mandatory informations to play AC3 over S/PDIF */
+        vlc_a52_header_t a52;
+        if( vlc_a52_header_Parse( &a52, p_in_buf->p_buffer, p_in_buf->i_buffer )
+            != VLC_SUCCESS || a52.b_eac3 || a52.i_size > p_in_buf->i_buffer )
+            return SPDIF_ERROR;
+        p_in_buf->i_buffer = a52.i_size;
+        p_in_buf->i_nb_samples = a52.i_samples;
+    }
+
+    if( p_in_buf->i_buffer + SPDIF_HEADER_SIZE > a52_size
+     || write_init( p_filter, p_in_buf, a52_size, A52_FRAME_NB ) )
         return SPDIF_ERROR;
-    p_res->i_length_mul = 8; /* in bits */
-    p_res->i_out_size_padded = A52_FRAME_NB * 4;
-    p_res->i_data_type = ( (p_in->p_buffer[5] & 0x7) << 8 ) /* bsmod */
-                   | IEC61937_AC3;
+    write_buffer( p_filter, p_in_buf );
+    write_finalize( p_filter, IEC61937_AC3 |
+                    ( ( p_in_buf->p_buffer[5] & 0x7 ) << 8 ) /* bsmod */,
+                    8 /* in bits */ );
+
     return SPDIF_SUCCESS;
 }
 
-static int parse_header_eac3( filter_t *p_filter, block_t *p_in,
-                              struct hdr_res *p_res )
+static int write_buffer_eac3( filter_t *p_filter, block_t *p_in_buf )
 {
     filter_sys_t *p_sys = p_filter->p_sys;
 
     vlc_a52_header_t a52 = { };
-    if( vlc_a52_header_Parse( &a52, p_in->p_buffer, p_in->i_buffer )
-        != VLC_SUCCESS )
+    if( vlc_a52_header_Parse( &a52, p_in_buf->p_buffer, p_in_buf->i_buffer )
+        != VLC_SUCCESS || a52.i_size > p_in_buf->i_buffer )
         return SPDIF_ERROR;
 
-    p_in->i_buffer = a52.i_size;
-    p_in->i_nb_samples = a52.i_samples;
+    p_in_buf->i_buffer = a52.i_size;
+    p_in_buf->i_nb_samples = a52.i_samples;
+
+    if( !p_sys->p_out_buf
+     && write_init( p_filter, p_in_buf, AOUT_SPDIF_SIZE * 4, AOUT_SPDIF_SIZE ) )
+        return SPDIF_ERROR;
+    if( p_in_buf->i_buffer > p_sys->p_out_buf->i_buffer - p_sys->i_out_offset )
+        return SPDIF_ERROR;
+
+    write_buffer( p_filter, p_in_buf );
 
     if( a52.b_eac3 )
     {
@@ -123,9 +265,7 @@ static int parse_header_eac3( filter_t *p_filter, block_t *p_in,
             else
                 p_sys->spec.eac3.i_nb_blocks_substream0 = 0;
         }
-        p_res->i_out_size_padded = AOUT_SPDIF_SIZE * 4;
-        p_res->i_data_type = IEC61937_EAC3;
-        p_res->i_length_mul = 1; /* in bytes */
+        write_finalize( p_filter, IEC61937_EAC3, 1 /* in bytes */ );
         return SPDIF_SUCCESS;
     }
     else
@@ -133,149 +273,147 @@ static int parse_header_eac3( filter_t *p_filter, block_t *p_in,
 
 }
 
-static int parse_header_dts( filter_t *p_filter, block_t *p_in,
-                             struct hdr_res *p_res )
+/* Adapted from libavformat/spdifenc.c:
+ * It seems Dolby TrueHD frames have to be encapsulated in MAT frames before
+ * they can be encapsulated in IEC 61937.
+ * Here we encapsulate 24 TrueHD frames in a single MAT frame, padding them
+ * to achieve constant rate.
+ * The actual format of a MAT frame is unknown, but the below seems to work.
+ * However, it seems it is not actually necessary for the 24 TrueHD frames to
+ * be in an exact alignment with the MAT frame
+ */
+static int write_buffer_truehd( filter_t *p_filter, block_t *p_in_buf )
 {
-    if( unlikely( p_in->i_buffer < 1 ) )
+#define TRUEHD_FRAME_OFFSET     2560
+
+    filter_sys_t *p_sys = p_filter->p_sys;
+
+    if( !p_sys->p_out_buf
+     && write_init( p_filter, p_in_buf, 61440, 61440 / 16 ) )
         return SPDIF_ERROR;
-    p_res->i_out_size_padded = p_in->i_nb_samples * 4;
-    p_res->i_length_mul = 8; /* in bits */
-    switch( p_in->i_nb_samples )
+
+    int i_padding = 0;
+    if( p_sys->spec.truehd.i_frame_count == 0 )
+    {
+        static const char p_mat_start_code[20] = {
+            0x07, 0x9E, 0x00, 0x03, 0x84, 0x01, 0x01, 0x01, 0x80, 0x00,
+            0x56, 0xA5, 0x3B, 0xF4, 0x81, 0x83, 0x49, 0x80, 0x77, 0xE0
+        };
+        write_data( p_filter, p_mat_start_code, 20, true );
+        /* We need to include the S/PDIF header in the first MAT frame */
+        i_padding = TRUEHD_FRAME_OFFSET - p_in_buf->i_buffer - 20
+                  - SPDIF_HEADER_SIZE;
+    }
+    else if( p_sys->spec.truehd.i_frame_count == 11 )
+    {
+        /* The middle mat code need to be at the ((2560 * 12) - 4) offset */
+        i_padding = TRUEHD_FRAME_OFFSET - p_in_buf->i_buffer - 4;
+    }
+    else if( p_sys->spec.truehd.i_frame_count == 12 )
+    {
+        static const char p_mat_middle_code[12] = {
+            0xC3, 0xC1, 0x42, 0x49, 0x3B, 0xFA,
+            0x82, 0x83, 0x49, 0x80, 0x77, 0xE0
+        };
+        write_data( p_filter, p_mat_middle_code, 12, true );
+        i_padding = TRUEHD_FRAME_OFFSET - p_in_buf->i_buffer - ( 12 - 4 );
+    }
+    else if( p_sys->spec.truehd.i_frame_count == 23 )
+    {
+        static const char p_mat_end_code[16] = {
+            0xC3, 0xC2, 0xC0, 0xC4, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x97, 0x11
+        };
+
+        /* The end mat code need to be at the ((2560 * 24) - 24) offset */
+        i_padding = TRUEHD_FRAME_OFFSET - p_in_buf->i_buffer - 24;
+
+        if( i_padding < 0 || p_in_buf->i_buffer + i_padding >
+            p_sys->p_out_buf->i_buffer - p_sys->i_out_offset )
+            return SPDIF_ERROR;
+
+        write_buffer( p_filter, p_in_buf );
+        write_padding( p_filter, i_padding );
+        write_data( p_filter, p_mat_end_code, 16, true );
+        write_finalize( p_filter, IEC61937_TRUEHD, 1 /* in bytes */ );
+        p_sys->spec.truehd.i_frame_count = 0;
+        return SPDIF_SUCCESS;
+    }
+    else
+        i_padding = TRUEHD_FRAME_OFFSET - p_in_buf->i_buffer;
+
+    if( i_padding < 0 || p_in_buf->i_buffer + i_padding >
+        p_sys->p_out_buf->i_buffer - p_sys->i_out_offset )
+        return SPDIF_ERROR;
+
+    write_buffer( p_filter, p_in_buf );
+    write_padding( p_filter, i_padding );
+    p_sys->spec.truehd.i_frame_count++;
+    return SPDIF_MORE_DATA;
+}
+
+static int write_buffer_dts( filter_t *p_filter, block_t *p_in_buf )
+{
+    uint16_t i_data_type;
+    if( p_in_buf->i_nb_samples == 0 )
+    {
+        /* Input is not correctly packetizer. Try to parse the buffer in order
+         * to get the mandatory informations to play DTS over S/PDIF */
+        vlc_dts_header_t header;
+        if( vlc_dts_header_Parse( &header, p_in_buf->p_buffer,
+                                  p_in_buf->i_buffer ) != VLC_SUCCESS )
+            return SPDIF_ERROR;
+        p_in_buf->i_nb_samples = header.i_frame_length;
+        p_in_buf->i_buffer = header.i_frame_size;
+    }
+    switch( p_in_buf->i_nb_samples )
     {
     case  512:
-        p_res->i_data_type = IEC61937_DTS1;
-        return SPDIF_SUCCESS;
+        i_data_type = IEC61937_DTS1;
+        break;
     case 1024:
-        p_res->i_data_type = IEC61937_DTS2;
-        return SPDIF_SUCCESS;
+        i_data_type = IEC61937_DTS2;
+        break;
     case 2048:
-        p_res->i_data_type = IEC61937_DTS3;
-        return SPDIF_SUCCESS;
+        i_data_type = IEC61937_DTS3;
+        break;
     default:
         msg_Err( p_filter, "Frame size %d not supported",
-                 p_in->i_nb_samples );
+                 p_in_buf->i_nb_samples );
         return SPDIF_ERROR;
     }
-}
 
-static int parse_header( filter_t *p_filter, block_t *p_in,
-                         struct hdr_res *p_res )
-{
-    switch( p_filter->fmt_in.audio.i_format )
+    if( p_in_buf->i_buffer == p_in_buf->i_nb_samples * 4 )
     {
-        case VLC_CODEC_A52:
-            return parse_header_ac3( p_filter, p_in, p_res );
-        case VLC_CODEC_EAC3:
-            return parse_header_eac3( p_filter, p_in, p_res );
-        case VLC_CODEC_DTS:
-            return parse_header_dts( p_filter, p_in, p_res );
-        default:
-            vlc_assert_unreachable();
+        /* No enough room to put the S/PDIF header. This is the case for DTS
+         * inside WAV. */
+        i_data_type = 0;
     }
-}
+    else if( p_in_buf->i_buffer + SPDIF_HEADER_SIZE > p_in_buf->i_nb_samples * 4 )
+        return SPDIF_ERROR;
 
-static bool is_big_endian( filter_t *p_filter, block_t *p_in )
-{
-    switch( p_filter->fmt_in.audio.i_format )
-    {
-        case VLC_CODEC_A52:
-        case VLC_CODEC_EAC3:
-            return true;
-        case VLC_CODEC_DTS:
-            return p_in->p_buffer[0] == 0x1F || p_in->p_buffer[0] == 0x7F;
-        default:
-            vlc_assert_unreachable();
-    }
+    if( write_init( p_filter, p_in_buf, p_in_buf->i_nb_samples * 4,
+                    p_in_buf->i_nb_samples ) )
+        return SPDIF_ERROR;
+
+    if( i_data_type == 0 )
+        p_filter->p_sys->i_out_offset = 0;
+
+    write_buffer( p_filter, p_in_buf );
+    write_finalize( p_filter, i_data_type, 8 /* in bits */ );
+    return SPDIF_SUCCESS;
 }
 
 static void Flush( filter_t *p_filter )
 {
     filter_sys_t *p_sys = p_filter->p_sys;
 
-    if( p_sys->p_chain_first != NULL )
+    if( p_sys->p_out_buf != NULL )
     {
-        block_ChainRelease( p_sys->p_chain_first );
-        p_sys->p_chain_first = NULL;
-        p_sys->pp_chain_last = &p_sys->p_chain_first;
+        block_Release( p_sys->p_out_buf );
+        p_sys->p_out_buf = NULL;
     }
     memset( &p_sys->spec, 0, sizeof( p_sys->spec ) );
-}
-
-static block_t *fill_output_buffer( filter_t *p_filter, struct hdr_res *p_res )
-{
-    filter_sys_t *p_sys = p_filter->p_sys;
-    size_t i_out_size = 0;
-    block_t *p_list = p_sys->p_chain_first;
-
-    assert( p_list != NULL );
-
-    while( p_list )
-    {
-        i_out_size += p_list->i_buffer;
-        p_list = p_list->p_next;
-    }
-
-    if( i_out_size + 8 > p_res->i_out_size_padded )
-    {
-        msg_Warn( p_filter, "buffer too big for a S/PDIF frame" );
-        return NULL;
-    }
-
-    block_t *p_out_buf = block_Alloc( p_res->i_out_size_padded );
-    if( unlikely(!p_out_buf) )
-        return NULL;
-    uint8_t *p_out = p_out_buf->p_buffer;
-
-    /* Copy the S/PDIF headers. */
-    void (*write16)(void *, uint16_t) =
-        ( p_filter->fmt_out.audio.i_format == VLC_CODEC_SPDIFB )
-        ? SetWBE : SetWLE;
-
-    write16( &p_out[0], 0xf872 ); /* syncword 1 */
-    write16( &p_out[2], 0x4e1f ); /* syncword 2 */
-    write16( &p_out[4], p_res->i_data_type ); /* data type */
-    write16( &p_out[6], i_out_size * p_res->i_length_mul ); /* length in bits or bytes */
-
-    p_list = p_sys->p_chain_first;
-    bool b_input_big_endian = is_big_endian( p_filter, p_list );
-    bool b_output_big_endian =
-        p_filter->fmt_out.audio.i_format == VLC_CODEC_SPDIFB;
-
-    p_out += 8;
-    while( p_list )
-    {
-        uint8_t *p_in = p_list->p_buffer;
-        size_t i_in_size = p_list->i_buffer;
-
-        if( b_input_big_endian != b_output_big_endian )
-        {
-            swab( p_in, p_out, i_in_size & ~1 );
-
-            if( i_in_size & 1 && ( i_out_size + 9 ) <= p_res->i_out_size_padded )
-            {
-                p_out[i_in_size - 1] = 0;
-                p_out[i_in_size] = p_in[i_in_size - 1];
-                i_out_size++;
-                p_out++;
-            }
-            p_out += i_in_size;
-        } else
-        {
-            memcpy( p_out, p_in, i_in_size );
-            p_out += i_in_size;
-        }
-        p_list = p_list->p_next;
-    }
-
-    if( 8 + i_out_size < p_res->i_out_size_padded ) /* padding */
-        memset( p_out, 0, p_res->i_out_size_padded - i_out_size - 8 );
-
-    p_out_buf->i_dts = p_sys->p_chain_first->i_dts;
-    p_out_buf->i_pts = p_sys->p_chain_first->i_pts;
-    p_out_buf->i_buffer = p_res->i_out_size_padded;
-    p_out_buf->i_nb_samples = p_out_buf->i_buffer / 4;
-
-    return p_out_buf;
 }
 
 static block_t *DoWork( filter_t *p_filter, block_t *p_in_buf )
@@ -283,30 +421,41 @@ static block_t *DoWork( filter_t *p_filter, block_t *p_in_buf )
     filter_sys_t *p_sys = p_filter->p_sys;
     block_t *p_out_buf = NULL;
 
-    struct hdr_res res;
-    int i_ret = parse_header( p_filter, p_in_buf, &res );
+    int i_ret;
+    switch( p_filter->fmt_in.audio.i_format )
+    {
+        case VLC_CODEC_A52:
+            i_ret = write_buffer_ac3( p_filter, p_in_buf );
+            break;
+        case VLC_CODEC_EAC3:
+            i_ret = write_buffer_eac3( p_filter, p_in_buf );
+            break;
+        case VLC_CODEC_MLP:
+        case VLC_CODEC_TRUEHD:
+            i_ret = write_buffer_truehd( p_filter, p_in_buf );
+            break;
+        case VLC_CODEC_DTS:
+            i_ret = write_buffer_dts( p_filter, p_in_buf );
+            break;
+        default:
+            vlc_assert_unreachable();
+    }
+
     switch( i_ret )
     {
         case SPDIF_SUCCESS:
-            block_ChainLastAppend( &p_sys->pp_chain_last, p_in_buf );
+            assert( p_sys->p_out_buf->i_buffer == p_sys->i_out_offset );
+            p_out_buf = p_sys->p_out_buf;
+            p_sys->p_out_buf = NULL;
             break;
         case SPDIF_MORE_DATA:
-            block_ChainLastAppend( &p_sys->pp_chain_last, p_in_buf );
-            return NULL;
+            break;
         case SPDIF_ERROR:
             Flush( p_filter );
-            goto out;
+            break;
     }
-    assert( res.i_data_type > 0 );
-    assert( res.i_out_size_padded > 0 );
-    assert( res.i_length_mul == 1 || res.i_length_mul == 8 );
 
-    p_out_buf = fill_output_buffer( p_filter, &res );
-out:
-    block_ChainRelease( p_sys->p_chain_first );
-    p_sys->p_chain_first = NULL;
-    p_sys->pp_chain_last = &p_sys->p_chain_first;
-
+    block_Release( p_in_buf );
     return p_out_buf;
 }
 
@@ -317,7 +466,9 @@ static int Open( vlc_object_t *p_this )
 
     if( ( p_filter->fmt_in.audio.i_format != VLC_CODEC_DTS &&
           p_filter->fmt_in.audio.i_format != VLC_CODEC_A52 &&
-          p_filter->fmt_in.audio.i_format != VLC_CODEC_EAC3 ) ||
+          p_filter->fmt_in.audio.i_format != VLC_CODEC_EAC3 &&
+          p_filter->fmt_in.audio.i_format != VLC_CODEC_MLP &&
+          p_filter->fmt_in.audio.i_format != VLC_CODEC_TRUEHD ) ||
         ( p_filter->fmt_out.audio.i_format != VLC_CODEC_SPDIFL &&
           p_filter->fmt_out.audio.i_format != VLC_CODEC_SPDIFB ) )
         return VLC_EGENERIC;
@@ -325,8 +476,7 @@ static int Open( vlc_object_t *p_this )
     p_sys = p_filter->p_sys = malloc( sizeof(filter_sys_t) );
     if( unlikely( p_sys == NULL ) )
         return VLC_ENOMEM;
-    p_sys->p_chain_first = NULL;
-    p_sys->pp_chain_last = &p_sys->p_chain_first;
+    p_sys->p_out_buf = NULL;
 
     memset( &p_sys->spec, 0, sizeof( p_sys->spec ) );
 

@@ -121,15 +121,8 @@ typedef enum vlc_event_type_t {
     vlc_InputItemErrorWhenReadingChanged,
     vlc_InputItemPreparseEnded,
 
-    /* Service Discovery event */
-    vlc_ServicesDiscoveryItemAdded,
-    vlc_ServicesDiscoveryItemRemoved,
-    vlc_ServicesDiscoveryItemRemoveAll,
-    vlc_ServicesDiscoveryStarted,
-    vlc_ServicesDiscoveryEnded,
-
     /* Renderer Discovery events */
-    vlc_RendererDiscoveryItemAdded,
+    vlc_RendererDiscoveryItemAdded=vlc_InputItemPreparseEnded+6,
     vlc_RendererDiscoveryItemRemoved,
 
     /* Addons Manager events */
@@ -182,25 +175,6 @@ typedef struct vlc_event_t
         {
             int new_status;
         } input_item_preparse_ended;
-
-        /* Service discovery events */
-        struct vlc_services_discovery_item_added
-        {
-            input_item_t * p_new_item;
-            const char * psz_category;
-        } services_discovery_item_added;
-        struct vlc_services_discovery_item_removed
-        {
-            input_item_t * p_item;
-        } services_discovery_item_removed;
-        struct vlc_services_discovery_started
-        {
-            void * unused;
-        } services_discovery_started;
-        struct vlc_services_discovery_ended
-        {
-            void * unused;
-        } services_discovery_ended;
 
         /* Renderer discovery events */
         struct vlc_renderer_discovery_item_added

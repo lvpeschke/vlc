@@ -7,7 +7,7 @@
 ifdef USE_FFMPEG
 FFMPEG_HASH=HEAD
 FFMPEG_SNAPURL := http://git.videolan.org/?p=ffmpeg.git;a=snapshot;h=$(FFMPEG_HASH);sf=tgz
-FFMPEG_GITURL := git://git.videolan.org/ffmpeg.git
+FFMPEG_GITURL := http://git.videolan.org/git/ffmpeg.git
 else
 FFMPEG_HASH=HEAD
 FFMPEG_SNAPURL := http://git.libav.org/?p=libav.git;a=snapshot;h=$(FFMPEG_HASH);sf=tgz
@@ -167,7 +167,12 @@ DEPS_ffmpeg += directx
 endif
 endif
 FFMPEGCONF += --target-os=mingw32
-FFMPEGCONF += --enable-w32threads --enable-dxva2
+FFMPEGCONF += --enable-w32threads
+ifndef HAVE_WINSTORE
+FFMPEGCONF += --enable-dxva2
+else
+FFMPEGCONF += --disable-dxva2
+endif
 
 ifdef USE_FFMPEG
 FFMPEGCONF += --enable-memalign-hack

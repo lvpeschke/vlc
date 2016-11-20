@@ -682,8 +682,8 @@ static bo_t *GetHvcCTag(es_format_t *p_fmt, bool b_completeness)
         uint8_t * p_buffer;
     };
 
-    struct nal rg_vps[HEVC_VPS_MAX], rg_sps[HEVC_SPS_MAX],
-               rg_pps[HEVC_VPS_MAX], *p_sei = NULL, *p_nal = NULL;
+    struct nal rg_vps[HEVC_VPS_ID_MAX + 1], rg_sps[HEVC_SPS_ID_MAX + 1],
+               rg_pps[HEVC_VPS_ID_MAX + 1], *p_sei = NULL, *p_nal = NULL;
     uint8_t i_vps = 0, i_sps = 0, i_pps = 0, i_num_arrays = 0;
     size_t i_sei = 0;
 
@@ -720,7 +720,7 @@ static bo_t *GetHvcCTag(es_format_t *p_fmt, bool b_completeness)
         switch (hevc_getNALType(p_buffer)) {
 
         case HEVC_NAL_VPS:
-            if(i_vps == HEVC_VPS_MAX)
+            if(i_vps > HEVC_VPS_ID_MAX)
                 break;
             p_nal = &rg_vps[i_vps++];
             p_nal->p_buffer = p_buffer;
@@ -734,7 +734,7 @@ static bo_t *GetHvcCTag(es_format_t *p_fmt, bool b_completeness)
             break;
 
         case HEVC_NAL_SPS: {
-            if(i_sps == HEVC_SPS_MAX)
+            if(i_sps > HEVC_SPS_ID_MAX)
                 break;
             p_nal = &rg_sps[i_sps++];
             p_nal->p_buffer = p_buffer;
@@ -748,7 +748,7 @@ static bo_t *GetHvcCTag(es_format_t *p_fmt, bool b_completeness)
             }
 
         case HEVC_NAL_PPS: {
-            if(i_pps == HEVC_PPS_MAX)
+            if(i_pps > HEVC_PPS_ID_MAX)
                 break;
             p_nal = &rg_pps[i_pps++];
             p_nal->p_buffer = p_buffer;
@@ -877,18 +877,14 @@ static bo_t *GetAvcCTag(es_format_t *p_fmt)
     const uint8_t *p_sps, *p_pps, *p_ext;
     size_t i_sps_size, i_pps_size, i_ext_size;
 
-    if( h264_AnnexB_get_spspps(p_fmt->p_extra, p_fmt->i_extra,
+    if(! h264_AnnexB_get_spspps(p_fmt->p_extra, p_fmt->i_extra,
                         &p_sps, &i_sps_size,
                         &p_pps, &i_pps_size,
-                        &p_ext, &i_ext_size ) != 0 )
+                        &p_ext, &i_ext_size ) )
     {
         p_sps = p_pps = p_ext = NULL;
         i_sps_size = i_pps_size = i_ext_size = 0;
     }
-
-    (void) hxxx_strip_AnnexB_startcode( &p_sps, &i_sps_size );
-    (void) hxxx_strip_AnnexB_startcode( &p_sps, &i_sps_size );
-    (void) hxxx_strip_AnnexB_startcode( &p_ext, &i_ext_size );
 
     bo_add_8(avcC, 1);      /* configuration version */
     bo_add_8(avcC, i_sps_size > 3 ? p_sps[1] : PROFILE_H264_MAIN);

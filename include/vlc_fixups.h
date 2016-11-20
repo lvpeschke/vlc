@@ -122,7 +122,6 @@ int asprintf (char **, const char *, ...);
 
 #ifndef HAVE_FLOCKFILE
 void flockfile (FILE *);
-int ftrylockfile (FILE *);
 void funlockfile (FILE *);
 int getc_unlocked (FILE *);
 int getchar_unlocked (void);
@@ -473,6 +472,11 @@ struct addrinfo
 };
 
 void freeaddrinfo (struct addrinfo *res);
+
+# include <errno.h>
+# ifndef EPROTO
+#  define EPROTO (ELAST + 1)
+# endif
 #endif
 
 /* math.h */
@@ -481,8 +485,22 @@ void freeaddrinfo (struct addrinfo *res);
 #define nanf(tagp) NAN
 #endif
 
+#ifndef HAVE_SINCOS
+void sincos(double, double *, double *);
+void sincosf(float, float *, float *);
+#endif
+
+#ifndef HAVE_REALPATH
+char *realpath(const char * restrict pathname, char * restrict resolved_path);
+#endif
+
 #ifdef _WIN32
 FILE *vlc_win32_tmpfile(void);
+#endif
+
+/* mingw-w64 has a broken IN6_IS_ADDR_MULTICAST macro */
+#if defined(_WIN32) && defined(__MINGW64_VERSION_MAJOR)
+# define IN6_IS_ADDR_MULTICAST IN6_IS_ADDR_MULTICAST
 #endif
 
 #ifdef __APPLE__

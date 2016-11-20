@@ -207,7 +207,6 @@ typedef struct playlist_t playlist_t;
 typedef struct playlist_item_t playlist_item_t;
 typedef struct services_discovery_t services_discovery_t;
 typedef struct services_discovery_sys_t services_discovery_sys_t;
-typedef struct playlist_add_t playlist_add_t;
 typedef struct vlc_renderer_discovery_t vlc_renderer_discovery_t;
 typedef struct vlc_renderer_item_t vlc_renderer_item_t;
 
@@ -249,6 +248,7 @@ typedef audio_format_t audio_sample_format_t;
 
 /* Video */
 typedef struct vout_thread_t vout_thread_t;
+typedef struct vlc_viewpoint_t vlc_viewpoint_t;
 
 typedef video_format_t video_frame_format_t;
 typedef struct picture_t picture_t;
@@ -537,7 +537,7 @@ static inline uint8_t clip_uint8_vlc( int32_t a )
 
 /** Count leading zeroes */
 VLC_USED
-static inline unsigned clz (unsigned x)
+static inline unsigned (clz)(unsigned x)
 {
 #if VLC_GCC_VERSION(3,4)
     return __builtin_clz (x);
@@ -560,7 +560,7 @@ static inline unsigned clz (unsigned x)
 
 /** Count trailing zeroes */
 VLC_USED
-static inline unsigned ctz (unsigned x)
+static inline unsigned (ctz)(unsigned x)
 {
 #if VLC_GCC_VERSION(3,4)
     return __builtin_ctz (x);
@@ -578,7 +578,7 @@ static inline unsigned ctz (unsigned x)
 
 /** Bit weight */
 VLC_USED
-static inline unsigned popcount (unsigned x)
+static inline unsigned (popcount)(unsigned x)
 {
 #if VLC_GCC_VERSION(3,4)
     return __builtin_popcount (x);
@@ -595,7 +595,7 @@ static inline unsigned popcount (unsigned x)
 
 /** Bit weight of long long */
 VLC_USED
-static inline int popcountll(unsigned long long x)
+static inline int (popcountll)(unsigned long long x)
 {
 #if VLC_GCC_VERSION(3,4)
     return __builtin_popcountll(x);
@@ -611,7 +611,7 @@ static inline int popcountll(unsigned long long x)
 }
 
 VLC_USED
-static inline unsigned parity (unsigned x)
+static inline unsigned (parity)(unsigned x)
 {
 #if VLC_GCC_VERSION(3,4)
     return __builtin_parity (x);
@@ -622,22 +622,16 @@ static inline unsigned parity (unsigned x)
 #endif
 }
 
-#ifdef __OS2__
-#   undef bswap16
-#   undef bswap32
-#   undef bswap64
-#endif
-
 /** Byte swap (16 bits) */
 VLC_USED
-static inline uint16_t bswap16 (uint16_t x)
+static inline uint16_t (bswap16)(uint16_t x)
 {
     return (x << 8) | (x >> 8);
 }
 
 /** Byte swap (32 bits) */
 VLC_USED
-static inline uint32_t bswap32 (uint32_t x)
+static inline uint32_t (bswap32)(uint32_t x)
 {
 #if VLC_GCC_VERSION(4,3) || defined(__clang__)
     return __builtin_bswap32 (x);
@@ -651,7 +645,7 @@ static inline uint32_t bswap32 (uint32_t x)
 
 /** Byte swap (64 bits) */
 VLC_USED
-static inline uint64_t bswap64 (uint64_t x)
+static inline uint64_t (bswap64)(uint64_t x)
 {
 #if VLC_GCC_VERSION(4,3) || defined(__clang__)
     return __builtin_bswap64 (x);

@@ -903,8 +903,8 @@ void matroska_segment_c::ParseInfo( KaxInfo *info )
 
     InfoHandlers::Dispatcher().iterate( m->begin(), m->end(), InfoHandlers::Payload( captures ) );
 
-    i_duration = mtime_t( static_cast<double>( i_duration * i_timescale ) / 10e5 );
-    if( !i_duration ) i_duration = -1;
+    if( i_duration != -1 )
+        i_duration = mtime_t( static_cast<double>( i_duration * i_timescale ) / 10e5 );
 }
 
 
@@ -1207,12 +1207,12 @@ void matroska_segment_c::ParseChapters( KaxChapters *chapters )
     KaxChapterHandler::Dispatcher().iterate( chapters->begin(), chapters->end(), KaxChapterHandler::Payload( *this ) );
 }
 
-void matroska_segment_c::ParseCluster( KaxCluster *cluster, bool b_update_start_time, ScopeMode read_fully )
+bool matroska_segment_c::ParseCluster( KaxCluster *cluster, bool b_update_start_time, ScopeMode read_fully )
 {
     if( unlikely( cluster->IsFiniteSize() && cluster->GetSize() >= SIZE_MAX ) )
     {
         msg_Err( &sys.demuxer, "Cluster too big, aborting" );
-        return;
+        return false;
     }
 
     try
@@ -1225,8 +1225,10 @@ void matroska_segment_c::ParseCluster( KaxCluster *cluster, bool b_update_start_
     catch(...)
     {
         msg_Err( &sys.demuxer, "Error while reading cluster" );
-        return;
+        return false;
     }
+
+    bool b_has_timecode = false;
 
     for( unsigned int i = 0; i < cluster->ListSize(); ++i )
     {
@@ -1234,12 +1236,21 @@ void matroska_segment_c::ParseCluster( KaxCluster *cluster, bool b_update_start_
         {
             cluster->InitTimecode( static_cast<uint64>( *p_ctc ), i_timescale );
             _seeker.add_cluster( cluster );
+            b_has_timecode = true;
             break;
         }
     }
 
+    if( !b_has_timecode )
+    {
+        msg_Err( &sys.demuxer, "Detected cluster without mandatory timecode" );
+        return false;
+    }
+
     if( b_update_start_time )
         i_mk_start_time = cluster->GlobalTimecode() / INT64_C( 1000 );
+
+    return true;
 }
 
 

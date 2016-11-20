@@ -58,6 +58,11 @@ DEFINE_GUID(_KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS,
             0x000a, 0x0cea, 0x0010, 0x80, 0x00,
             0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
 
+/* 0000000c-0cea-0010-8000-00aa00389b71 */
+DEFINE_GUID(_KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MLP,
+            0x000c, 0x0cea, 0x0010, 0x80, 0x00,
+            0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+
 static BOOL CALLBACK InitFreq(INIT_ONCE *once, void *param, void **context)
 {
     (void) once; (void) context;
@@ -261,8 +266,12 @@ static void vlc_HdmiToWave(WAVEFORMATEXTENSIBLE_IEC61937 *restrict wf_iec61937,
         wf->Format.nChannels = 2;
         wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
         break;
-    /* TODO case VLC_CODEC_TRUEHD */
-    /* TODO case VLC_CODEC_MLP */
+    case VLC_CODEC_TRUEHD:
+    case VLC_CODEC_MLP:
+        wf->SubFormat = _KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MLP;
+        wf->Format.nChannels = 8;
+        wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
+        break;
     default:
         vlc_assert_unreachable();
     }
@@ -280,12 +289,13 @@ static void vlc_HdmiToWave(WAVEFORMATEXTENSIBLE_IEC61937 *restrict wf_iec61937,
     wf_iec61937->dwAverageBytesPerSec = 0;
 
     audio->i_format = VLC_CODEC_SPDIFL;
+    audio->i_bytes_per_frame = wf->Format.nBlockAlign;
+    audio->i_frame_length = 1;
 }
 
 static void vlc_SpdifToWave(WAVEFORMATEXTENSIBLE *restrict wf,
                             audio_sample_format_t *restrict audio)
 {
-
     switch (audio->i_format)
     {
     case VLC_CODEC_DTS:
@@ -299,7 +309,6 @@ static void vlc_SpdifToWave(WAVEFORMATEXTENSIBLE *restrict wf,
     default:
         vlc_assert_unreachable();
     }
-    audio->i_format = VLC_CODEC_SPDIFL;
 
     wf->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
     wf->Format.nChannels = 2; /* To prevent channel re-ordering */
@@ -312,6 +321,10 @@ static void vlc_SpdifToWave(WAVEFORMATEXTENSIBLE *restrict wf,
     wf->Samples.wValidBitsPerSample = wf->Format.wBitsPerSample;
 
     wf->dwChannelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT;
+
+    audio->i_format = VLC_CODEC_SPDIFL;
+    audio->i_bytes_per_frame = wf->Format.nBlockAlign;
+    audio->i_frame_length = 1;
 }
 
 static void vlc_ToWave(WAVEFORMATEXTENSIBLE *restrict wf,
@@ -465,16 +478,21 @@ static HRESULT Start(aout_stream_t *s, audio_sample_format_t *restrict pfmt,
     {
         vlc_HdmiToWave(&wf_iec61937, &fmt);
         shared_mode = AUDCLNT_SHAREMODE_EXCLUSIVE;
+
         /* Less buffer duration for these very high sample rate codecs
-         * (IAudioClient_Initialize return an out of memory error if higher) */
-        buffer_duration = AOUT_MAX_PREPARE_TIME * 5;
+         * (IAudioClient_Initialize return an out of memory error if higher).
+         * It seems that the max buffer size for EXCLUSIVE/HDMI is 1MB (there
+         * is no such limitation for PCM). */
+        buffer_duration = CLOCK_FREQ * 10 * 1024 * 1024 / pwf->nAvgBytesPerSec;
     }
-    else
+    else if (AOUT_FMT_LINEAR(&fmt))
     {
         vlc_ToWave(pwfe, &fmt);
         shared_mode = AUDCLNT_SHAREMODE_SHARED;
         buffer_duration = AOUT_MAX_PREPARE_TIME * 10;
     }
+    else
+        goto error;
 
     hr = IAudioClient_IsFormatSupported(sys->client, shared_mode,
                                         pwf, &pwf_closest);

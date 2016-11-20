@@ -50,7 +50,7 @@
 static int  Open ( vlc_object_t * );
 static void Close( vlc_object_t * );
 
-VLC_SD_PROBE_HELPER("podcast", "Podcasts", SD_CAT_INTERNET)
+VLC_SD_PROBE_HELPER("podcast", N_("Podcasts"), SD_CAT_INTERNET)
 
 #define URLS_TEXT N_("Podcast URLs list")
 #define URLS_LONGTEXT N_("Enter the list of podcasts to retrieve, " \
@@ -142,6 +142,7 @@ static int Open( vlc_object_t *p_this )
     p_sys->update_type = UPDATE_URLS;
 
     p_sd->p_sys  = p_sys;
+    p_sd->description = _("Podcasts");
 
     /* Launch the callback associated with this variable */
     vlc_object_t *pl = p_sd->obj.parent;

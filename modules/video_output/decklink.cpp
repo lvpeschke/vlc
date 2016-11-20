@@ -70,6 +70,15 @@ static const int pi_channels_maps[CHANNELS_MAX+1] =
     "After this delay we black out the video."\
     )
 
+#define AFD_INDEX_TEXT "Active Format Descriptor"
+#define AFD_INDEX_LONGTEXT AFD_INDEX_TEXT " value"
+
+#define AR_INDEX_TEXT "Aspect Ratio"
+#define AR_INDEX_LONGTEXT AR_INDEX_TEXT " of the source picture"
+
+#define AFDLINE_INDEX_TEXT N_("Active Format Descriptor line.")
+#define AFDLINE_INDEX_LONGTEXT N_("VBI line on which to output Active Format Descriptor.")
+
 #define NOSIGNAL_IMAGE_TEXT N_("Picture to display on input signal loss.")
 #define NOSIGNAL_IMAGE_LONGTEXT NOSIGNAL_IMAGE_TEXT
 
@@ -120,10 +129,36 @@ static const char *const ppsz_videoconns_text[] = {
     N_("SDI"), N_("HDMI"), N_("Optical SDI"), N_("Component"), N_("Composite"), N_("S-video")
 };
 
+static const int rgi_afd_values[] = {
+    0, 2, 3, 4, 8, 9, 10, 11, 13, 14, 15,
+};
+static const char * const rgsz_afd_text[] = {
+    "0:  Undefined",
+    "2:  Box 16:9 (top aligned)",
+    "3:  Box 14:9 (top aligned)",
+    "4:  Box > 16:9 (centre aligned)",
+    "8:  Same as coded frame (full frame)",
+    "9:   4:3 (centre aligned)",
+    "10: 16:9 (centre aligned)",
+    "11: 14:9 (centre aligned)",
+    "13:  4:3 (with shoot and protect 14:9 centre)",
+    "14: 16:9 (with shoot and protect 14:9 centre)",
+    "15: 16:9 (with shoot and protect  4:3 centre)",
+};
+
+static const int rgi_ar_values[] = {
+    0, 1,
+};
+static const char * const rgsz_ar_text[] = {
+    "0:   4:3",
+    "1:  16:9",
+};
+
 struct vout_display_sys_t
 {
     picture_pool_t *pool;
     bool tenbits;
+    uint8_t afd, ar;
     int nosignal_delay;
     picture_t *pic_nosignal;
 };
@@ -187,12 +222,20 @@ vlc_module_begin()
     add_string(VIDEO_CFG_PREFIX "video-connection", "sdi",
                 VIDEO_CONNECTION_TEXT, VIDEO_CONNECTION_LONGTEXT, true)
                 change_string_list(ppsz_videoconns, ppsz_videoconns_text)
-    add_string(VIDEO_CFG_PREFIX "mode", "pal ",
+    add_string(VIDEO_CFG_PREFIX "mode", "",
                 MODE_TEXT, MODE_LONGTEXT, true)
     add_bool(VIDEO_CFG_PREFIX "tenbits", false,
                 VIDEO_TENBITS_TEXT, VIDEO_TENBITS_LONGTEXT, true)
     add_integer(VIDEO_CFG_PREFIX "nosignal-delay", 5,
                 NOSIGNAL_INDEX_TEXT, NOSIGNAL_INDEX_LONGTEXT, true)
+    add_integer(VIDEO_CFG_PREFIX "afd-line", 16,
+                AFDLINE_INDEX_TEXT, AFDLINE_INDEX_LONGTEXT, true)
+    add_integer_with_range(VIDEO_CFG_PREFIX "afd", 8, 0, 16,
+                AFD_INDEX_TEXT, AFD_INDEX_LONGTEXT, true)
+                change_integer_list(rgi_afd_values, rgsz_afd_text)
+    add_integer_with_range(VIDEO_CFG_PREFIX "ar", 1, 0, 1,
+                AR_INDEX_TEXT, AR_INDEX_LONGTEXT, true)
+                change_integer_list(rgi_ar_values, rgsz_ar_text)
     add_loadfile(VIDEO_CFG_PREFIX "nosignal-image", NULL,
                 NOSIGNAL_IMAGE_TEXT, NOSIGNAL_IMAGE_LONGTEXT, true)
 
@@ -229,7 +272,9 @@ static struct decklink_sys_t *GetDLSys(vlc_object_t *obj)
             sys->p_output = NULL;
             sys->offset = 0;
             sys->users = 0;
-            sys->i_rate = -1;
+            sys->i_rate = var_InheritInteger(obj, AUDIO_CFG_PREFIX "audio-rate");
+            if(sys->i_rate > 0)
+                sys->i_rate = -1;
             vlc_mutex_init(&sys->lock);
             vlc_cond_init(&sys->cond);
             var_Create(libvlc, "decklink-sys", VLC_VAR_ADDRESS);
@@ -324,9 +369,94 @@ static const char * lookup_error_string(long i_code)
     return NULL;
 }
 
+static IDeckLinkDisplayMode * MatchDisplayMode(vout_display_t *vd,
+                                               IDeckLinkOutput *output,
+                                               const video_format_t *fmt,
+                                               BMDDisplayMode forcedmode = bmdDisplayModeNotSupported)
+{
+    HRESULT result;
+    IDeckLinkDisplayMode *p_selected = NULL;
+    IDeckLinkDisplayModeIterator *p_iterator = NULL;
+
+    for(int i=0; i<4 && p_selected==NULL; i++)
+    {
+        int i_width = (i % 2 == 0) ? fmt->i_width : fmt->i_visible_width;
+        int i_height = (i % 2 == 0) ? fmt->i_height : fmt->i_visible_height;
+        int i_div = (i > 2) ? 4 : 0;
+
+        result = output->GetDisplayModeIterator(&p_iterator);
+        if(result == S_OK)
+        {
+            IDeckLinkDisplayMode *p_mode = NULL;
+            while(p_iterator->Next(&p_mode) == S_OK)
+            {
+                BMDDisplayMode mode_id = p_mode->GetDisplayMode();
+                BMDTimeValue frameduration;
+                BMDTimeScale timescale;
+                const char *psz_mode_name;
+
+                if(p_mode->GetFrameRate(&frameduration, &timescale) == S_OK &&
+                        p_mode->GetName(&psz_mode_name) == S_OK)
+                {
+                    BMDDisplayMode modenl = htonl(mode_id);
+                    if(i==0)
+                    {
+                        msg_Dbg(vd, "Found mode '%4.4s': %s (%ldx%ld, %.3f fps, scale %ld dur %ld)",
+                                (char*)&modenl, psz_mode_name,
+                                p_mode->GetWidth(), p_mode->GetHeight(),
+                                double(timescale / frameduration),
+                                timescale, frameduration);
+                    }
+                }
+                else
+                {
+                    p_mode->Release();
+                    continue;
+                }
+
+                if(forcedmode != bmdDisplayModeNotSupported && unlikely(!p_selected))
+                {
+                    BMDDisplayMode modenl = htonl(forcedmode);
+                    msg_Dbg(vd, "Forced mode '%4.4s'", (char *)&modenl);
+                    if(forcedmode == mode_id)
+                        p_selected = p_mode;
+                    else
+                        p_mode->Release();
+                    continue;
+                }
+
+                if(p_selected == NULL)
+                {
+                    if(i_width >> i_div == p_mode->GetWidth() >> i_div &&
+                       i_height >> i_div == p_mode->GetHeight() >> i_div)
+                    {
+                        unsigned int num_deck, den_deck;
+                        unsigned int num_stream, den_stream;
+                        vlc_ureduce(&num_deck, &den_deck, timescale, frameduration, 0);
+                        vlc_ureduce(&num_stream, &den_stream,
+                                    fmt->i_frame_rate, fmt->i_frame_rate_base, 0);
+
+                        if (num_deck == num_stream && den_deck == den_stream)
+                        {
+                            msg_Info(vd, "Matches incoming stream");
+                            p_selected = p_mode;
+                            continue;
+                        }
+                    }
+                }
+
+                p_mode->Release();
+            }
+            p_iterator->Release();
+        }
+    }
+    return p_selected;
+}
+
 static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
 {
     vout_display_sys_t *sys = vd->sys;
+    video_format_t *fmt = &vd->fmt;
 #define CHECK(message) do { \
     if (result != S_OK) \
     { \
@@ -342,9 +472,9 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
     HRESULT result;
     IDeckLinkIterator *decklink_iterator = NULL;
     IDeckLinkDisplayMode *p_display_mode = NULL;
-    IDeckLinkDisplayModeIterator *p_display_iterator = NULL;
     IDeckLinkConfiguration *p_config = NULL;
     IDeckLink *p_card = NULL;
+    BMDDisplayMode wanted_mode_id = bmdDisplayModeNotSupported;
 
     struct decklink_sys_t *decklink_sys = GetDLSys(VLC_OBJECT(vd));
     vlc_mutex_lock(&decklink_sys->lock);
@@ -358,18 +488,20 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
     int i_card_index = var_InheritInteger(vd, CFG_PREFIX "card-index");
     BMDVideoConnection vconn = getVConn(vd);
     char *mode = var_InheritString(vd, VIDEO_CFG_PREFIX "mode");
-    size_t len = mode ? strlen(mode) : 0;
-    if (!mode || len > 4)
+    if(mode)
     {
+        size_t len = strlen(mode);
+        if (len > 4)
+        {
+            free(mode);
+            msg_Err(vd, "Invalid mode %s", mode);
+            goto error;
+        }
+        memset(&wanted_mode_id, ' ', 4);
+        strncpy((char*)&wanted_mode_id, mode, 4);
+        wanted_mode_id = ntohl(wanted_mode_id);
         free(mode);
-        msg_Err(vd, "Missing or invalid mode");
-        goto error;
     }
-
-    BMDDisplayMode wanted_mode_id;
-    memset(&wanted_mode_id, ' ', 4);
-    strncpy((char*)&wanted_mode_id, mode, 4);
-    free(mode);
 
     if (i_card_index < 0)
     {
@@ -413,46 +545,18 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
         CHECK("Could not set video output connection");
     }
 
-    result = decklink_sys->p_output->GetDisplayModeIterator(&p_display_iterator);
-    CHECK("Could not enumerate display modes");
-
-    for (; ; p_display_mode->Release())
+    p_display_mode = MatchDisplayMode(vd, decklink_sys->p_output,
+                                          fmt, wanted_mode_id);
+    if(p_display_mode == NULL)
     {
-        int w, h;
-        result = p_display_iterator->Next(&p_display_mode);
-        if (result != S_OK)
-        {
-            msg_Dbg(vd, "No more modes");
-            break;
-        }
-
-        BMDDisplayMode mode_id = ntohl(p_display_mode->GetDisplayMode());
-
-        const char *psz_mode_name;
-        result = p_display_mode->GetName(&psz_mode_name);
-        CHECK("Could not get display mode name");
-
-        result = p_display_mode->GetFrameRate(&decklink_sys->frameduration,
-            &decklink_sys->timescale);
-        CHECK("Could not get frame rate");
-
-        w = p_display_mode->GetWidth();
-        h = p_display_mode->GetHeight();
-        msg_Dbg(vd, "Found mode '%4.4s': %s (%dx%d, %.3f fps)",
-                (char*)&mode_id, psz_mode_name, w, h,
-                double(decklink_sys->timescale) / decklink_sys->frameduration);
-        msg_Dbg(vd, "scale %d dur %d", (int)decklink_sys->timescale,
-            (int)decklink_sys->frameduration);
-
-        if (wanted_mode_id != mode_id)
-            continue;
-
-        decklink_sys->i_width = w;
-        decklink_sys->i_height = h;
-
-        msg_Dbg(vd, "Selected mode(%dx%d)", w, h);
-
-        mode_id = htonl(mode_id);
+        msg_Err(vd, "Could not negociate a compatible display mode");
+        goto error;
+    }
+    else
+    {
+        BMDDisplayMode mode_id = p_display_mode->GetDisplayMode();
+        BMDDisplayMode modenl = htonl(mode_id);
+        msg_Dbg(vd, "Selected mode '%4.4s'", (char *) &modenl);
 
         BMDVideoOutputFlags flags = bmdVideoOutputVANC;
         if (mode_id == bmdModeNTSC ||
@@ -466,25 +570,29 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
         IDeckLinkDisplayMode *resultMode;
 
         result = decklink_sys->p_output->DoesSupportVideoMode(mode_id,
-            sys->tenbits ? bmdFormat10BitYUV : bmdFormat8BitYUV,
-            flags, &support, &resultMode);
+                                                              sys->tenbits ? bmdFormat10BitYUV : bmdFormat8BitYUV,
+                                                              flags, &support, &resultMode);
         CHECK("Does not support video mode");
         if (support == bmdDisplayModeNotSupported)
         {
             msg_Err(vd, "Video mode not supported");
-                goto error;
+            goto error;
         }
+
+        decklink_sys->i_width = p_display_mode->GetWidth();
+        decklink_sys->i_height = p_display_mode->GetHeight();
+        if (decklink_sys->i_width <= 0 || decklink_sys->i_width & 1)
+        {
+             msg_Err(vd, "Unknown video mode specified.");
+             goto error;
+        }
+
+        result = p_display_mode->GetFrameRate(&decklink_sys->frameduration,
+                                              &decklink_sys->timescale);
+        CHECK("Could not read frame rate");
 
         result = decklink_sys->p_output->EnableVideoOutput(mode_id, flags);
         CHECK("Could not enable video output");
-
-        break;
-    }
-
-    if (decklink_sys->i_width <= 0 || decklink_sys->i_width & 1)
-    {
-        msg_Err(vd, "Unknown video mode specified.");
-        goto error;
     }
 
     if (/*decklink_sys->i_channels > 0 &&*/ decklink_sys->i_rate > 0)
@@ -504,7 +612,6 @@ static struct decklink_sys_t *OpenDecklink(vout_display_t *vd)
 
     p_config->Release();
     p_display_mode->Release();
-    p_display_iterator->Release();
     p_card->Release();
     decklink_iterator->Release();
 
@@ -523,8 +630,6 @@ error:
         p_card->Release();
     if (p_config)
         p_config->Release();
-    if (p_display_iterator)
-        p_display_iterator->Release();
     if (decklink_iterator)
         decklink_iterator->Release();
     if (p_display_mode)
@@ -615,6 +720,59 @@ static void v210_convert(void *frame_bytes, picture_t *pic, int dst_stride)
     }
 }
 
+static void send_AFD(uint8_t afdcode, uint8_t ar, uint8_t *buf)
+{
+    const size_t len = 6 /* vanc header */ + 8 /* AFD data */ + 1 /* csum */;
+    const size_t s = ((len + 5) / 6) * 6; // align for v210
+
+    uint16_t afd[s];
+
+    afd[0] = 0x000;
+    afd[1] = 0x3ff;
+    afd[2] = 0x3ff;
+    afd[3] = 0x41; // DID
+    afd[4] = 0x05; // SDID
+    afd[5] = 8; // Data Count
+
+    int bar_data_flags = 0;
+    int bar_data_val1 = 0;
+    int bar_data_val2 = 0;
+
+    afd[ 6] = ((afdcode & 0x0F) << 3) | ((ar & 0x01) << 2); /* SMPTE 2016-1 */
+    afd[ 7] = 0; // reserved
+    afd[ 8] = 0; // reserved
+    afd[ 9] = bar_data_flags << 4;
+    afd[10] = bar_data_val1 << 8;
+    afd[11] = bar_data_val1 & 0xff;
+    afd[12] = bar_data_val2 << 8;
+    afd[13] = bar_data_val2 & 0xff;
+
+    /* parity bit */
+    for (size_t i = 3; i < len - 1; i++)
+        afd[i] |= parity(afd[i]) ? 0x100 : 0x200;
+
+    /* vanc checksum */
+    uint16_t vanc_sum = 0;
+    for (size_t i = 3; i < len - 1; i++) {
+        vanc_sum += afd[i];
+        vanc_sum &= 0x1ff;
+    }
+
+    afd[len - 1] = vanc_sum | ((~vanc_sum & 0x100) << 1);
+
+    /* pad */
+    for (size_t i = len; i < s; i++)
+        afd[i] = 0x040;
+
+    /* convert to v210 and write into VANC */
+    for (size_t w = 0; w < s / 6 ; w++) {
+        put_le32(&buf, afd[w*6+0] << 10);
+        put_le32(&buf, afd[w*6+1] | (afd[w*6+2] << 20));
+        put_le32(&buf, afd[w*6+3] << 10);
+        put_le32(&buf, afd[w*6+4] | (afd[w*6+5] << 20));
+    }
+}
+
 static void DisplayVideo(vout_display_t *vd, picture_t *picture, subpicture_t *)
 {
     vout_display_sys_t *sys = vd->sys;
@@ -672,8 +830,35 @@ static void DisplayVideo(vout_display_t *vd, picture_t *picture, subpicture_t *)
     pDLVideoFrame->GetBytes((void**)&frame_bytes);
     stride = pDLVideoFrame->GetRowBytes();
 
-    if (sys->tenbits)
+    if (sys->tenbits) {
+        IDeckLinkVideoFrameAncillary *vanc;
+        int line;
+        void *buf;
+
+        result = decklink_sys->p_output->CreateAncillaryData(
+                sys->tenbits ? bmdFormat10BitYUV : bmdFormat8BitYUV, &vanc);
+        if (result != S_OK) {
+            msg_Err(vd, "Failed to create vanc: %d", result);
+            goto end;
+        }
+
+        line = var_InheritInteger(vd, VIDEO_CFG_PREFIX "afd-line");
+        result = vanc->GetBufferForVerticalBlankingLine(line, &buf);
+        if (result != S_OK) {
+            msg_Err(vd, "Failed to get VBI line %d: %d", line, result);
+            goto end;
+        }
+        send_AFD(vd->sys->afd, vd->sys->ar, (uint8_t*)buf);
+
         v210_convert(frame_bytes, picture, stride);
+
+        result = pDLVideoFrame->SetAncillaryData(vanc);
+        vanc->Release();
+        if (result != S_OK) {
+            msg_Err(vd, "Failed to set vanc: %d", result);
+            goto end;
+        }
+    }
     else for(int y = 0; y < h; ++y) {
         uint8_t *dst = (uint8_t *)frame_bytes + stride * y;
         const uint8_t *src = (const uint8_t *)picture->p[0].p_pixels +
@@ -731,6 +916,8 @@ static int OpenVideo(vlc_object_t *p_this)
 
     sys->tenbits = var_InheritBool(p_this, VIDEO_CFG_PREFIX "tenbits");
     sys->nosignal_delay = var_InheritInteger(p_this, VIDEO_CFG_PREFIX "nosignal-delay");
+    sys->afd = var_InheritInteger(p_this, VIDEO_CFG_PREFIX "afd");
+    sys->ar = var_InheritInteger(p_this, VIDEO_CFG_PREFIX "ar");
     sys->pic_nosignal = NULL;
 
     decklink_sys = OpenDecklink(vd);

@@ -40,7 +40,7 @@ static int VlmEvent( vlc_object_t *p_this, const char * name,
 {
     VLC_UNUSED(p_this);
     VLC_UNUSED(name);
-    VLC_UNUSED(old_val);    
+    VLC_UNUSED(old_val);
     vlm_event_t *event = (vlm_event_t*)newval.p_address;
     libvlc_event_manager_t *p_event_manager = (libvlc_event_manager_t *) param;
     libvlc_event_t libvlc_event;
@@ -196,9 +196,8 @@ static char* recurse_answer( vlm_message_t *p_answer, const char* psz_delim,
     char* psz_childdelim = NULL;
     char* psz_nametag = NULL;
     char* psz_response = strdup( "" );
-    char *psz_tmp;
     int i_success = 0;
-    int i;
+
     vlm_message_t *aw_child, **paw_child;
 
     i_success = asprintf( &psz_childdelim, "%s\t", psz_delim);
@@ -208,8 +207,9 @@ static char* recurse_answer( vlm_message_t *p_answer, const char* psz_delim,
     paw_child = p_answer->child;
     aw_child = *( paw_child );
     /* Iterate over children */
-    for( i = 0; i < p_answer->i_child; i++ )
+    for( int i = 0; i < p_answer->i_child; i++ )
     {
+        char *psz_tmp;
         /* Spare comma if it is the last element */
         char c_comma = ',';
         if( i == (p_answer->i_child - 1) )

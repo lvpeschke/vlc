@@ -82,7 +82,7 @@ static int vlc_sd_probe_Open (vlc_object_t *obj)
     if (xcb_connection_has_error (conn))
         return VLC_PROBE_CONTINUE;
     xcb_disconnect (conn);
-    return vlc_sd_probe_Add (probe, "xcb_apps{longname=\"Screen capture\"}",
+    return vlc_sd_probe_Add (probe, "xcb_apps",
                              N_("Screen capture"), SD_CAT_DEVICES);
 }
 
@@ -97,6 +97,7 @@ static int Open (vlc_object_t *obj)
     if (p_sys == NULL)
         return VLC_ENOMEM;
     sd->p_sys = p_sys;
+    sd->description = _("Screen capture");
 
     /* Connect to X server */
     char *display = var_InheritString (obj, "x11-display");

@@ -72,7 +72,7 @@ vlc_module_begin ()
     set_shortname( "DCA" )
     set_description( N_("DTS Coherent Acoustics audio decoder") )
     add_bool( "dts-dynrng", true, DYNRNG_TEXT, DYNRNG_LONGTEXT, false )
-    set_capability( "decoder", 100 )
+    set_capability( "decoder", 60 )
     set_callbacks( Open, Close )
 vlc_module_end ()
 
@@ -99,9 +99,7 @@ static void Interleave( float * p_out, const float * p_in, int i_nb_channels,
  */
 static void Duplicate( float * p_out, const float * p_in )
 {
-    int i;
-
-    for ( i = 256; i--; )
+    for ( int i = 256; i--; )
     {
         *p_out++ = *p_in;
         *p_out++ = *p_in;
@@ -114,11 +112,10 @@ static void Duplicate( float * p_out, const float * p_in )
  */
 static void Exchange( float * p_out, const float * p_in )
 {
-    int i;
     const float * p_first = p_in + 256;
     const float * p_second = p_in;
 
-    for ( i = 0; i < 256; i++ )
+    for ( int i = 0; i < 256; i++ )
     {
         *p_out++ = *p_first++;
         *p_out++ = *p_second++;

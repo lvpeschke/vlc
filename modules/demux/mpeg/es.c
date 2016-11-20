@@ -1161,9 +1161,13 @@ static int DtsCheckSync( const uint8_t *p_peek, int *pi_samples )
     VLC_UNUSED(pi_samples);
 
     vlc_dts_header_t dts;
-    if( vlc_dts_header_Parse( &dts, p_peek, 11 ) == VLC_SUCCESS
+    if( vlc_dts_header_Parse( &dts, p_peek, VLC_DTS_HEADER_SIZE ) == VLC_SUCCESS
      && dts.i_frame_size > 0 && dts.i_frame_size <= 8192 )
+    {
+        if( pi_samples )
+            *pi_samples = dts.i_frame_length;
         return dts.i_frame_size;
+    }
     else
         return VLC_EGENERIC;
 }
@@ -1173,7 +1177,8 @@ static int DtsProbe( demux_t *p_demux, int64_t *pi_offset )
     const char *ppsz_name[] = { "dts", NULL };
     const int pi_wav[] = { WAVE_FORMAT_PCM, WAVE_FORMAT_DTS, WAVE_FORMAT_UNKNOWN };
 
-    return GenericProbe( p_demux, pi_offset, ppsz_name, DtsCheckSync, 11, pi_wav, NULL );
+    return GenericProbe( p_demux, pi_offset, ppsz_name, DtsCheckSync,
+                         VLC_DTS_HEADER_SIZE, pi_wav, NULL );
 }
 static int DtsInit( demux_t *p_demux )
 {

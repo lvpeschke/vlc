@@ -740,16 +740,13 @@ int XmlFile::OpenXml()
 
 int XmlFile::ReadNextNode( demux_t *p_demux, xml_reader_t *p_xmlReader, string& p_node )
 {
-    string s_node;
     const char * c_node;
-    int i;
-    size_t ui_pos;
-
-    i = xml_ReaderNextNode( p_xmlReader, &c_node );
+    int i = xml_ReaderNextNode( p_xmlReader, &c_node );
 
     /* remove namespaces, if there are any */
-    s_node = c_node;
-    ui_pos = s_node.find( ":" );
+    string s_node = c_node;
+    size_t ui_pos = s_node.find( ":" );
+
     if( ( i == XML_READER_STARTELEM || i == XML_READER_ENDELEM ) && ( ui_pos != string::npos ) )
     {
         try
@@ -1251,19 +1248,19 @@ int Reel::ParseAsset(string p_node, int p_type, TrackType_t e_track) {
                 } else if (node == "AnnotationText") {
                     if ( XmlFile::ReadEndNode( this->p_demux, this->p_xmlReader, node, type, s_value ) )
                         return -1;
-                        asset->setAnnotation(s_value);
+                    asset->setAnnotation(s_value);
                 } else if (node == "IntrinsicDuration") {
                     if ( XmlFile::ReadEndNode( this->p_demux, this->p_xmlReader, node, type, s_value ) )
                         return -1;
-                        asset->setIntrinsicDuration(atoi(s_value.c_str()));
+                    asset->setIntrinsicDuration(atoi(s_value.c_str()));
                 } else if (node == "EntryPoint") {
                     if ( XmlFile::ReadEndNode( this->p_demux, this->p_xmlReader, node, type, s_value ) )
                         return -1;
-                        asset->setEntryPoint(atoi(s_value.c_str()));
+                    asset->setEntryPoint(atoi(s_value.c_str()));
                 } else if (node == "Duration") {
                     if ( XmlFile::ReadEndNode( this->p_demux, this->p_xmlReader, node, type, s_value ) )
                         return -1;
-                        asset->setDuration(atoi(s_value.c_str()));
+                    asset->setDuration(atoi(s_value.c_str()));
                 } else if (node == "KeyId") {
                     if ( XmlFile::ReadEndNode( this->p_demux, this->p_xmlReader, node, type, s_value ) )
                         return -1;

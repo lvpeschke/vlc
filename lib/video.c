@@ -282,6 +282,55 @@ void libvlc_video_set_aspect_ratio( libvlc_media_player_t *p_mi,
     free (pp_vouts);
 }
 
+libvlc_video_viewpoint_t *libvlc_video_new_viewpoint(void)
+{
+    libvlc_video_viewpoint_t *p_vp = malloc(sizeof *p_vp);
+    if (unlikely(p_vp == NULL))
+        return NULL;
+    p_vp->f_yaw = p_vp->f_pitch = p_vp->f_roll = p_vp->f_field_of_view =
+    p_vp->f_zoom = 0.0f;
+    return p_vp;
+}
+
+int libvlc_video_update_viewpoint( libvlc_media_player_t *p_mi,
+                                   const libvlc_video_viewpoint_t *p_viewpoint,
+                                   bool b_absolute )
+{
+    vlc_viewpoint_t update = {
+        .yaw   = p_viewpoint->f_yaw,
+        .pitch = p_viewpoint->f_pitch,
+        .roll  = p_viewpoint->f_roll,
+        .fov   = p_viewpoint->f_field_of_view,
+        .zoom  = p_viewpoint->f_zoom,
+    };
+
+    input_thread_t *p_input_thread = libvlc_get_input_thread( p_mi );
+    if( p_input_thread != NULL )
+    {
+        if( input_UpdateViewpoint( p_input_thread, &update,
+                                   b_absolute ) != VLC_SUCCESS )
+        {
+            vlc_object_release( p_input_thread );
+            return -1;
+        }
+        vlc_object_release( p_input_thread );
+    }
+
+    /* Save the viewpoint in case the input is not created yet */
+    if( !b_absolute )
+    {
+        p_mi->viewpoint.yaw += p_mi->viewpoint.yaw;
+        p_mi->viewpoint.pitch += p_mi->viewpoint.pitch;
+        p_mi->viewpoint.roll += p_mi->viewpoint.roll;
+        p_mi->viewpoint.fov += p_mi->viewpoint.fov;
+        p_mi->viewpoint.zoom += p_mi->viewpoint.zoom;
+    }
+    else
+        p_mi->viewpoint = update;
+
+    return 0;
+}
+
 int libvlc_video_get_spu( libvlc_media_player_t *p_mi )
 {
     input_thread_t *p_input_thread = libvlc_get_input_thread( p_mi );
@@ -430,14 +479,7 @@ void libvlc_video_set_crop_geometry( libvlc_media_player_t *p_mi,
     for (size_t i = 0; i < n; i++)
     {
         vout_thread_t *p_vout = pp_vouts[i];
-        vlc_value_t val;
 
-        /* Make sure the geometry is in the choice list */
-        /* Earlier choices are removed to not grow a long list over time. */
-        /* FIXME: not atomic - lock? */
-        val.psz_string = (char *)psz_geometry;
-        var_Change (p_vout, "crop", VLC_VAR_CLEARCHOICES, NULL, NULL);
-        var_Change (p_vout, "crop", VLC_VAR_ADDCHOICE, &val, &val);
         var_SetString (p_vout, "crop", psz_geometry);
         vlc_object_release (p_vout);
     }

@@ -30,6 +30,7 @@
 #endif
 #include <assert.h>
 #include <ctype.h>
+#include <limits.h>
 
 #include <vlc_common.h>
 #include <vlc_plugin.h>
@@ -293,6 +294,8 @@ static int Open( vlc_object_t * p_this )
 
     /* Initialize input structures. */
     p_sys = p_demux->p_sys = calloc( 1, sizeof(demux_sys_t) );
+    if( unlikely(!p_sys) )
+        return VLC_EGENERIC;
     p_sys->b_odml   = false;
     p_sys->track    = NULL;
     p_sys->meta     = NULL;
@@ -470,6 +473,14 @@ static int Open( vlc_object_t * p_this )
                     tk->i_rate = p_auds->p_wf->nSamplesPerSec;
                 }
 
+                /* From libavformat */
+                /* Fix broken sample size (which is mp2 num samples / frame) #12722 */
+                if( tk->i_codec == VLC_CODEC_MPGA &&
+                    tk->i_samplesize == 1152 && p_auds->p_wf->nBlockAlign == 1152 )
+                {
+                    p_auds->p_wf->nBlockAlign = tk->i_samplesize = 0;
+                }
+
                 es_format_Init( &fmt, AUDIO_ES, tk->i_codec );
 
                 fmt.audio.i_channels        = p_auds->p_wf->nChannels;
@@ -484,7 +495,7 @@ static int Open( vlc_object_t * p_this )
                 {
                     int i_chunk = AVIFOURCC_IAS1 + ((i - 1) << 24);
                     avi_chunk_STRING_t *p_lang = AVI_ChunkFind( p_info, i_chunk, 0 );
-                    if( p_lang != NULL )
+                    if( p_lang != NULL && p_lang->p_str != NULL )
                         fmt.psz_language = FromACP( p_lang->p_str );
                 }
 
@@ -495,16 +506,18 @@ static int Open( vlc_object_t * p_this )
                     p_auds->p_wf->nSamplesPerSec,
                     p_auds->p_wf->wBitsPerSample );
 
-                fmt.i_extra = __MIN( p_auds->p_wf->cbSize,
-                    p_auds->i_chunk_size - sizeof(WAVEFORMATEX) );
-                if( fmt.i_extra > 0 )
+                if( p_auds->p_wf->cbSize > 0 && p_auds->i_chunk_size > sizeof(WAVEFORMATEX) )
                 {
-                    fmt.p_extra = malloc( fmt.i_extra );
+                    int i_extra = __MIN( p_auds->p_wf->cbSize,
+                                         p_auds->i_chunk_size - sizeof(WAVEFORMATEX) );
+                    fmt.p_extra = malloc( i_extra );
                     if( unlikely(fmt.p_extra == NULL) )
                     {
+                        es_format_Clean( &fmt );
                         free( tk );
                         goto error;
                     }
+                    fmt.i_extra = i_extra;
                     memcpy( fmt.p_extra, &p_auds->p_wf[1], fmt.i_extra );
                 }
                 break;
@@ -623,16 +636,21 @@ static int Open( vlc_object_t * p_this )
                     fmt.video.i_sar_den = ((i_frame_aspect_ratio >>  0) & 0xffff) * fmt.video.i_width;
                 }
                 /* Extradata is the remainder of the chunk less the BIH */
-                fmt.i_extra = p_vids->i_chunk_size - sizeof(VLC_BITMAPINFOHEADER);
-                if( fmt.i_extra > 0 )
+                if( p_vids->i_chunk_size <= INT_MAX - sizeof(VLC_BITMAPINFOHEADER) )
                 {
-                    fmt.p_extra = malloc( fmt.i_extra );
-                    if( unlikely(fmt.p_extra == NULL) )
+                    int i_extra = p_vids->i_chunk_size - sizeof(VLC_BITMAPINFOHEADER);
+                    if( i_extra > 0 )
                     {
-                        free( tk );
-                        goto error;
+                        fmt.p_extra = malloc( i_extra );
+                        if( unlikely(fmt.p_extra == NULL) )
+                        {
+                            es_format_Clean( &fmt );
+                            free( tk );
+                            goto error;
+                        }
+                        fmt.i_extra = i_extra;
+                        memcpy( fmt.p_extra, &p_vids->p_bih[1], fmt.i_extra );
                     }
-                    memcpy( fmt.p_extra, &p_vids->p_bih[1], fmt.i_extra );
                 }
 
                 msg_Dbg( p_demux, "stream[%d] video(%4.4s) %"PRIu32"x%"PRIu32" %dbpp %ffps",
@@ -647,17 +665,18 @@ static int Open( vlc_object_t * p_this )
                 {
                     /* The palette should not be included in biSize, but come
                      * directly after BITMAPINFORHEADER in the BITMAPINFO structure */
-                    if( fmt.i_extra > 0 && fmt.p_extra )
+                    if( fmt.i_extra > 0 )
                     {
-                        const uint8_t *p_pal = fmt.p_extra;
-
                         fmt.video.p_palette = calloc( 1, sizeof(video_palette_t) );
-                        fmt.video.p_palette->i_entries = __MIN(fmt.i_extra/4, 256);
-
-                        for( int k = 0; k < fmt.video.p_palette->i_entries; k++ )
+                        if( likely(fmt.video.p_palette) )
                         {
-                            for( int j = 0; j < 4; j++ )
-                                fmt.video.p_palette->palette[k][j] = p_pal[4*k+j];
+                            const uint8_t *p_pal = fmt.p_extra;
+                            fmt.video.p_palette->i_entries = __MIN(fmt.i_extra/4, 256);
+                            for( int k = 0; k < fmt.video.p_palette->i_entries; k++ )
+                            {
+                                for( int j = 0; j < 4; j++ )
+                                    fmt.video.p_palette->palette[k][j] = p_pal[4*k+j];
+                            }
                         }
                     }
                 }
@@ -693,7 +712,7 @@ static int Open( vlc_object_t * p_this )
                 free( tk );
                 continue;
         }
-        if( p_strn )
+        if( p_strn && p_strn->p_str )
             fmt.psz_description = FromACP( p_strn->p_str );
         tk->p_es = es_out_Add( p_demux->out, &fmt );
         TAB_APPEND( p_sys->i_track, p_sys->track, tk );
@@ -1711,11 +1730,15 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
             input_attachment_t ***ppp_attach = va_arg( args, input_attachment_t*** );
             int *pi_int = va_arg( args, int * );
 
-            *pi_int     = p_sys->i_attachment;
-            *ppp_attach = calloc( p_sys->i_attachment, sizeof(**ppp_attach));
-            for( unsigned i = 0; i < p_sys->i_attachment && *ppp_attach; i++ )
-                (*ppp_attach)[i] = vlc_input_attachment_Duplicate( p_sys->attachment[i] );
-            return VLC_SUCCESS;
+            *ppp_attach = calloc( p_sys->i_attachment, sizeof(**ppp_attach) );
+            if( likely(*ppp_attach) )
+            {
+                *pi_int = p_sys->i_attachment;
+                for( unsigned i = 0; i < p_sys->i_attachment; i++ )
+                    (*ppp_attach)[i] = vlc_input_attachment_Duplicate( p_sys->attachment[i] );
+                return VLC_SUCCESS;
+            }
+            return VLC_EGENERIC;
         }
 
         default:
@@ -2196,7 +2219,7 @@ static int AVI_PacketGetHeader( demux_t *p_demux, avi_packet_t *p_pk )
 static int AVI_PacketNext( demux_t *p_demux )
 {
     avi_packet_t    avi_ck;
-    int             i_skip = 0;
+    size_t          i_skip = 0;
 
     if( AVI_PacketGetHeader( p_demux, &avi_ck ) )
     {
@@ -2215,10 +2238,16 @@ static int AVI_PacketNext( demux_t *p_demux )
     }
     else
     {
+        if( avi_ck.i_size > UINT32_MAX - 9 )
+            return VLC_EGENERIC;
         i_skip = __EVEN( avi_ck.i_size ) + 8;
     }
 
-    if( vlc_stream_Read( p_demux->s, NULL, i_skip ) != i_skip )
+    if( i_skip > SSIZE_MAX )
+        return VLC_EGENERIC;
+
+    ssize_t i_ret = vlc_stream_Read( p_demux->s, NULL, i_skip );
+    if( i_ret < 0 || (size_t) i_ret != i_skip )
     {
         return VLC_EGENERIC;
     }
@@ -2759,7 +2788,7 @@ static void AVI_MetaLoad( demux_t *p_demux,
     for( int i = 0; p_dsc[i].i_id != 0; i++ )
     {
         avi_chunk_STRING_t *p_strz = AVI_ChunkFind( p_info, p_dsc[i].i_id, 0 );
-        if( !p_strz )
+        if( !p_strz || !p_strz->p_str )
             continue;
         char *psz_value = FromACP( p_strz->p_str );
         if( !psz_value )
@@ -2783,7 +2812,7 @@ static void AVI_MetaLoad( demux_t *p_demux,
     for( int i = 0; p_extra[i] != 0; i++ )
     {
         avi_chunk_STRING_t *p_strz = AVI_ChunkFind( p_info, p_extra[i], 0 );
-        if( !p_strz )
+        if( !p_strz || !p_strz->p_str )
             continue;
         char *psz_value = FromACP( p_strz->p_str );
         if( !psz_value )
@@ -2931,7 +2960,7 @@ static void AVI_ExtractSubtitle( demux_t *p_demux,
     i_size -= 6;
 
     if( !psz_description )
-        psz_description = p_strn ? FromACP( p_strn->p_str ) : NULL;
+        psz_description = p_strn && p_strn->p_str ? FromACP( p_strn->p_str ) : NULL;
     char *psz_name;
     if( asprintf( &psz_name, "subtitle%d.srt", p_sys->i_attachment ) <= 0 )
         psz_name = NULL;

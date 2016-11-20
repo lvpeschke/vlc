@@ -635,21 +635,6 @@ LIBVLC_API libvlc_time_t
    libvlc_media_get_duration( libvlc_media_t *p_md );
 
 /**
- * Parse a media.
- *
- * This fetches (local) art, meta data and tracks information.
- * The method is synchronous.
- *
- * \see libvlc_media_parse_with_options
- * \see libvlc_media_get_meta
- * \see libvlc_media_get_tracks_info
- *
- * \param p_md media descriptor object
- */
-LIBVLC_API void
-libvlc_media_parse( libvlc_media_t *p_md );
-
-/**
  * Parse the media asynchronously with options.
  *
  * This fetches (local or network) art, meta data and/or tracks information.
@@ -662,6 +647,8 @@ libvlc_media_parse( libvlc_media_t *p_md );
  * It uses a flag to specify parse options (see libvlc_media_parse_flag_t). All
  * these flags can be combined. By default, media is parsed if it's a local
  * file.
+ *
+ * \note Parsing can be aborted with libvlc_media_parse_stop().
  *
  * \see libvlc_MediaParsedChanged
  * \see libvlc_media_get_meta
@@ -681,6 +668,20 @@ LIBVLC_API int
 libvlc_media_parse_with_options( libvlc_media_t *p_md,
                                  libvlc_media_parse_flag_t parse_flag,
                                  int timeout );
+
+/**
+ * Stop the parsing of the media
+ *
+ * When the media parsing is stopped, the libvlc_MediaParsedChanged event will
+ * be sent with the libvlc_media_parsed_status_timeout status.
+ *
+ * \see libvlc_media_parse_with_options
+ *
+ * \param p_md media descriptor object
+ * \version LibVLC 3.0.0 or later
+ */
+LIBVLC_API void
+libvlc_media_parse_stop( libvlc_media_t *p_md );
 
 /**
  * Get Parsed status for media descriptor object.

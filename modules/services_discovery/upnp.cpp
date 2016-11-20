@@ -86,7 +86,7 @@ namespace Access
     static void Close( vlc_object_t* );
 }
 
-VLC_SD_PROBE_HELPER( "upnp", "Universal Plug'n'Play", SD_CAT_LAN )
+VLC_SD_PROBE_HELPER( "upnp", N_("Universal Plug'n'Play"), SD_CAT_LAN )
 
 /*
  * Module descriptor
@@ -229,6 +229,8 @@ static int Open( vlc_object_t *p_this )
 
     if( !( p_sd->p_sys = p_sys ) )
         return VLC_ENOMEM;
+
+    p_sd->description = _("Universal Plug'n'Play");
 
     p_sys->p_upnp = UpnpInstanceWrapper::get( p_this, p_sd );
     if ( !p_sys->p_upnp )

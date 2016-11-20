@@ -347,6 +347,10 @@ libvlccore_la_SOURCES = \
 	misc/text_style.c \
 	misc/subpicture.c \
 	misc/subpicture.h
+libvlccore_la_LIBADD = $(LIBS_libvlccore) \
+	../compat/libcompat.la \
+	$(LTLIBINTL) $(LTLIBICONV) \
+	$(IDN_LIBS) $(LIBPTHREAD) $(SOCKET_LIBS) $(LIBRT) $(LIBDL) $(LIBM)
 
 if HAVE_WIN32
 libvlccore_la_SOURCES += \
@@ -386,7 +390,10 @@ if HAVE_ANDROID
 libvlccore_la_SOURCES += \
 	android/error.c \
 	android/specific.c \
-	android/thread.c
+	android/thread.c \
+	linux/cpu.c \
+	linux/dirs.c \
+	linux/thread.c
 else
 if HAVE_DARWIN
 libvlccore_la_SOURCES += \
@@ -402,15 +409,20 @@ libvlccore_la_SOURCES += \
 	posix/netconf.c \
 	posix/specific.c \
 	posix/thread.c
-endif
-endif
-endif
-endif
 if HAVE_LINUX
 libvlccore_la_SOURCES += \
 	linux/cpu.c \
 	linux/dirs.c \
+	linux/getaddrinfo.c \
 	linux/thread.c
+libvlccore_la_LIBADD += -lanl
+else
+libvlccore_la_SOURCES += \
+	posix/getaddrinfo.c
+endif
+endif
+endif
+endif
 endif
 
 if BUILD_HTTPD
@@ -431,10 +443,6 @@ libvlccore_la_LDFLAGS = \
 	-no-undefined \
 	-export-symbols $(srcdir)/libvlccore.sym \
 	-version-info 8:0:0
-libvlccore_la_LIBADD = $(LIBS_libvlccore) \
-	../compat/libcompat.la \
-	$(LTLIBINTL) $(LTLIBICONV) \
-	$(IDN_LIBS) $(LIBPTHREAD) $(SOCKET_LIBS) $(LIBRT) $(LIBDL) $(LIBM)
 libvlccore_la_DEPENDENCIES = libvlccore.sym
 if HAVE_WIN32
 libvlccore_la_DEPENDENCIES += libvlc_win32_rc.$(OBJEXT)

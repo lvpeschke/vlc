@@ -41,8 +41,8 @@
 #define PROFILE_H264_MVC_MULTIVIEW_DEPTH_HIGH          138
 #define PROFILE_H264_MVC_ENHANCED_MULTIVIEW_DEPTH_HIGH 139
 
-#define H264_SPS_MAX (32)
-#define H264_PPS_MAX (256)
+#define H264_SPS_ID_MAX (31)
+#define H264_PPS_ID_MAX (255)
 
 enum h264_nal_unit_type_e
 {
@@ -73,14 +73,6 @@ enum h264_nal_unit_type_e
     H264_NAL_RESERVED_23 = 23,
 };
 
-/* Defined in H.264 annex D */
-enum h264_sei_type_e
-{
-    H264_SEI_PIC_TIMING = 1,
-    H264_SEI_USER_DATA_REGISTERED_ITU_T_T35 = 4,
-    H264_SEI_RECOVERY_POINT = 6
-};
-
 typedef struct h264_sequence_parameter_set_t h264_sequence_parameter_set_t;
 typedef struct h264_picture_parameter_set_t h264_picture_parameter_set_t;
 
@@ -92,7 +84,7 @@ void h264_release_pps( h264_picture_parameter_set_t * );
 
 struct h264_sequence_parameter_set_t
 {
-    int i_id;
+    uint8_t i_id;
     uint8_t i_profile, i_level;
     uint8_t i_constraint_set_flags;
     /* according to avcC, 3 bits max for those */
@@ -137,8 +129,8 @@ struct h264_sequence_parameter_set_t
 
 struct h264_picture_parameter_set_t
 {
-    int i_id;
-    int i_sps_id;
+    uint8_t i_id;
+    uint8_t i_sps_id;
     int i_pic_order_present_flag;
 };
 
@@ -156,12 +148,12 @@ bool h264_isavcC( const uint8_t *, size_t );
 void h264_AVC_to_AnnexB( uint8_t *p_buf, uint32_t i_len,
                          uint8_t i_nal_length_size );
 
-/* Get the SPS/PPS pointers from an Annex B buffer
- * Returns 0 if a SPS and/or a PPS is found */
-int h264_AnnexB_get_spspps( const uint8_t *p_buf, size_t i_buf,
-                            const uint8_t **pp_sps, size_t *p_sps_size,
-                            const uint8_t **pp_pps, size_t *p_pps_size,
-                            const uint8_t **pp_ext, size_t *p_ext_size );
+/* Get the First SPS/PPS NAL pointers from an Annex B buffer
+ * Returns TRUE if a SPS and/or a PPS is found */
+bool h264_AnnexB_get_spspps( const uint8_t *p_buf, size_t i_buf,
+                             const uint8_t **pp_sps, size_t *p_sps_size,
+                             const uint8_t **pp_pps, size_t *p_pps_size,
+                             const uint8_t **pp_ext, size_t *p_ext_size );
 
 /* Create a AVCDecoderConfigurationRecord from SPS/PPS
  * Returns a valid block_t on success, must be freed with block_Release */
@@ -170,6 +162,12 @@ block_t *h264_AnnexB_NAL_to_avcC( uint8_t i_nal_length_size,
                                   size_t i_sps_size,
                                   const uint8_t *p_pps_buf,
                                   size_t i_pps_size );
+/* Same from raw / non prefixed NAL */
+block_t *h264_NAL_to_avcC( uint8_t i_nal_length_size,
+                           const uint8_t *p_sps_buf,
+                           size_t i_sps_size,
+                           const uint8_t *p_pps_buf,
+                           size_t i_pps_size );
 
 /* Convert AVCDecoderConfigurationRecord SPS/PPS to Annex B format */
 uint8_t * h264_avcC_to_AnnexB_NAL( const uint8_t *p_buf, size_t i_buf,

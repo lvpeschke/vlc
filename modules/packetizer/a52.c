@@ -67,6 +67,7 @@ struct decoder_sys_t
     bool    b_date_set;
 
     mtime_t i_pts;
+    bool    b_discontuinity;
 
     vlc_a52_header_t frame;
 };
@@ -75,6 +76,7 @@ static void PacketizeFlush( decoder_t *p_dec )
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
 
+    p_sys->b_discontuinity = true;
     date_Set( &p_sys->end_date, 0 );
     p_sys->i_state = STATE_NOSYNC;
     block_BytestreamEmpty( &p_sys->bytestream );
@@ -124,31 +126,35 @@ static block_t *PacketizeBlock( decoder_t *p_dec, block_t **pp_block )
     uint8_t p_header[VLC_A52_HEADER_SIZE];
     block_t *p_out_buffer;
 
-    if( !pp_block || !*pp_block ) return NULL;
+    block_t *p_block = pp_block ? *pp_block : NULL;
 
-    if( (*pp_block)->i_flags & (BLOCK_FLAG_DISCONTINUITY | BLOCK_FLAG_CORRUPTED) )
+    if( p_block )
     {
-        if( (*pp_block)->i_flags & BLOCK_FLAG_CORRUPTED )
+        if( p_block->i_flags & (BLOCK_FLAG_DISCONTINUITY | BLOCK_FLAG_CORRUPTED) )
         {
+            /* First always drain complete blocks before discontinuity */
+            block_t *p_drain = PacketizeBlock( p_dec, NULL );
+            if(p_drain)
+                return p_drain;
+
             PacketizeFlush( p_dec );
-            block_Release( *pp_block );
-            *pp_block = NULL;
+
+            if( p_block->i_flags & BLOCK_FLAG_CORRUPTED )
+            {
+                block_Release( p_block );
+                return NULL;
+            }
+        }
+
+        if( !date_Get( &p_sys->end_date ) && p_block->i_pts <= VLC_TS_INVALID)
+        {
+            /* We've just started the stream, wait for the first PTS. */
+            block_Release( p_block );
             return NULL;
         }
-        else /* BLOCK_FLAG_DISCONTINUITY */
-            date_Set( &p_sys->end_date, 0 );
 
+        block_BytestreamPush( &p_sys->bytestream, p_block );
     }
-
-    if( !date_Get( &p_sys->end_date ) && (*pp_block)->i_pts <= VLC_TS_INVALID)
-    {
-        /* We've just started the stream, wait for the first PTS. */
-        block_Release( *pp_block );
-        *pp_block = NULL;
-        return NULL;
-    }
-
-    block_BytestreamPush( &p_sys->bytestream, *pp_block );
 
     while( 1 )
     {
@@ -214,14 +220,16 @@ static block_t *PacketizeBlock( decoder_t *p_dec, block_t **pp_block )
             p_sys->i_state = STATE_NEXT_SYNC;
 
         case STATE_NEXT_SYNC:
-            /* TODO: If pp_block == NULL, flush the buffer without checking the
-             * next sync word */
-
             /* Check if next expected frame contains the sync word */
             if( block_PeekOffsetBytes( &p_sys->bytestream,
                                        p_sys->frame.i_size, p_header, 2 )
                 != VLC_SUCCESS )
             {
+                if( p_block == NULL ) /* drain */
+                {
+                    p_sys->i_state = STATE_SEND_DATA;
+                    break;
+                }
                 /* Need more data */
                 return NULL;
             }
@@ -271,8 +279,15 @@ static block_t *PacketizeBlock( decoder_t *p_dec, block_t **pp_block )
             if( p_sys->i_pts == p_sys->bytestream.p_block->i_pts )
                 p_sys->i_pts = p_sys->bytestream.p_block->i_pts = VLC_TS_INVALID;
 
+            if( p_sys->b_discontuinity )
+            {
+                p_out_buffer->i_flags |= BLOCK_FLAG_DISCONTINUITY;
+                p_sys->b_discontuinity = false;
+            }
+
             /* So p_block doesn't get re-added several times */
-            *pp_block = block_BytestreamPop( &p_sys->bytestream );
+            if( pp_block )
+                *pp_block = block_BytestreamPop( &p_sys->bytestream );
 
             p_sys->i_state = STATE_NOSYNC;
 
@@ -315,6 +330,7 @@ static int Open( vlc_object_t *p_this )
     date_Set( &p_sys->end_date, 0 );
     p_sys->i_pts = VLC_TS_INVALID;
     p_sys->b_date_set = false;
+    p_sys->b_discontuinity = false;
 
     block_BytestreamInit( &p_sys->bytestream );
 

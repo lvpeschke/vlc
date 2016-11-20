@@ -17,6 +17,7 @@ zvbi: zvbi-$(ZVBI_VERSION).tar.bz2 .sum-zvbi
 	$(UNPACK)
 	$(APPLY) $(SRC)/zvbi/zvbi-ssize_max.patch
 	$(APPLY) $(SRC)/zvbi/zvbi-ioctl.patch
+	$(APPLY) $(SRC)/zvbi/zvbi-fix-static-linking.patch
 ifdef HAVE_WIN32
 	$(APPLY) $(SRC)/zvbi/zvbi-win32.patch
 endif
@@ -26,7 +27,7 @@ ifdef HAVE_ANDROID
 endif
 	$(MOVE)
 
-DEPS_zvbi = pthreads iconv $(DEPS_iconv)
+DEPS_zvbi = pthreads png $(DEPS_png) iconv $(DEPS_iconv)
 
 ZVBI_CFLAGS := $(CFLAGS)
 ZVBICONF := \

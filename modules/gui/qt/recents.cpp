@@ -158,9 +158,9 @@ void RecentsMRL::save()
 
 playlist_item_t *RecentsMRL::toPlaylist(int length)
 {
-    playlist_Lock(THEPL);
-    playlist_item_t *p_node_recent = playlist_NodeCreate(THEPL, _("Recently Played"), THEPL->p_root, PLAYLIST_END, PLAYLIST_RO_FLAG, NULL);
-    playlist_Unlock(THEPL);
+    vlc_playlist_locker locker(THEPL);
+
+    playlist_item_t *p_node_recent = playlist_NodeCreate(THEPL, _("Recently Played"), THEPL->p_root, PLAYLIST_END, PLAYLIST_RO_FLAG);
 
     if ( p_node_recent == NULL )  return NULL;
 
@@ -170,10 +170,11 @@ playlist_item_t *RecentsMRL::toPlaylist(int length)
     for (int i = 0; i < length; i++)
     {
         input_item_t *p_input = input_item_New(qtu(recents.at(i)), NULL);
-        playlist_NodeAddInput(THEPL, p_input, p_node_recent, PLAYLIST_APPEND, PLAYLIST_END, false);
+        playlist_NodeAddInput(THEPL, p_input, p_node_recent, 0, PLAYLIST_END);
     }
 
-    return p_node_recent;
+    /* locker goes out of scope and node is invalidated here */
+    return NULL;
 }
 
 void RecentsMRL::playMRL( const QString &mrl )
@@ -234,12 +235,9 @@ int Open::openMRLwithOptions( intf_thread_t* p_intf,
     /* Add to playlist */
     int i_ret = playlist_AddExt( THEPL,
                   qtu(mrl), title,
-                  PLAYLIST_APPEND | (b_start ? PLAYLIST_GO : PLAYLIST_PREPARSE),
-                  PLAYLIST_END,
-                  -1,
+                  (b_start ? PLAYLIST_GO : 0),
                   i_options, ppsz_options, VLC_INPUT_OPTION_TRUSTED,
-                  b_playlist,
-                  pl_Unlocked );
+                  b_playlist );
 
     /* Add to recent items, only if played */
     if( i_ret == VLC_SUCCESS && b_start && b_playlist )

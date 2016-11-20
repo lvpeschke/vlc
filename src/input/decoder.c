@@ -732,11 +732,12 @@ static void DecoderFixTs( decoder_t *p_dec, mtime_t *pi_ts0, mtime_t *pi_ts1,
         if( i_ts_bound != INT64_MAX )
             i_ts_bound += i_es_delay;
         if( input_clock_ConvertTS( VLC_OBJECT(p_dec), p_clock, &i_rate, pi_ts0, pi_ts1, i_ts_bound ) ) {
+            const char *psz_name = module_get_name( p_dec->p_module, false );
             if( pi_ts1 != NULL )
                 msg_Err(p_dec, "Could not convert timestamps %"PRId64
-                        ", %"PRId64"", *pi_ts0, *pi_ts1);
+                        ", %"PRId64" for %s", *pi_ts0, *pi_ts1, psz_name );
             else
-                msg_Err(p_dec, "Could not convert timestamp %"PRId64, *pi_ts0);
+                msg_Err(p_dec, "Could not convert timestamp %"PRId64" for %s", *pi_ts0, psz_name );
             *pi_ts0 = VLC_TS_INVALID;
         }
     }
@@ -859,8 +860,7 @@ static void DecoderGetCc( decoder_t *p_dec, decoder_t *p_dec_cc )
     block_t *p_cc;
     bool pb_present[4];
     bool b_processed = false;
-    int i;
-    int i_cc_decoder;
+    int i_cc_decoder = 0;
 
     assert( p_dec_cc->pf_get_cc != NULL );
 
@@ -873,14 +873,14 @@ static void DecoderGetCc( decoder_t *p_dec, decoder_t *p_dec_cc )
         return;
 
     vlc_mutex_lock( &p_owner->lock );
-    for( i = 0, i_cc_decoder = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
     {
         p_owner->cc.pb_present[i] |= pb_present[i];
         if( p_owner->cc.pp_decoder[i] )
             i_cc_decoder++;
     }
 
-    for( i = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
     {
         if( !p_owner->cc.pp_decoder[i] )
             continue;
@@ -1019,11 +1019,11 @@ static void DecoderUpdateStatVideo( decoder_t *p_dec, unsigned decoded,
         lost += vout_lost;
     }
 
-    vlc_mutex_lock( &p_input->p->counters.counters_lock );
-    stats_Update( p_input->p->counters.p_decoded_video, decoded, NULL );
-    stats_Update( p_input->p->counters.p_lost_pictures, lost , NULL);
-    stats_Update( p_input->p->counters.p_displayed_pictures, displayed, NULL);
-    vlc_mutex_unlock( &p_input->p->counters.counters_lock );
+    vlc_mutex_lock( &input_priv(p_input)->counters.counters_lock );
+    stats_Update( input_priv(p_input)->counters.p_decoded_video, decoded, NULL );
+    stats_Update( input_priv(p_input)->counters.p_lost_pictures, lost , NULL);
+    stats_Update( input_priv(p_input)->counters.p_displayed_pictures, displayed, NULL);
+    vlc_mutex_unlock( &input_priv(p_input)->counters.counters_lock );
 }
 
 static int DecoderQueueVideo( decoder_t *p_dec, picture_t *p_pic )
@@ -1213,11 +1213,11 @@ static void DecoderUpdateStatAudio( decoder_t *p_dec, unsigned decoded,
         lost += aout_lost;
     }
 
-    vlc_mutex_lock( &p_input->p->counters.counters_lock);
-    stats_Update( p_input->p->counters.p_lost_abuffers, lost, NULL );
-    stats_Update( p_input->p->counters.p_played_abuffers, played, NULL );
-    stats_Update( p_input->p->counters.p_decoded_audio, decoded, NULL );
-    vlc_mutex_unlock( &p_input->p->counters.counters_lock);
+    vlc_mutex_lock( &input_priv(p_input)->counters.counters_lock);
+    stats_Update( input_priv(p_input)->counters.p_lost_abuffers, lost, NULL );
+    stats_Update( input_priv(p_input)->counters.p_played_abuffers, played, NULL );
+    stats_Update( input_priv(p_input)->counters.p_decoded_audio, decoded, NULL );
+    vlc_mutex_unlock( &input_priv(p_input)->counters.counters_lock);
 }
 
 static int DecoderQueueAudio( decoder_t *p_dec, block_t *p_aout_buf )
@@ -1347,9 +1347,9 @@ static int DecoderQueueSpu( decoder_t *p_dec, subpicture_t *p_spu )
 
     if( p_input != NULL )
     {
-        vlc_mutex_lock( &p_input->p->counters.counters_lock );
-        stats_Update( p_input->p->counters.p_decoded_sub, 1, NULL );
-        vlc_mutex_unlock( &p_input->p->counters.counters_lock );
+        vlc_mutex_lock( &input_priv(p_input)->counters.counters_lock );
+        stats_Update( input_priv(p_input)->counters.p_decoded_sub, 1, NULL );
+        vlc_mutex_unlock( &input_priv(p_input)->counters.counters_lock );
     }
 
     int i_ret = -1;
@@ -1921,7 +1921,7 @@ decoder_t *input_DecoderNew( input_thread_t *p_input,
                              sout_instance_t *p_sout  )
 {
     return decoder_New( VLC_OBJECT(p_input), p_input, fmt, p_clock,
-                        p_input->p->p_resource, p_sout );
+                        input_priv(p_input)->p_resource, p_sout );
 }
 
 /**
@@ -1974,8 +1974,7 @@ void input_DecoderDelete( decoder_t *p_dec )
     /* */
     if( p_dec->p_owner->cc.b_supported )
     {
-        int i;
-        for( i = 0; i < 4; i++ )
+        for( int i = 0; i < 4; i++ )
             input_DecoderSetCcState( p_dec, false, i );
     }
 
@@ -2100,10 +2099,9 @@ void input_DecoderFlush( decoder_t *p_dec )
 void input_DecoderIsCcPresent( decoder_t *p_dec, bool pb_present[4] )
 {
     decoder_owner_sys_t *p_owner = p_dec->p_owner;
-    int i;
 
     vlc_mutex_lock( &p_owner->lock );
-    for( i = 0; i < 4; i++ )
+    for( int i = 0; i < 4; i++ )
         pb_present[i] =  p_owner->cc.pb_present[i];
     vlc_mutex_unlock( &p_owner->lock );
 }

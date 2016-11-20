@@ -277,7 +277,15 @@ static int Demux( demux_t *p_demux )
         if( i_size > 0 && ( p_frame = vlc_stream_Block( p_demux->s, i_size ) ) )
         {
             p_frame->i_dts = VLC_TS_0 + p_sys->i_pcr;
-            es_out_Send( p_demux->out, p_sys->p_video, p_frame );
+
+            if( p_sys->p_video )
+                es_out_Send( p_demux->out, p_sys->p_video, p_frame );
+            else
+            {
+                block_Release( p_frame );
+                msg_Dbg( p_demux, "ignoring unsupported video frame (size=%d)",
+                         i_size );
+            }
         }
     }
 
@@ -305,7 +313,15 @@ static int Demux( demux_t *p_demux )
         {
             p_frame->i_dts =
             p_frame->i_pts = VLC_TS_0 + p_sys->i_pcr;
-            es_out_Send( p_demux->out, p_sys->p_audio, p_frame );
+
+            if( p_sys->p_audio )
+                es_out_Send( p_demux->out, p_sys->p_audio, p_frame );
+            else
+            {
+                block_Release( p_frame );
+                msg_Dbg( p_demux, "ignoring unsupported audio frame (size=%d)",
+                         i_size );
+            }
         }
     }
 
@@ -446,7 +462,6 @@ static int ReadNSVf( demux_t *p_demux )
 {
     /* demux_sys_t *p_sys = p_demux->p_sys; */
     const uint8_t     *p;
-    int         i_size;
 
     msg_Dbg( p_demux, "new NSVf chunk" );
     if( vlc_stream_Peek( p_demux->s, &p, 8 ) < 8 )
@@ -454,10 +469,15 @@ static int ReadNSVf( demux_t *p_demux )
         return VLC_EGENERIC;
     }
 
-    i_size = GetDWLE( &p[4] );
-    msg_Dbg( p_demux, "    - size=%d", i_size );
+    uint32_t i_header_size = GetDWLE( &p[4] );
+    msg_Dbg( p_demux, "    - size=%" PRIu32, i_header_size );
 
-    return vlc_stream_Read( p_demux->s, NULL, i_size ) == i_size ? VLC_SUCCESS : VLC_EGENERIC;
+    if( i_header_size == 0 || i_header_size == UINT32_MAX )
+        return VLC_EGENERIC;
+
+
+    return vlc_stream_Read( p_demux->s, NULL, i_header_size ) == i_header_size
+        ? VLC_SUCCESS : VLC_EGENERIC;
 }
 /*****************************************************************************
  * ReadNSVs:
@@ -498,7 +518,7 @@ static int ReadNSVs( demux_t *p_demux )
         case VLC_FOURCC( 'N', 'O', 'N', 'E' ):
             break;
         default:
-            msg_Warn( p_demux, "unknown codec %4.4s", (char *)&fcc );
+            msg_Err( p_demux, "unsupported video codec %4.4s", (char *)&fcc );
             break;
     }
     if( fcc != VLC_FOURCC( 'N', 'O', 'N', 'E' ) && fcc != p_sys->fmt_video.i_codec  )
@@ -539,7 +559,7 @@ static int ReadNSVs( demux_t *p_demux )
         case VLC_FOURCC( 'N', 'O', 'N', 'E' ):
             break;
         default:
-            msg_Warn( p_demux, "unknown codec %4.4s", (char *)&fcc );
+            msg_Err( p_demux, "unsupported audio codec %4.4s", (char *)&fcc );
             break;
     }
 
@@ -590,6 +610,12 @@ static int ReadNSVs( demux_t *p_demux )
         p_sys->i_pcr_inc = 40000;
     }
     //msg_Dbg( p_demux, "    - fps=%.3f", 1000000.0 / (double)p_sys->i_pcr_inc );
+
+    if( p_sys->p_audio == NULL && p_sys->p_video == NULL )
+    {
+        msg_Err( p_demux, "unable to play neither audio nor video, aborting." );
+        return VLC_EGENERIC;
+    }
 
     return VLC_SUCCESS;
 }

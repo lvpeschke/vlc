@@ -148,6 +148,7 @@ libvlc_media_new_from_input_item
 libvlc_media_parse
 libvlc_media_parse_async
 libvlc_media_parse_with_options
+libvlc_media_parse_stop
 libvlc_media_player_add_slave
 libvlc_media_player_can_pause
 libvlc_media_player_program_scrambled
@@ -282,6 +283,8 @@ libvlc_video_set_subtitle_file
 libvlc_video_set_teletext
 libvlc_video_set_track
 libvlc_video_take_snapshot
+libvlc_video_new_viewpoint
+libvlc_video_update_viewpoint
 libvlc_vlm_add_broadcast
 libvlc_vlm_add_vod
 libvlc_vlm_add_input

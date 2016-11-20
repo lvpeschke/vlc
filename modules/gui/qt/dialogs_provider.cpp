@@ -660,7 +660,7 @@ void DialogsProvider::saveAPlaylist(playlist_t *p_playlist, playlist_item_t *p_n
     if ( psz_selected_module )
     {
         playlist_Export( p_playlist, qtu( toNativeSeparators( file ) ),
-                         p_node, psz_selected_module );
+                         true, psz_selected_module );
         getSettings()->setValue( "last-playlist-ext", psz_last_playlist_ext );
     }
 }
@@ -682,7 +682,7 @@ void DialogsProvider::saveRecentsToPlaylist()
 
     saveAPlaylist(THEPL, p_node_recents);
     playlist_Lock(THEPL);
-    playlist_NodeDelete(THEPL, p_node_recents, true, false);
+    playlist_NodeDelete(THEPL, p_node_recents, false);
     playlist_Unlock(THEPL);
 }
 

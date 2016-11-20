@@ -34,7 +34,7 @@
 static int Open( vlc_object_t * );
 static void Close( vlc_object_t * );
 
-VLC_SD_PROBE_HELPER( "Bonjour", "Bonjour Network Discovery", SD_CAT_LAN )
+VLC_SD_PROBE_HELPER( "Bonjour", N_("Bonjour Network Discovery"), SD_CAT_LAN )
 
 /*
  * Module descriptor
@@ -225,6 +225,8 @@ static int Open(vlc_object_t *p_this)
     if (!p_sys) {
         return VLC_ENOMEM;
     }
+
+    p_sd->description = _("Bonjour Network Discovery");
 
     VLCNetServiceDiscoveryController *discoveryController = [[VLCNetServiceDiscoveryController alloc] init];
     discoveryController.p_sd = p_sd;

@@ -554,17 +554,6 @@ vlc_fourcc_t image_Ext2Fourcc( const char *psz_name )
     return image_Type2Fourcc( psz_name );
 }
 
-/*
-static const char *Fourcc2Ext( vlc_fourcc_t i_codec )
-{
-    for( unsigned i = 0; i < ARRAY_SIZE(ext_table); i++ )
-        if( ext_table[i].i_codec == i_codec )
-            return ext_table[i].psz_ext;
-
-    return NULL;
-}
-*/
-
 static const struct
 {
     vlc_fourcc_t i_codec;
@@ -593,8 +582,7 @@ static const struct
 
 vlc_fourcc_t image_Mime2Fourcc( const char *psz_mime )
 {
-    int i;
-    for( i = 0; mime_table[i].i_codec; i++ )
+    for( int i = 0; mime_table[i].i_codec; i++ )
         if( !strcmp( psz_mime, mime_table[i].psz_mime ) )
             return mime_table[i].i_codec;
     return 0;

@@ -64,7 +64,7 @@ vlc_module_begin ()
         set_capability( "demux", 6 )
         add_float( "hevc-fps", 0.0, FPS_TEXT, FPS_LONGTEXT, true )
         set_callbacks( OpenHEVC, Close )
-        add_shortcut( "hevc" )
+        add_shortcut( "hevc", "h265" )
 
 vlc_module_end ()
 
@@ -429,7 +429,10 @@ static int Demux( demux_t *p_demux)
                 p_sys->p_packetizer->fmt_out.b_packetized = true;
                 p_sys->p_es = es_out_Add( p_demux->out, &p_sys->p_packetizer->fmt_out );
                 if( !p_sys->p_es )
+                {
+                    block_ChainRelease( p_block_out );
                     return VLC_DEMUXER_EOF;
+                }
             }
 
             /* h264 packetizer does merge multiple NAL into AU, but slice flag persists */
@@ -440,7 +443,8 @@ static int Demux( demux_t *p_demux)
                 if( !p_sys->frame_rate_den )
                 {
                     /* Use packetizer's one */
-                    if( p_sys->p_packetizer->fmt_out.video.i_frame_rate_base )
+                    if( p_sys->p_packetizer->fmt_out.video.i_frame_rate_base &&
+                        p_sys->p_packetizer->fmt_out.video.i_frame_rate )
                     {
                         p_sys->frame_rate_num = p_sys->p_packetizer->fmt_out.video.i_frame_rate;
                         p_sys->frame_rate_den = p_sys->p_packetizer->fmt_out.video.i_frame_rate_base;

@@ -113,7 +113,6 @@ enum
 {
     SIGNAL_NONE=0,
     SIGNAL_ITEM_CURRENT,
-    SIGNAL_INTF_CHANGE,
     SIGNAL_PLAYLIST_ITEM_APPEND,
     SIGNAL_PLAYLIST_ITEM_DELETED,
     SIGNAL_INPUT_METADATA,
@@ -139,7 +138,7 @@ enum
 };
 
 int DemarshalSetPropertyValue( DBusMessage *p_msg, void *p_arg );
-int GetInputMeta  ( input_item_t* p_input, DBusMessageIter *args );
+int GetInputMeta( playlist_item_t *, DBusMessageIter *args );
 int AddProperty ( intf_thread_t *p_intf,
                   DBusMessageIter *p_container,
                   const char* psz_property_name,
