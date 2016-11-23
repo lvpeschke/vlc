@@ -230,10 +230,10 @@ ssize_t HTTPConnection::read(void *p_buffer, size_t len)
         bytesRead += ret;
 
 
-    /* LVP disabled: reverse commit 874a409499639af8068458e4d8f22ff3202ff074 */
-    // if(ret < 0 || (size_t)ret < len) /* set EOF */
-    if(ret < 0 || (size_t)ret < len || /* set EOF */
-       contentLength == bytesRead )
+    /* LVP reverse commit 874a409499639af8068458e4d8f22ff3202ff074 */
+    if(ret < 0 || (size_t)ret < len) /* set EOF */
+    //if(ret < 0 || (size_t)ret < len || /* set EOF */
+    //   contentLength == bytesRead )
     {
         /* LVP added */
         msg_Dbg(p_object, "LVP HTTPConnection::read disconnect, EOF ?");
